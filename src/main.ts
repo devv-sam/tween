@@ -1,5 +1,9 @@
 import "./core/modules/index";
 import { Preview } from "./render/preview";
+import { exportMp4 } from "./export/mp4";
+import { exportGif } from "./export/gif";
+import { exportCode } from "./export/code";
+import { downloadBlob, downloadText } from "./export/download";
 import { demo } from "./demo";
 import "./style.css";
 
@@ -10,6 +14,7 @@ app.innerHTML = `
     <button id="pp">play</button>
     <input id="seek" type="range" min="0" max="1" step="0.001" value="0" />
     <span id="t">0.00</span>
+    <button id="mp4">mp4</button><button id="gif">gif</button><button id="code">code</button>
   </div>`;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#c")!;
@@ -29,3 +34,12 @@ pp.onclick = () => {
 seek.oninput = () => { preview.pause(); pp.textContent = "play"; preview.seek(parseFloat(seek.value)); };
 
 addEventListener("resize", () => preview.resize());
+
+const on = (id: string, fn: () => void) => (document.querySelector<HTMLButtonElement>(id)!.onclick = fn);
+
+on("#mp4", async () => {
+  try { downloadBlob(await exportMp4(demo), "tween.mp4"); }
+  catch (e) { alert((e as Error).message); }
+});
+on("#gif", () => downloadBlob(exportGif(demo), "tween.gif"));
+on("#code", () => downloadText(exportCode(demo), "tween.html"));
