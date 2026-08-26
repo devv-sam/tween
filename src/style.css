@@ -1,0 +1,7 @@
+#app { font-family: system-ui, sans-serif; max-width: 840px; margin: 24px auto; }
+.stage { width: 800px; height: 600px; background: #f4f4f6; border-radius: 12px; overflow: hidden; }
+.stage canvas { width: 800px; height: 600px; display: block; }
+.bar { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.bar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
+.bar input { flex: 1; }
+.bar span { width: 44px; font-variant-numeric: tabular-nums; color: #555; }
