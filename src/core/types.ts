@@ -2,12 +2,12 @@ export interface Transform {
   x: number; y: number; scale: number; rotation: number; opacity: number;
 }
 
+export type Blend = "set" | "add" | "mul";
+export type Prop = "x" | "y" | "scale" | "rotation" | "opacity";
+
 export interface EvalCtx {
-  t: number;       // global time 0..1
-  localT: number;  // time remapped into this module's range, 0..1
-  u: number;       // clone index 0..1 (0 when single instance)
-  i: number;       // clone integer index
-  count: number;   // total clones in this layer
+  t: number; localT: number; u: number; i: number; count: number;
+  field: (id: string, x: number, y: number) => number;
 }
 
 export interface EmitCtx { targetId: string; }
@@ -25,7 +25,18 @@ export interface ModuleImpl {
   emit(ctx: EmitCtx, params: Record<string, unknown>): string;
 }
 
-export interface Distributor { type: string; count: number; params?: Record<string, unknown>; }
+export type FieldMotion =
+  | { kind: "static"; x: number; y: number }
+  | { kind: "sweepX"; y: number; from: number; to: number }
+  | { kind: "alongPath"; points: { x: number; y: number }[] };
+
+export interface FieldDef { id: string; radius: number; falloff: number; motion: FieldMotion; }
+
+export interface Distributor {
+  type: "path" | "none";
+  count: number;
+  params?: Record<string, unknown>;
+}
 
 export type LayerSource = { kind: "image" | "text" | "shape"; value: string };
 
@@ -41,9 +52,8 @@ export interface Track { layer: Layer; modules: ModuleData[]; }
 export interface Driver { kind: "time" | "scroll" | "cursor"; }
 
 export interface Composition {
-  fps: number;
-  duration: number;      // seconds
-  driver: Driver;
+  fps: number; duration: number; driver: Driver;
+  fields?: FieldDef[];
   tracks: Track[];
 }
 

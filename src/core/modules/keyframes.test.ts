@@ -4,7 +4,7 @@ import { getModule } from "../registry";
 import type { Transform, EvalCtx } from "../types";
 
 const base: Transform = { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
-const ctx = (localT: number): EvalCtx => ({ t: localT, localT, u: 0, i: 0, count: 1 });
+const ctx = (localT: number): EvalCtx => ({ t: localT, localT, u: 0, i: 0, count: 1, field: () => 0 });
 const km = getModule("keyframes");
 const params = { property: "opacity", stops: [{ t: 0, v: 0 }, { t: 1, v: 1 }] };
 
