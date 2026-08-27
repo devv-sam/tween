@@ -1,4 +1,5 @@
-import type { Scene } from "../core/types";
+import type { Scene, Composition } from "../core/types";
+import { fieldCenter } from "../core/fields";
 
 const SIZE = 140;
 
@@ -21,6 +22,19 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, w: number
       ctx.fillStyle = colorFor(item.source.value);
       ctx.fillRect(-SIZE / 2, -SIZE / 2, SIZE, SIZE);
     }
+    ctx.restore();
+  }
+}
+
+export function drawFieldMarkers(ctx: CanvasRenderingContext2D, comp: Composition, t: number): void {
+  for (const def of comp.fields ?? []) {
+    const c = fieldCenter(def, t);
+    ctx.save();
+    ctx.strokeStyle = "rgba(0,0,0,.25)";
+    ctx.setLineDash([2, 6]);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, def.radius, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 }

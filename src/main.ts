@@ -4,7 +4,7 @@ import { exportMp4 } from "./export/mp4";
 import { exportGif } from "./export/gif";
 import { exportCode } from "./export/code";
 import { downloadBlob, downloadText } from "./export/download";
-import { demo } from "./demo";
+import { demo3 } from "./demo";
 import "./style.css";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -18,7 +18,7 @@ app.innerHTML = `
   </div>`;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#c")!;
-const preview = new Preview(canvas, demo);
+const preview = new Preview(canvas, demo3);
 
 const pp = document.querySelector<HTMLButtonElement>("#pp")!;
 const seek = document.querySelector<HTMLInputElement>("#seek")!;
@@ -38,8 +38,8 @@ addEventListener("resize", () => preview.resize());
 const on = (id: string, fn: () => void) => (document.querySelector<HTMLButtonElement>(id)!.onclick = fn);
 
 on("#mp4", async () => {
-  try { downloadBlob(await exportMp4(demo), "tween.mp4"); }
+  try { downloadBlob(await exportMp4(demo3), "tween.mp4"); }
   catch (e) { alert((e as Error).message); }
 });
-on("#gif", () => downloadBlob(exportGif(demo), "tween.gif"));
-on("#code", () => downloadText(exportCode(demo), "tween.html"));
+on("#gif", () => downloadBlob(exportGif(demo3), "tween.gif"));
+on("#code", () => downloadText(exportCode(demo3), "tween.html"));
