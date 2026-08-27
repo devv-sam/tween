@@ -1,6 +1,7 @@
 import type { Composition } from "../core/types";
-import { renderState } from "../core/renderState";
-import { drawScene, drawFieldMarkers } from "./canvas2d";
+import { drawFieldMarkers } from "./canvas2d";
+import { paintComposition } from "./paint";
+
 
 export class Preview {
   playing = false;
@@ -34,7 +35,7 @@ export class Preview {
 
   render(): void {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    drawScene(this.ctx, renderState(this.comp, this.t), w, h);
+    paintComposition(this.ctx, this.comp, this.t, w, h);
     drawFieldMarkers(this.ctx, this.comp, this.t);
   }
 
