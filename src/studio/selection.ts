@@ -1,5 +1,11 @@
 import type { Scene, SceneItem, Transform } from "../core/types";
-import { compositionToScreen, type Point, type Size, type View } from "./view";
+import {
+  compositionToScreen,
+  screenToComposition,
+  type Point,
+  type Size,
+  type View,
+} from "./view";
 
 export type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
@@ -54,6 +60,12 @@ export const HANDLE_HIT = 9;
 
 /** Drawn edge of a corner handle, in screen px. Sides are draggable but undrawn. */
 export const HANDLE_SIZE = 8;
+
+/** How far outside a corner still grabs rotation, in screen px. */
+export const ROTATE_REACH = 26;
+
+/** Rotation snaps to this many degrees while Shift is held. */
+export const ROTATE_SNAP = 15;
 
 /**
  * Aspect-lock button centre, offset from the box's top-right corner in screen px.
@@ -266,4 +278,117 @@ export function resizeFrom(
     scaleX: (x1 - x0) / size.width,
     scaleY: (y1 - y0) / size.height,
   };
+}
+
+/**
+ * What a pointer is over: a resize handle, the rotation band, or nothing.
+ *
+ * A rotate grip names the region it is nearest, so the cursor can be keyed to that
+ * region rather than to the raw pointer angle.
+ */
+export type Grip =
+  | { kind: "resize"; handle: Handle }
+  | { kind: "rotate"; near: Handle };
+
+/**
+ * The grip under a screen point.
+ *
+ * Handles win: the bounds themselves resize. Rotation lives only just outside the four
+ * corners — reaching past the middle of an edge grabs nothing, so sliding along an edge
+ * never flashes a rotate cursor between one corner and the next.
+ */
+export function gripAtScreen(
+  state: Transform,
+  size: Size,
+  screen: Point,
+  viewport: Size,
+  frame: Size,
+  view: View,
+): Grip | null {
+  const handle = handleAtScreen(state, size, screen, viewport, frame, view);
+  if (handle) return { kind: "resize", handle };
+
+  if (containsPoint(state, size, screenToComposition(screen, viewport, frame, view))) {
+    return null;
+  }
+  const at = handlePositions(state, size);
+  let near: Handle | null = null;
+  let bestDist = ROTATE_REACH;
+  for (const k of CORNERS) {
+    const p = compositionToScreen(at[k], viewport, frame, view);
+    const d = Math.hypot(p.x - screen.x, p.y - screen.y);
+    if (d < bestDist) {
+      bestDist = d;
+      near = k;
+    }
+  }
+  return near ? { kind: "rotate", near } : null;
+}
+
+/**
+ * Direction from the element's centre out through a handle, in degrees.
+ *
+ * The rotate cursor is keyed to this rather than to the pointer's own angle, so it is
+ * one steady orientation per corner instead of swinging as the pointer moves. It still
+ * turns with the element, since the handle does.
+ */
+export function regionAngle(state: Transform, size: Size, handle: Handle): number {
+  return angleTo({ x: state.x, y: state.y }, handlePositions(state, size)[handle]);
+}
+
+/** Degrees from `centre` to `p`. The view has no rotation, so screen and composition
+ *  space give the same angle. */
+export function angleTo(centre: Point, p: Point): number {
+  return (Math.atan2(p.y - centre.y, p.x - centre.x) * 180) / Math.PI;
+}
+
+/** Fold an angle into (-180, 180] for display. */
+export function normalizeAngle(deg: number): number {
+  const a = ((deg % 360) + 360) % 360;
+  return a > 180 ? a - 360 : a;
+}
+
+/**
+ * New absolute rotation from dragging to `pointer`. `startAngle` is the angle the
+ * pointer sat at when the drag began, so the element tracks the pointer's swing
+ * rather than jumping to it. Snapping applies to the resulting angle, not the delta.
+ */
+export function rotateFrom(
+  state: Transform,
+  pointer: Point,
+  startAngle: number,
+  snap: boolean,
+): number {
+  const swing = angleTo({ x: state.x, y: state.y }, pointer) - startAngle;
+  const next = state.rotation + swing;
+  return snap ? Math.round(next / ROTATE_SNAP) * ROTATE_SNAP : next;
+}
+
+const CURSOR_STEP = 15;
+const cursorCache = new Map<number, string>();
+
+/**
+ * A curved-arrow cursor oriented to the pointer's angle around the element, so it
+ * curves the way the element will turn. Quantised and cached — a drag reuses a
+ * handful of strings rather than building one per pointer move.
+ */
+export function rotateCursor(pointerAngleDeg: number): string {
+  const turn =
+    (((Math.round((pointerAngleDeg + 135) / CURSOR_STEP) * CURSOR_STEP) % 360) + 360) % 360;
+  const cached = cursorCache.get(turn);
+  if (cached) return cached;
+  const arc = "M4.5 12A7.5 7.5 0 0 1 12 4.5";
+  const head = "M11.4 1.4 16.6 4.5 11.4 7.6Z";
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">` +
+    `<g transform="rotate(${turn} 12 12)">` +
+    // White underlay first, so the glyph stays legible on any backdrop.
+    `<path d="${arc}" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>` +
+    `<path d="${head}" fill="#fff" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"/>` +
+    `<path d="${arc}" fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round"/>` +
+    `<path d="${head}" fill="#111"/>` +
+    `</g></svg>`;
+  const css = `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
+  cursorCache.set(turn, css);
+  return css;
 }

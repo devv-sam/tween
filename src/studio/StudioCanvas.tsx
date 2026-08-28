@@ -18,13 +18,18 @@ import {
   HANDLE_CURSOR,
   HANDLE_SIZE,
   LOCK_OFFSET,
+  angleTo,
   boxSize,
   containsPoint,
   cornerPoints,
-  handleAtScreen,
+  gripAtScreen,
   handlePositions,
   hitTest,
+  normalizeAngle,
+  regionAngle,
   resizeFrom,
+  rotateCursor,
+  rotateFrom,
   withinLock,
   type Handle,
 } from "./selection";
@@ -38,17 +43,24 @@ import {
   type Size,
 } from "./view";
 
-/** An in-flight move or resize. `handle` is null while moving. */
+/** An in-flight move, resize, or rotate. `handle` is set only when resizing. */
 type Drag = {
   id: string;
   pointerId: number;
+  mode: "move" | "resize" | "rotate";
   handle: Handle | null;
   startBase: Transform;
   startRendered: Transform;
   size: Size;
   from: Point;
+  /** Pointer angle about the element's centre when a rotate drag began. */
+  startAngle: number;
+  /** Cursor orientation for the region grabbed, carried so it turns with the element. */
+  cursorAngle: number;
   lockAspect: boolean;
 };
+
+const centreOf = (state: Transform): Point => ({ x: state.x, y: state.y });
 
 const NUDGE = 1;
 const NUDGE_COARSE = 10;
@@ -72,6 +84,8 @@ export function StudioCanvas() {
   const [cursor, setCursor] = useState<string | null>(null);
   // The lock only shows while the pointer is on the element, so idle chrome stays quiet.
   const [hovering, setHovering] = useState(false);
+  // While rotating, the badge reports the angle instead of the box size.
+  const [rotating, setRotating] = useState(false);
 
   const origin = frameOrigin(viewport, frame, view);
   const size = frameSize(frame, view.scale);
@@ -309,7 +323,13 @@ export function StudioCanvas() {
     const point = screenToComposition(screen, viewport, frame, view);
     const { selectedId: sel, select } = useStudio.getState();
 
-    const begin = (item: SceneItem, itemSize: Size, handle: Handle | null) => {
+    const begin = (
+      item: SceneItem,
+      itemSize: Size,
+      mode: Drag["mode"],
+      handle: Handle | null,
+      near: Handle | null = null,
+    ) => {
       const base = baseOf(item.id);
       if (!base) return false;
       const track = useStudio
@@ -318,11 +338,14 @@ export function StudioCanvas() {
       dragRef.current = {
         id: item.id,
         pointerId: e.pointerId,
+        mode,
         handle,
         startBase: { ...base },
         startRendered: { ...item.state },
         size: itemSize,
         from: point,
+        startAngle: angleTo(centreOf(item.state), point),
+        cursorAngle: near ? regionAngle(item.state, itemSize, near) : 0,
         lockAspect: Boolean(track?.layer.lockAspect),
       };
       // Capture keeps the drag alive past the viewport edge. If the pointer is
@@ -337,7 +360,7 @@ export function StudioCanvas() {
     };
 
     if (selected) {
-      const handle = handleAtScreen(
+      const grip = gripAtScreen(
         selected.item.state,
         selected.size,
         screen,
@@ -345,10 +368,20 @@ export function StudioCanvas() {
         frame,
         view,
       );
-      if (handle) {
-        setCursor(HANDLE_CURSOR[handle]);
+      if (grip) {
         setHovering(true);
-        if (begin(selected.item, selected.size, handle)) return;
+        if (grip.kind === "resize") {
+          setCursor(HANDLE_CURSOR[grip.handle]);
+          if (begin(selected.item, selected.size, "resize", grip.handle)) return;
+        } else {
+          setCursor(
+            rotateCursor(regionAngle(selected.item.state, selected.size, grip.near)),
+          );
+          if (begin(selected.item, selected.size, "rotate", null, grip.near)) {
+            setRotating(true);
+            return;
+          }
+        }
       }
     }
 
@@ -363,7 +396,7 @@ export function StudioCanvas() {
     if (!item || !itemSize) return;
     setCursor("move");
     setHovering(true);
-    begin(item, itemSize, null);
+    begin(item, itemSize, "move", null);
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -376,7 +409,7 @@ export function StudioCanvas() {
         setHovering(false);
         return;
       }
-      const handle = handleAtScreen(
+      const grip = gripAtScreen(
         selected.item.state,
         selected.size,
         screen,
@@ -384,8 +417,14 @@ export function StudioCanvas() {
         frame,
         view,
       );
-      if (handle) {
-        setCursor(HANDLE_CURSOR[handle]);
+      if (grip) {
+        setCursor(
+          grip.kind === "resize"
+            ? HANDLE_CURSOR[grip.handle]
+            : rotateCursor(
+                regionAngle(selected.item.state, selected.size, grip.near),
+              ),
+        );
         setHovering(true);
         return;
       }
@@ -400,6 +439,26 @@ export function StudioCanvas() {
 
     const point = screenToComposition(screen, viewport, frame, view);
     const { setLayerBase } = useStudio.getState();
+
+    if (drag.mode === "rotate") {
+      const nextRotation = rotateFrom(
+        drag.startRendered,
+        point,
+        drag.startAngle,
+        e.shiftKey,
+      );
+      // Glue the cursor to the region it grabbed as the element turns under it.
+      setCursor(
+        rotateCursor(
+          drag.cursorAngle + (nextRotation - drag.startRendered.rotation),
+        ),
+      );
+      setLayerBase(drag.id, {
+        rotation:
+          drag.startBase.rotation + (nextRotation - drag.startRendered.rotation),
+      });
+      return;
+    }
 
     if (!drag.handle) {
       setLayerBase(drag.id, {
@@ -440,6 +499,7 @@ export function StudioCanvas() {
     const drag = dragRef.current;
     if (!drag) return;
     dragRef.current = null;
+    setRotating(false);
     if (e.currentTarget.hasPointerCapture(drag.pointerId)) {
       e.currentTarget.releasePointerCapture(drag.pointerId);
     }
@@ -538,7 +598,8 @@ export function StudioCanvas() {
               );
             })}
           </svg>
-          {hovering ? (
+          {/* Hidden while rotating: pinned to a corner, it would swing around the box. */}
+          {hovering && !rotating ? (
           <button
             type="button"
             className={`studio-lock${selected.lockAspect ? " is-locked" : ""}`}
@@ -567,8 +628,9 @@ export function StudioCanvas() {
               transform: `translate(${chrome.badge.x}px, ${chrome.badge.y}px) translate(-50%, 0)`,
             }}
           >
-            {Math.round(chrome.badge.size.width)} ×{" "}
-            {Math.round(chrome.badge.size.height)}
+            {rotating
+              ? `${Math.round(normalizeAngle(selected.item.state.rotation))}°`
+              : `${Math.round(chrome.badge.size.width)} × ${Math.round(chrome.badge.size.height)}`}
           </div>
         </>
       ) : null}

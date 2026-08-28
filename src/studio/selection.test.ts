@@ -5,14 +5,22 @@ import {
   LOCK_PAD,
   LOCK_SIZE,
   MIN_SCALE,
+  ROTATE_REACH,
+  ROTATE_SNAP,
+  angleTo,
   boxSize,
   containsPoint,
   cornerPoints,
+  gripAtScreen,
   handleAtScreen,
   handlePositions,
   hitTest,
   isCorner,
+  normalizeAngle,
+  regionAngle,
   resizeFrom,
+  rotateCursor,
+  rotateFrom,
   withinLock,
 } from "./selection";
 import { DEFAULT_VIEW_SCALE, compositionToScreen, type Size, type View } from "./view";
@@ -310,5 +318,145 @@ describe("lock hover region", () => {
     const far = LOCK_SIZE / 2 + LOCK_PAD + 1;
     expect(withinLock({ x: centre.x + far, y: centre.y }, centre)).toBe(false);
     expect(withinLock({ x: centre.x, y: centre.y + far }, centre)).toBe(false);
+  });
+});
+
+describe("gripAtScreen", () => {
+  const screenOf = (p: { x: number; y: number }) =>
+    compositionToScreen(p, viewport, frame, view);
+  const grip = (p: { x: number; y: number }) =>
+    gripAtScreen(state, size, screenOf(p), viewport, frame, view);
+
+  it("resizes on the bounds", () => {
+    expect(grip({ x: 400, y: 250 })).toEqual({ kind: "resize", handle: "nw" });
+    expect(grip({ x: 500, y: 250 })).toEqual({ kind: "resize", handle: "n" });
+  });
+
+  it("rotates just outside a corner, past the handle's reach", () => {
+    expect(grip({ x: 380, y: 230 })).toEqual({ kind: "rotate", near: "nw" });
+    expect(grip({ x: 620, y: 370 })).toEqual({ kind: "rotate", near: "se" });
+  });
+
+  it("grabs nothing past the middle of an edge", () => {
+    // The whole point: sliding along an edge must never flash a rotate cursor.
+    expect(grip({ x: 500, y: 230 })).toBeNull();
+    expect(grip({ x: 500, y: 370 })).toBeNull();
+    expect(grip({ x: 620, y: 300 })).toBeNull();
+    expect(grip({ x: 380, y: 300 })).toBeNull();
+  });
+
+  it("gives the corner priority over the band where they overlap", () => {
+    expect(grip({ x: 396, y: 246 })).toEqual({ kind: "resize", handle: "nw" });
+  });
+
+  it("is inert inside the element", () => {
+    expect(grip({ x: 500, y: 300 })).toBeNull();
+  });
+
+  it("is inert far outside a corner", () => {
+    const nw = screenOf({ x: 400, y: 250 });
+    const past = ROTATE_REACH + 6;
+    expect(
+      gripAtScreen(
+        state,
+        size,
+        { x: nw.x - past, y: nw.y - past },
+        viewport,
+        frame,
+        view,
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the corner's reach constant on screen as depth zoom changes", () => {
+    const zoomed: View = { ...view, zoom: 4 };
+    const nw = compositionToScreen({ x: 400, y: 250 }, viewport, frame, zoomed);
+    const justOutside = { x: nw.x - 14, y: nw.y - 14 };
+    expect(gripAtScreen(state, size, justOutside, viewport, frame, zoomed)).toEqual({
+      kind: "rotate",
+      near: "nw",
+    });
+  });
+});
+
+describe("regionAngle", () => {
+  it("points out through the handle, not at the pointer", () => {
+    expect(regionAngle(state, size, "e")).toBeCloseTo(0);
+    expect(regionAngle(state, size, "s")).toBeCloseTo(90);
+    expect(Math.abs(regionAngle(state, size, "w"))).toBeCloseTo(180);
+    expect(regionAngle(state, size, "n")).toBeCloseTo(-90);
+  });
+
+  it("gives one steady orientation per corner", () => {
+    // Keyed to the corner, not the pointer, so it cannot drift while hovering there.
+    const centre = { x: state.x, y: state.y };
+    expect(regionAngle(state, size, "se")).toBeCloseTo(angleTo(centre, { x: 600, y: 350 }));
+    expect(regionAngle(state, size, "nw")).toBeCloseTo(angleTo(centre, { x: 400, y: 250 }));
+  });
+
+  it("turns with the element", () => {
+    expect(regionAngle({ ...state, rotation: 90 }, size, "e")).toBeCloseTo(90);
+    expect(regionAngle({ ...state, rotation: 30 }, size, "s")).toBeCloseTo(120);
+  });
+});
+
+describe("rotateFrom", () => {
+  const centre = { x: state.x, y: state.y };
+
+  it("turns the element by how far the pointer swings, not where it starts", () => {
+    // Grab due east, drag to due south: a quarter turn, wherever the grab began.
+    const start = angleTo(centre, { x: 700, y: 300 });
+    expect(rotateFrom(state, { x: 500, y: 500 }, start, false)).toBeCloseTo(90);
+  });
+
+  it("adds the swing to an already-rotated element", () => {
+    const turned = { ...state, rotation: 30 };
+    const start = angleTo(centre, { x: 700, y: 300 });
+    expect(rotateFrom(turned, { x: 500, y: 500 }, start, false)).toBeCloseTo(120);
+  });
+
+  it("does not move when the pointer has not swung", () => {
+    const start = angleTo(centre, { x: 700, y: 300 });
+    expect(rotateFrom(state, { x: 900, y: 300 }, start, false)).toBeCloseTo(0);
+  });
+
+  it("snaps the resulting angle, not the swing", () => {
+    const start = angleTo(centre, { x: 700, y: 300 });
+    // A swing of ~50deg snaps to 45, the nearest multiple of the step.
+    const pointer = {
+      x: centre.x + 200 * Math.cos((50 * Math.PI) / 180),
+      y: centre.y + 200 * Math.sin((50 * Math.PI) / 180),
+    };
+    expect(rotateFrom(state, pointer, start, true)).toBeCloseTo(45);
+    expect(rotateFrom(state, pointer, start, false)).toBeCloseTo(50);
+    expect(ROTATE_SNAP).toBe(15);
+  });
+});
+
+describe("normalizeAngle", () => {
+  it("folds into (-180, 180]", () => {
+    expect(normalizeAngle(0)).toBe(0);
+    expect(normalizeAngle(190)).toBe(-170);
+    expect(normalizeAngle(-190)).toBe(170);
+    expect(normalizeAngle(360)).toBe(0);
+    expect(normalizeAngle(450)).toBe(90);
+  });
+});
+
+describe("rotateCursor", () => {
+  it("is a cursor value with a hotspot and a fallback", () => {
+    const css = rotateCursor(0);
+    expect(css).toMatch(/^url\("data:image\/svg\+xml,/);
+    expect(css).toContain(") 12 12, crosshair");
+  });
+
+  it("reuses one string per quantised angle", () => {
+    expect(rotateCursor(0)).toBe(rotateCursor(4));
+    expect(rotateCursor(0)).not.toBe(rotateCursor(40));
+  });
+
+  it("wraps rather than running past a full turn", () => {
+    expect(rotateCursor(0)).toBe(rotateCursor(360));
+    expect(rotateCursor(-90)).toBe(rotateCursor(270));
   });
 });
