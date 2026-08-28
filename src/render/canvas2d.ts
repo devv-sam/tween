@@ -3,7 +3,15 @@ import { fieldCenter } from "../core/fields";
 
 const SIZE = 140;
 
-export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, w: number, h: number): void {
+export type ImageLookup = (id: string) => { source: CanvasImageSource; width: number; height: number } | undefined;
+
+export function drawScene(
+  ctx: CanvasRenderingContext2D,
+  scene: Scene,
+  w: number,
+  h: number,
+  imageOf?: ImageLookup,
+): void {
   ctx.clearRect(0, 0, w, h);
   for (const item of scene) {
     const s = item.state;
@@ -12,7 +20,10 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, w: number
     ctx.translate(s.x, s.y);
     ctx.rotate((s.rotation * Math.PI) / 180);
     ctx.scale(s.scale, s.scale);
-    if (item.source.kind === "text") {
+    if (item.source.kind === "image") {
+      const img = imageOf?.(item.source.value);
+      if (img) ctx.drawImage(img.source, -img.width / 2, -img.height / 2, img.width, img.height);
+    } else if (item.source.kind === "text") {
       ctx.fillStyle = "#111";
       ctx.font = "600 48px Inter, system-ui, sans-serif";
       ctx.textAlign = "center";
