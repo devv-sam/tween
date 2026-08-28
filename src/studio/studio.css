@@ -22,15 +22,53 @@ body {
   color: #111;
 }
 
+:root {
+  --studio-rail: 60px;
+}
+
 .studio {
   height: 100%;
+  display: flex;
+  flex-direction: column;
   background: #fff;
+}
+
+.studio-header {
+  height: var(--studio-rail);
+  flex-shrink: 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.studio-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.studio-sidebar {
+  width: var(--studio-rail);
+  flex-shrink: 0;
+  border-right: 1px solid #e0e0e0;
+}
+
+.studio-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.studio-timeline {
+  height: 200px;
+  flex-shrink: 0;
+  border-top: 1px solid #e0e0e0;
 }
 
 .studio-viewport {
   position: relative;
-  width: 100%;
-  height: 100%;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   outline: none;
   touch-action: none;
@@ -48,16 +86,19 @@ body {
   position: absolute;
   top: 0;
   left: 0;
+  overflow: hidden;
   transform-origin: 0 0;
   will-change: transform;
   pointer-events: none;
+  box-shadow: 0 0 0 1px #e0e0e0;
 }
 
 .studio-frame {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
   background: #fff;
-  box-shadow: 0 0 0 1px #e0e0e0;
 }
 
 .studio-grid {
@@ -75,48 +116,6 @@ body {
   height: 100%;
   display: block;
   pointer-events: none;
-}
-
-.studio-hud {
-  position: absolute;
-  left: 50%;
-  bottom: 20px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #b0b0b0;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  transform: translateX(-50%);
-}
-
-.studio-hud-frame {
-  padding: 6px 10px;
-}
-
-.studio-hud button {
-  appearance: none;
-  margin: 0;
-  padding: 6px 10px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-}
-
-.studio-hud button:hover,
-.studio-hud button[aria-pressed="true"] {
-  color: #111;
-}
-
-.studio-hud button:focus-visible {
-  outline: 1px solid #e0e0e0;
-  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
