@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { paintComposition } from "../render/paint";
 import { useStudio } from "./store";
-import { atFit, frameOrigin } from "./view";
+import { contentScale, frameOrigin, frameSize } from "./view";
 
 export function StudioCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -15,6 +15,8 @@ export function StudioCanvas() {
   const dpr = useDevicePixelRatio();
 
   const origin = frameOrigin(viewport, frame, view);
+  const size = frameSize(frame, view.scale);
+  const scale = contentScale(view);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -45,14 +47,11 @@ export function StudioCanvas() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const { viewport: vp, view: v, zoomToFit, zoomAroundPoint } = useStudio.getState();
+      const { viewport: vp, view: v, resetZoom, zoomAroundPoint } = useStudio.getState();
       const center = { x: vp.width / 2, y: vp.height / 2 };
-      if (e.key === "0" || e.key === "f" || e.key === "F") {
+      if (e.key === "0") {
         e.preventDefault();
-        zoomToFit();
-      } else if (e.key === "1") {
-        e.preventDefault();
-        zoomAroundPoint(center, 1);
+        resetZoom();
       } else if (e.key === "=" || e.key === "+") {
         e.preventDefault();
         zoomAroundPoint(center, v.zoom * 1.15);
@@ -79,26 +78,23 @@ export function StudioCanvas() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, bw, bh);
     ctx.setTransform(
-      dpr * view.zoom,
+      dpr * scale,
       0,
       0,
-      dpr * view.zoom,
-      origin.x * dpr,
-      origin.y * dpr,
+      dpr * scale,
+      (origin.x + view.panX) * dpr,
+      (origin.y + view.panY) * dpr,
     );
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, frame.width, frame.height);
+    ctx.clip();
     paintComposition(ctx, composition, t, frame.width, frame.height);
-  }, [composition, t, frame, view, viewport, dpr, origin.x, origin.y]);
+    ctx.restore();
+  }, [composition, t, frame, view, viewport, dpr, origin.x, origin.y, scale]);
 
-  const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const { viewport: vp, frame: fr, view: v, zoomToFit, zoomAroundPoint } = useStudio.getState();
-    if (atFit(v, vp, fr)) {
-      const rect = el.getBoundingClientRect();
-      zoomAroundPoint({ x: e.clientX - rect.left, y: e.clientY - rect.top }, 1);
-    } else {
-      zoomToFit();
-    }
+  const onDoubleClick = () => {
+    useStudio.getState().resetZoom();
   };
 
   return (
@@ -113,47 +109,24 @@ export function StudioCanvas() {
         <div
           className="studio-world"
           style={{
-            width: frame.width,
-            height: frame.height,
-            transform: `translate(${origin.x}px, ${origin.y}px) scale(${view.zoom})`,
+            width: size.width,
+            height: size.height,
+            transform: `translate(${origin.x}px, ${origin.y}px)`,
           }}
         >
-          <div className="studio-frame">
+          <div
+            className="studio-frame"
+            style={{
+              width: frame.width,
+              height: frame.height,
+              transform: `translate(${view.panX}px, ${view.panY}px) scale(${scale})`,
+            }}
+          >
             <div className="studio-grid" />
           </div>
         </div>
       ) : null}
       <canvas ref={canvasRef} className="studio-render" />
-      <StudioHud />
-    </div>
-  );
-}
-
-function StudioHud() {
-  const frame = useStudio((s) => s.frame);
-  const zoom = useStudio((s) => s.view.zoom);
-  const fitLocked = useStudio((s) => s.fitLocked);
-  const zoomToFit = useStudio((s) => s.zoomToFit);
-
-  const zoomTo100 = () => {
-    const { viewport, zoomAroundPoint } = useStudio.getState();
-    zoomAroundPoint({ x: viewport.width / 2, y: viewport.height / 2 }, 1);
-  };
-
-  return (
-    <div
-      className="studio-hud"
-      onDoubleClick={(e) => e.stopPropagation()}
-    >
-      <span className="studio-hud-frame">
-        {frame.width} × {frame.height}
-      </span>
-      <button type="button" aria-pressed={fitLocked} onClick={zoomToFit}>
-        Fit
-      </button>
-      <button type="button" onClick={zoomTo100}>
-        {Math.round(zoom * 100)}%
-      </button>
     </div>
   );
 }
