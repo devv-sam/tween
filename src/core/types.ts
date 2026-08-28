@@ -1,9 +1,10 @@
 export interface Transform {
-  x: number; y: number; scale: number; rotation: number; opacity: number;
+  x: number; y: number; scaleX: number; scaleY: number; rotation: number; opacity: number;
 }
 
 export type Blend = "set" | "add" | "mul";
-export type Prop = "x" | "y" | "scale" | "rotation" | "opacity";
+/** `scale` is virtual — it drives both axes at once. See `apply` in blend.ts. */
+export type Prop = "x" | "y" | "scale" | "scaleX" | "scaleY" | "rotation" | "opacity";
 
 export interface EvalCtx {
   t: number; localT: number; u: number; i: number; count: number;
@@ -44,6 +45,8 @@ export interface Layer {
   id: string;
   source: LayerSource;
   base: Transform;
+  /** Constrain width and height to their current ratio while resizing. Off by default. */
+  lockAspect?: boolean;
   distributor?: Distributor;
 }
 
@@ -57,5 +60,5 @@ export interface Composition {
   tracks: Track[];
 }
 
-export interface SceneItem { source: LayerSource; state: Transform; }
+export interface SceneItem { id: string; source: LayerSource; state: Transform; }
 export type Scene = SceneItem[];

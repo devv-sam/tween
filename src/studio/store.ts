@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Composition, Track } from "../core/types";
+import type { Composition, Track, Transform } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
 import { imageError } from "./files";
 import {
@@ -31,12 +31,12 @@ const emptyComposition = (): Composition => ({
 
 const centerOf = (frame: Size): Point => ({ x: frame.width / 2, y: frame.height / 2 });
 
-function imageTrack(assetId: string, at: Point): Track {
+function imageTrack(id: string, assetId: string, at: Point): Track {
   return {
     layer: {
-      id: crypto.randomUUID(),
+      id,
       source: { kind: "image", value: assetId },
-      base: { x: at.x, y: at.y, scale: 1, rotation: 0, opacity: 1 },
+      base: { x: at.x, y: at.y, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 },
     },
     modules: [],
   };
@@ -61,6 +61,7 @@ type StudioState = {
   importError: string | null;
   frame: Size;
   t: number;
+  selectedId: string | null;
   viewport: Size;
   view: View;
   setViewport: (viewport: Size) => void;
@@ -70,6 +71,11 @@ type StudioState = {
   importImages: (files: Iterable<File>) => Promise<void>;
   placeElement: (assetId: string, at?: Point) => void;
   removeAsset: (id: string) => void;
+  select: (layerId: string | null) => void;
+  setLayerBase: (layerId: string, patch: Partial<Transform>) => void;
+  nudgeSelected: (dx: number, dy: number) => void;
+  deleteSelected: () => void;
+  toggleLayerLock: (layerId: string) => void;
 };
 
 export const useStudio = create<StudioState>((set, get) => ({
@@ -78,6 +84,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   importError: null,
   frame: DEFAULT_FRAME,
   t: 0,
+  selectedId: null,
   viewport: { width: 0, height: 0 },
   view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
 
@@ -134,10 +141,12 @@ export const useStudio = create<StudioState>((set, get) => ({
     const { assets, frame } = get();
     if (!assets.some((a) => a.id === assetId)) return;
     const place = at ?? centerOf(frame);
+    const layerId = crypto.randomUUID();
     set((s) => ({
+      selectedId: layerId,
       composition: {
         ...s.composition,
-        tracks: [...s.composition.tracks, imageTrack(assetId, place)],
+        tracks: [...s.composition.tracks, imageTrack(layerId, assetId, place)],
       },
     }));
   },
@@ -147,13 +156,61 @@ export const useStudio = create<StudioState>((set, get) => ({
     if (!asset) return;
     URL.revokeObjectURL(asset.src);
     forgetImage(id);
+    set((s) => {
+      const tracks = s.composition.tracks.filter(
+        (tr) => !(tr.layer.source.kind === "image" && tr.layer.source.value === id),
+      );
+      return {
+        assets: s.assets.filter((a) => a.id !== id),
+        composition: { ...s.composition, tracks },
+        selectedId: tracks.some((tr) => tr.layer.id === s.selectedId) ? s.selectedId : null,
+      };
+    });
+  },
+
+  select: (layerId) => set({ selectedId: layerId }),
+
+  setLayerBase: (layerId, patch) => {
     set((s) => ({
-      assets: s.assets.filter((a) => a.id !== id),
       composition: {
         ...s.composition,
-        tracks: s.composition.tracks.filter(
-          (tr) => !(tr.layer.source.kind === "image" && tr.layer.source.value === id),
+        tracks: s.composition.tracks.map((tr) =>
+          tr.layer.id === layerId
+            ? { ...tr, layer: { ...tr.layer, base: { ...tr.layer.base, ...patch } } }
+            : tr,
         ),
+      },
+    }));
+  },
+
+  nudgeSelected: (dx, dy) => {
+    const { selectedId, composition, setLayerBase } = get();
+    const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
+    if (!track || !selectedId) return;
+    setLayerBase(selectedId, { x: track.layer.base.x + dx, y: track.layer.base.y + dy });
+  },
+
+  toggleLayerLock: (layerId) => {
+    set((s) => ({
+      composition: {
+        ...s.composition,
+        tracks: s.composition.tracks.map((tr) =>
+          tr.layer.id === layerId
+            ? { ...tr, layer: { ...tr.layer, lockAspect: !tr.layer.lockAspect } }
+            : tr,
+        ),
+      },
+    }));
+  },
+
+  deleteSelected: () => {
+    const { selectedId } = get();
+    if (!selectedId) return;
+    set((s) => ({
+      selectedId: null,
+      composition: {
+        ...s.composition,
+        tracks: s.composition.tracks.filter((tr) => tr.layer.id !== selectedId),
       },
     }));
   },

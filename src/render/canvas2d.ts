@@ -19,7 +19,7 @@ export function drawScene(
     ctx.globalAlpha = clamp01(s.opacity);
     ctx.translate(s.x, s.y);
     ctx.rotate((s.rotation * Math.PI) / 180);
-    ctx.scale(s.scale, s.scale);
+    ctx.scale(s.scaleX, s.scaleY);
     if (item.source.kind === "image") {
       const img = imageOf?.(item.source.value);
       if (img) ctx.drawImage(img.source, -img.width / 2, -img.height / 2, img.width, img.height);

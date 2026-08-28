@@ -1,6 +1,6 @@
 import type { Composition, Transform } from "./core/types";
 
-const base: Transform = { x: 400, y: 300, scale: 1, rotation: 0, opacity: 1 };
+const base: Transform = { x: 400, y: 300, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
 
 export const demo: Composition = {
   fps: 30,
@@ -36,7 +36,7 @@ export const demo3: Composition = {
       layer: {
         id: "cloner",
         source: { kind: "shape", value: "#111111" },
-        base: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 0.4 },
+        base: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 0.4 },
         distributor: { type: "path", count: 12, params: { points: arc, align: false } },
       },
       modules: [
