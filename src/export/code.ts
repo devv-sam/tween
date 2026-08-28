@@ -15,7 +15,7 @@ export function exportCode(comp: Composition, samples = 60): string {
 
   const anims = layers.map((l) => {
     const kfs = perLayer[l.id]
-      .map((k) => `{ offset:${r(k.offset)}, transform:"translate(${r(k.state.x)}px,${r(k.state.y)}px) rotate(${r(k.state.rotation)}deg) scale(${r(k.state.scale)})", opacity:${r(k.state.opacity)} }`)
+      .map((k) => `{ offset:${r(k.offset)}, transform:"translate(${r(k.state.x)}px,${r(k.state.y)}px) rotate(${r(k.state.rotation)}deg) scale(${r(k.state.scaleX)},${r(k.state.scaleY)})", opacity:${r(k.state.opacity)} }`)
       .join(",\n    ");
     return `document.getElementById(${JSON.stringify(l.id)}).animate([\n    ${kfs}\n  ], { duration:${comp.duration * 1000}, iterations:Infinity, easing:"linear" });`;
   }).join("\n\n");

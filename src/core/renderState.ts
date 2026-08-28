@@ -19,7 +19,7 @@ export function renderState(comp: Composition, t: number): Scene {
         const ctx: EvalCtx = { t, localT: remap(t, md.range), u: inst.u, i: inst.i, count: inst.count, field: sample };
         state = getModule(md.type).evaluate(state, ctx, md.params);
       }
-      scene.push({ source: track.layer.source, state });
+      scene.push({ id: track.layer.id, source: track.layer.source, state });
     }
   }
   return scene;

@@ -4,7 +4,7 @@ import type { Layer } from "./types";
 
 const layer: Layer = {
   id: "c", source: { kind: "shape", value: "#000" },
-  base: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 },
+  base: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 },
   distributor: { type: "path", count: 3, params: { points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] } },
 };
 

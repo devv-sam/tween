@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { StudioCanvas } from "./StudioCanvas";
 import { useStudio, type ImageAsset } from "./store";
 import { IMAGE_ACCEPT } from "./files";
+import { contentScale } from "./view";
 
 export function Studio() {
   const assets = useStudio((s) => s.assets);
@@ -54,10 +55,29 @@ function ShelfThumb({ asset }: { asset: ImageAsset }) {
     null,
   );
   const ref = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLImageElement | null>(null);
 
   const onDragStart = (e: DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData("application/x-tween-asset", asset.id);
     e.dataTransfer.effectAllowed = "copy";
+    // Drag at the size it will land at: the drop point becomes the element's
+    // centre, so the ghost is the asset at the canvas's current content scale.
+    const scale = contentScale(useStudio.getState().view);
+    const width = asset.naturalW * scale;
+    const height = asset.naturalH * scale;
+    const ghost = new Image();
+    ghost.src = asset.src;
+    ghost.className = "shelf-ghost";
+    ghost.style.width = `${width}px`;
+    ghost.style.height = `${height}px`;
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, width / 2, height / 2);
+    ghostRef.current = ghost;
+  };
+
+  const onDragEnd = () => {
+    ghostRef.current?.remove();
+    ghostRef.current = null;
   };
 
   const onMouseEnter = () => {
@@ -72,6 +92,7 @@ function ShelfThumb({ asset }: { asset: ImageAsset }) {
       className="shelf-thumb"
       draggable
       onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onMouseEnter={onMouseEnter}
       onMouseLeave={() => setTooltip(null)}
     >

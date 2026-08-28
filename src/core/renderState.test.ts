@@ -4,7 +4,7 @@ import { renderState } from "./renderState";
 import { emitComposition } from "./emit";
 import type { Composition, Transform } from "./types";
 
-const base: Transform = { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1 };
+const base: Transform = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
 
 const comp: Composition = {
   fps: 30,
