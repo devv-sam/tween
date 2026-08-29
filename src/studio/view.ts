@@ -20,6 +20,30 @@ export const MIN_ZOOM = 1;
 export const MAX_ZOOM = 8;
 export const ZOOM_EPS = 1e-4;
 
+/** Clear space kept between the frame and every edge of the viewport. */
+export const FRAME_MARGIN = 24;
+/** Floor for `fitScale`, so a sliver of a viewport still leaves a frame to draw. */
+export const MIN_VIEW_SCALE = 0.02;
+
+/**
+ * The largest scale at or below `preferred` that leaves the whole frame, plus its
+ * margin, inside the viewport. The frame is the composition's edge — it reads as an
+ * edge only while it is wholly on screen, so it shrinks rather than run under the chrome.
+ */
+export function fitScale(
+  viewport: Size,
+  frame: Size,
+  preferred: number = DEFAULT_VIEW_SCALE,
+): number {
+  if (viewport.width < 1 || viewport.height < 1) return preferred;
+  const room = {
+    width: viewport.width - FRAME_MARGIN * 2,
+    height: viewport.height - FRAME_MARGIN * 2,
+  };
+  const fit = Math.min(room.width / frame.width, room.height / frame.height);
+  return clamp(Math.min(preferred, fit), MIN_VIEW_SCALE, preferred);
+}
+
 export function contentScale(view: View): number {
   return view.scale * view.zoom;
 }

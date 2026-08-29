@@ -19,7 +19,9 @@ import {
   HANDLE_SIZE,
   LOCK_OFFSET,
   angleTo,
+  boundsHalf,
   boxSize,
+  clampToFrame,
   containsPoint,
   cornerPoints,
   gripAtScreen,
@@ -461,9 +463,19 @@ export function StudioCanvas() {
     }
 
     if (!drag.handle) {
+      // Bound the rendered centre, then apply the result to `base` as a delta — same as
+      // resize, so an offset an active module contributed survives the clamp.
+      const at = clampToFrame(
+        {
+          x: drag.startRendered.x + (point.x - drag.from.x),
+          y: drag.startRendered.y + (point.y - drag.from.y),
+        },
+        boundsHalf(drag.startRendered, drag.size),
+        frame,
+      );
       setLayerBase(drag.id, {
-        x: drag.startBase.x + (point.x - drag.from.x),
-        y: drag.startBase.y + (point.y - drag.from.y),
+        x: drag.startBase.x + (at.x - drag.startRendered.x),
+        y: drag.startBase.y + (at.y - drag.startRendered.y),
       });
       return;
     }

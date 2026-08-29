@@ -2,10 +2,12 @@ import { create } from "zustand";
 import type { Composition, Track, Transform } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
 import { imageError } from "./files";
+import { boundsHalf, clampToFrame } from "./selection";
 import {
   DEFAULT_FRAME,
   DEFAULT_VIEW_SCALE,
   clampPan,
+  fitScale,
   isPannable,
   zoomAround,
   type Point,
@@ -90,8 +92,10 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   setViewport: (viewport) => {
     const { frame, view } = get();
-    const pan = clampPan({ x: view.panX, y: view.panY }, view, frame);
-    set({ viewport, view: { ...view, panX: pan.x, panY: pan.y } });
+    // Refit on every resize: the frame's screen size follows the room it has.
+    const next = { ...view, scale: fitScale(viewport, frame) };
+    const pan = clampPan({ x: next.panX, y: next.panY }, next, frame);
+    set({ viewport, view: { ...next, panX: pan.x, panY: pan.y } });
   },
 
   zoomAroundPoint: (screen, nextZoom) => {
@@ -139,8 +143,14 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   placeElement: (assetId, at) => {
     const { assets, frame } = get();
-    if (!assets.some((a) => a.id === assetId)) return;
-    const place = at ?? centerOf(frame);
+    const asset = assets.find((a) => a.id === assetId);
+    if (!asset) return;
+    // A drop near an edge lands the whole element inside, not straddling it.
+    const place = clampToFrame(
+      at ?? centerOf(frame),
+      { x: asset.naturalW / 2, y: asset.naturalH / 2 },
+      frame,
+    );
     const layerId = crypto.randomUUID();
     set((s) => ({
       selectedId: layerId,
@@ -184,10 +194,22 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   nudgeSelected: (dx, dy) => {
-    const { selectedId, composition, setLayerBase } = get();
+    const { selectedId, composition, assets, frame, setLayerBase } = get();
     const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
     if (!track || !selectedId) return;
-    setLayerBase(selectedId, { x: track.layer.base.x + dx, y: track.layer.base.y + dy });
+    const { base, source } = track.layer;
+    const asset = source.kind === "image" ? assets.find((a) => a.id === source.value) : undefined;
+    const wanted = { x: base.x + dx, y: base.y + dy };
+    setLayerBase(
+      selectedId,
+      asset
+        ? clampToFrame(
+            wanted,
+            boundsHalf(base, { width: asset.naturalW, height: asset.naturalH }),
+            frame,
+          )
+        : wanted,
+    );
   },
 
   toggleLayerLock: (layerId) => {
