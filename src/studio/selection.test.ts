@@ -8,7 +8,9 @@ import {
   ROTATE_REACH,
   ROTATE_SNAP,
   angleTo,
+  boundsHalf,
   boxSize,
+  clampToFrame,
   containsPoint,
   cornerPoints,
   gripAtScreen,
@@ -458,5 +460,58 @@ describe("rotateCursor", () => {
   it("wraps rather than running past a full turn", () => {
     expect(rotateCursor(0)).toBe(rotateCursor(360));
     expect(rotateCursor(-90)).toBe(rotateCursor(270));
+  });
+});
+
+describe("frame bounds", () => {
+  const frame: Size = { width: 1920, height: 1080 };
+  const half = (state: Transform, s: Size = size) => boundsHalf(state, s);
+
+  it("measures an unrotated box by its own half extents", () => {
+    expect(half(at(0, 0))).toEqual({ x: 100, y: 50 });
+    expect(half(at(0, 0, 2, 3))).toEqual({ x: 200, y: 150 });
+  });
+
+  it("grows the bounds as a box turns — a quarter turn swaps the axes", () => {
+    const turned = half(at(0, 0, 1, 1, 90));
+    expect(turned.x).toBeCloseTo(50);
+    expect(turned.y).toBeCloseTo(100);
+    // 45 degrees reaches furthest: both axes carry half of each side.
+    const diagonal = half(at(0, 0, 1, 1, 45));
+    expect(diagonal.x).toBeCloseTo((100 + 50) * Math.SQRT1_2);
+  });
+
+  it("leaves a centre alone when the element already fits", () => {
+    expect(clampToFrame({ x: 960, y: 540 }, { x: 100, y: 50 }, frame)).toEqual({
+      x: 960,
+      y: 540,
+    });
+  });
+
+  it("pulls an overhanging element back to the edge it crossed", () => {
+    expect(clampToFrame({ x: -300, y: 20 }, { x: 100, y: 50 }, frame)).toEqual({
+      x: 100,
+      y: 50,
+    });
+    expect(clampToFrame({ x: 5000, y: 5000 }, { x: 100, y: 50 }, frame)).toEqual({
+      x: 1820,
+      y: 1030,
+    });
+  });
+
+  it("bounds a rotated element by its turned corners, not its edges", () => {
+    const state = at(0, 0, 1, 1, 90);
+    const centre = clampToFrame({ x: 0, y: 0 }, half(state), frame);
+    // Turned upright, the 100-tall box now reaches 100 sideways.
+    expect(centre.x).toBeCloseTo(50);
+    expect(centre.y).toBeCloseTo(100);
+  });
+
+  it("lets an element wider than the frame move only while it still covers it", () => {
+    const wide = { x: 1200, y: 50 };
+    expect(clampToFrame({ x: 960, y: 540 }, wide, frame).x).toBe(960);
+    // Right edge of the frame is the furthest left it may sit, and vice versa.
+    expect(clampToFrame({ x: -9999, y: 540 }, wide, frame).x).toBe(1920 - 1200);
+    expect(clampToFrame({ x: 9999, y: 540 }, wide, frame).x).toBe(1200);
   });
 });

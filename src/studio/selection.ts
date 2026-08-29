@@ -1,3 +1,4 @@
+import { clamp } from "../core/math";
 import type { Scene, SceneItem, Transform } from "../core/types";
 import {
   compositionToScreen,
@@ -118,6 +119,38 @@ const toLocal = (state: Transform, cos: number, sin: number, p: Point): Point =>
 /** On-screen size of the element's box, in composition px. What the badge reports. */
 export function boxSize(state: Transform, size: Size): Size {
   return { width: size.width * state.scaleX, height: size.height * state.scaleY };
+}
+
+/**
+ * Half-width and half-height of the element's axis-aligned bounds, rotation included.
+ * A turned box reaches further than its own edges, so this is what has to fit the frame.
+ */
+export function boundsHalf(state: Transform, size: Size): Point {
+  const h = halfExtents(state, size);
+  const { cos, sin } = axes(state.rotation);
+  return {
+    x: Math.abs(h.x * cos) + Math.abs(h.y * sin),
+    y: Math.abs(h.x * sin) + Math.abs(h.y * cos),
+  };
+}
+
+/** One axis of `clampToFrame`. Bounds cross over when the element outgrows the frame. */
+function clampAxis(v: number, half: number, extent: number): number {
+  return clamp(v, Math.min(half, extent - half), Math.max(half, extent - half));
+}
+
+/**
+ * A centre moved the least distance that puts the element's bounds inside the frame.
+ *
+ * An element bigger than the frame on an axis cannot fit, so that axis inverts: it may
+ * move only while it still covers the frame edge to edge. Without the inversion the
+ * bounds would cross and pin an oversized element to a single point.
+ */
+export function clampToFrame(centre: Point, half: Point, frame: Size): Point {
+  return {
+    x: clampAxis(centre.x, half.x, frame.width),
+    y: clampAxis(centre.y, half.y, frame.height),
+  };
 }
 
 /** Every handle's position in composition space, rotation applied. */

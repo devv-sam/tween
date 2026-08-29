@@ -14,3 +14,17 @@ export function imageError(file: File): string | null {
   if (file.size > MAX_IMAGE_BYTES) return MSG_SIZE;
   return null;
 }
+
+export type ImageExt = "png" | "jpg" | "webp";
+
+/** The type chip's label. jpeg reads as jpg; a name we don't recognise gets no chip. */
+export function extensionOf(name: string): ImageExt | null {
+  const ext = EXT.exec(name)?.[1].toLowerCase();
+  if (!ext) return null;
+  return ext === "jpeg" ? "jpg" : (ext as ImageExt);
+}
+
+/** The name without its extension — the chip carries the type, so the row needn't repeat it. */
+export function baseName(name: string): string {
+  return name.replace(EXT, "");
+}

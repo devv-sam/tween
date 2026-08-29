@@ -1,12 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_VIEW_SCALE,
+  FRAME_MARGIN,
   MAX_ZOOM,
+  MIN_VIEW_SCALE,
   MIN_ZOOM,
   clampPan,
   clampZoom,
   compositionToScreen,
   contentScale,
+  fitScale,
   frameOrigin,
   frameSize,
   isPannable,
@@ -37,6 +40,33 @@ describe("viewport scale", () => {
     const origin = frameOrigin(viewport, frame, { ...base, zoom: 4, panX: -100, panY: -40 });
     expect(origin.x).toBeCloseTo((1200 - 960) / 2);
     expect(origin.y).toBeCloseTo((800 - 540) / 2);
+  });
+});
+
+describe("fitScale", () => {
+  it("keeps the preferred scale when the viewport has room", () => {
+    expect(fitScale(viewport, frame)).toBe(DEFAULT_VIEW_SCALE);
+  });
+
+  it("shrinks so the frame and its margin stay inside a narrow viewport", () => {
+    const narrow = { width: 700, height: 800 };
+    const scale = fitScale(narrow, frame);
+    const size = frameSize(frame, scale);
+    expect(scale).toBeLessThan(DEFAULT_VIEW_SCALE);
+    expect(size.width).toBeCloseTo(narrow.width - FRAME_MARGIN * 2);
+    expect(size.height).toBeLessThanOrEqual(narrow.height - FRAME_MARGIN * 2);
+  });
+
+  it("fits to whichever axis is tighter", () => {
+    const short = { width: 1200, height: 300 };
+    const size = frameSize(frame, fitScale(short, frame));
+    expect(size.height).toBeCloseTo(short.height - FRAME_MARGIN * 2);
+    expect(size.width).toBeLessThanOrEqual(short.width - FRAME_MARGIN * 2);
+  });
+
+  it("never returns a scale that would leave nothing to draw", () => {
+    expect(fitScale({ width: 10, height: 10 }, frame)).toBe(MIN_VIEW_SCALE);
+    expect(fitScale({ width: 0, height: 0 }, frame)).toBe(DEFAULT_VIEW_SCALE);
   });
 });
 
