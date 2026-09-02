@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import type { ModuleData, Track, Transform } from "../core/types";
+import type { Driver, ModuleData, Track, Transform } from "../core/types";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
 import { useStudio, type ImageAsset } from "./store";
+import {
+  DRIVERS,
+  FPS_CHOICES,
+  RESOLUTIONS,
+  normalizeHex,
+  resolutionFor,
+  resolutionKey,
+} from "./composition";
+import { MAX_DURATION, MIN_DURATION } from "./ruler";
 import {
   EASINGS,
   PROPS,
@@ -25,16 +34,17 @@ import {
 const LABEL = "text-[10px] uppercase tracking-[0.04em] text-[#888]";
 const SECTION = "border-b border-[#e0e0e0] px-3 py-3";
 const INPUT =
-  "min-w-0 w-full bg-transparent text-[11px] text-[#111] tabular-nums outline-none placeholder:text-[#c0c0c0]";
+  "min-w-0 bg-transparent text-[11px] text-[#111] tabular-nums outline-none placeholder:text-[#c0c0c0]";
 const BOX =
   "flex items-center gap-1.5 rounded-md border border-[#e0e0e0] px-2 h-[26px] focus-within:border-[#0d99ff]";
 const GHOST_BTN =
   "rounded-md border border-[#e0e0e0] px-2 h-[26px] text-[11px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]";
 
 /**
- * Contextual: the panel exists only while an element is selected. With nothing
- * selected there is nothing to inspect, so it unmounts rather than stand there
- * empty — the frame takes the width back.
+ * Always in the layout at a fixed width, so selecting an element changes what this
+ * panel says and never how wide the frame is. One content slot, three possible
+ * occupants: composition settings, the element inspector, and the module inspector
+ * nested inside it.
  */
 export function Inspector() {
   const composition = useStudio((s) => s.composition);
@@ -42,25 +52,173 @@ export function Inspector() {
   const selectedId = useStudio((s) => s.selectedId);
 
   const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
-  if (index < 0) return null;
+  const track = index < 0 ? null : composition.tracks[index];
+  const assetName =
+    track?.layer.source.kind === "image"
+      ? assets.find((a) => a.id === track.layer.source.value)?.name
+      : undefined;
 
   return (
     <aside
-      className="flex h-full w-[268px] shrink-0 flex-col border-l border-[#e0e0e0] bg-white"
+      className="flex h-full w-[300px] shrink-0 flex-col border-l border-[#e0e0e0] bg-white"
       aria-label="inspector"
     >
       <header className="flex h-9 shrink-0 items-center border-b border-[#e0e0e0] px-3">
-        <span className={LABEL}>element</span>
+        <span className={`${LABEL} truncate`}>
+          {track ? layerName(track.layer, assetName, index) : "composition"}
+        </span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ElementPanel
-          track={composition.tracks[index]}
-          index={index}
-          assets={assets}
-          duration={composition.duration}
-        />
+        {track ? (
+          <ElementPanel
+            track={track}
+            index={index}
+            assets={assets}
+            duration={composition.duration}
+          />
+        ) : (
+          <CompositionPanel />
+        )}
       </div>
     </aside>
+  );
+}
+
+/** What the panel holds with nothing selected: the composition is always there to edit. */
+function CompositionPanel() {
+  const { duration, fps, driver, background } = useStudio((s) => s.composition);
+  const frame = useStudio((s) => s.frame);
+
+  return (
+    <section className={SECTION}>
+      <p className={`${LABEL} mb-2`}>composition</p>
+
+      <div className="flex flex-col gap-1.5">
+        <NumberField
+          label="duration"
+          title="duration in seconds"
+          value={duration}
+          min={MIN_DURATION}
+          max={MAX_DURATION}
+          step={0.5}
+          onChange={(v) => useStudio.getState().setDuration(v)}
+        />
+
+        <SelectField
+          label="fps"
+          value={String(fps)}
+          onChange={(v) => useStudio.getState().setFps(Number(v))}
+          options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
+        />
+
+        <SelectField
+          label="resolution"
+          value={resolutionKey(frame)}
+          onChange={(v) => {
+            const size = resolutionFor(v);
+            if (size) useStudio.getState().setResolution(size);
+          }}
+          options={RESOLUTIONS.map((r) => ({ value: resolutionKey(r.size), label: r.label }))}
+        />
+
+        <BackgroundField value={background ?? "#ffffff"} />
+
+        <div className={`${BOX} justify-between`}>
+          <span className={LABEL}>driver</span>
+          <DriverToggle value={driver.kind} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Swatch and hex, one value. The swatch is the native picker; the text field takes a
+ * typed colour and only commits once it is a whole one, so a half-typed `#ab` does
+ * not repaint the frame.
+ */
+function BackgroundField({ value }: { value: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const set = (hex: string) => useStudio.getState().setBackground(hex);
+
+  return (
+    <div className={BOX}>
+      <span className={`${LABEL} shrink-0`}>background</span>
+      <input
+        type="color"
+        aria-label="background colour"
+        className="ml-auto h-[16px] w-[22px] shrink-0 cursor-pointer rounded-[3px] border border-[#e0e0e0] bg-transparent p-0"
+        value={value}
+        onChange={(e) => {
+          setDraft(null);
+          set(e.target.value);
+        }}
+      />
+      <input
+        className={`${INPUT} w-[64px] shrink-0 text-right uppercase`}
+        aria-label="background hex"
+        spellCheck={false}
+        value={draft ?? value}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const hex = normalizeHex(e.target.value);
+          if (hex) set(hex);
+        }}
+        onBlur={() => setDraft(null)}
+      />
+    </div>
+  );
+}
+
+/** Two segments, one value. `input` is declared here before anything evaluates it. */
+function DriverToggle({ value }: { value: Driver["kind"] }) {
+  return (
+    <div className="flex overflow-hidden rounded-md border border-[#e0e0e0]">
+      {DRIVERS.map((kind) => (
+        <button
+          key={kind}
+          type="button"
+          aria-pressed={value === kind}
+          className={`px-2 py-0.5 text-[10px] ${
+            value === kind
+              ? "bg-[#e8f4ff] text-[#0d99ff]"
+              : "text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+          }`}
+          onClick={() => useStudio.getState().setDriver(kind)}
+        >
+          {kind}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={`${BOX} justify-between`}>
+      <span className={LABEL}>{label}</span>
+      <select
+        className="bg-transparent text-[11px] text-[#111] outline-none"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -89,7 +247,7 @@ function ElementPanel({
       <section className={SECTION}>
         <div className={BOX}>
           <input
-            className={INPUT}
+            className={`${INPUT} w-full`}
             value={layer.name ?? ""}
             placeholder={layerName({ ...layer, name: undefined }, asset?.name, index)}
             aria-label="element name"
@@ -461,7 +619,7 @@ function NumberField({
     <label className={BOX} title={title ?? label}>
       <span className={`${LABEL} shrink-0`}>{label}</span>
       <input
-        className={`${INPUT} text-right`}
+        className={`${INPUT} w-full text-right`}
         inputMode="decimal"
         value={shown}
         onChange={(e) => commit(e.target.value)}

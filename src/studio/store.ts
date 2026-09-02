@@ -1,10 +1,11 @@
 import { create } from "zustand";
 import { clamp } from "../core/math";
-import type { Composition, ModuleData, Track, Transform } from "../core/types";
+import type { Composition, Driver, ModuleData, Track, Transform } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
 import { imageError } from "./files";
 import { boundsHalf, clampToFrame } from "./selection";
 import { newKeyframeModule, type KeyProp, type Range } from "./modules";
+import { clampFps } from "./composition";
 import { clampDuration } from "./ruler";
 import {
   DEFAULT_FRAME,
@@ -31,6 +32,7 @@ const emptyComposition = (): Composition => ({
   fps: 30,
   duration: 3,
   driver: { kind: "time" },
+  background: "#ffffff",
   tracks: [],
 });
 
@@ -95,6 +97,10 @@ type StudioState = {
   setPlaying: (playing: boolean) => void;
   toggleLoop: () => void;
   setDuration: (seconds: number) => void;
+  setFps: (fps: number) => void;
+  setResolution: (size: Size) => void;
+  setBackground: (hex: string) => void;
+  setDriver: (kind: Driver["kind"]) => void;
   setViewport: (viewport: Size) => void;
   zoomAroundPoint: (screen: Point, nextZoom: number) => void;
   panBy: (dx: number, dy: number) => void;
@@ -140,6 +146,29 @@ export const useStudio = create<StudioState>((set, get) => ({
     set((s) => ({
       composition: { ...s.composition, duration: clampDuration(seconds) },
     }));
+  },
+
+  setFps: (fps) => {
+    set((s) => ({ composition: { ...s.composition, fps: clampFps(fps) } }));
+  },
+
+  /**
+   * A resolution change is a reframe: the new frame has to be refitted to the room
+   * the viewport has, the same way a resize does it.
+   */
+  setResolution: (size) => {
+    const { viewport, view } = get();
+    const next = { ...view, scale: fitScale(viewport, size) };
+    const pan = clampPan({ x: next.panX, y: next.panY }, next, size);
+    set({ frame: size, view: { ...next, panX: pan.x, panY: pan.y } });
+  },
+
+  setBackground: (hex) => {
+    set((s) => ({ composition: { ...s.composition, background: hex } }));
+  },
+
+  setDriver: (kind) => {
+    set((s) => ({ composition: { ...s.composition, driver: { kind } } }));
   },
 
   setViewport: (viewport) => {

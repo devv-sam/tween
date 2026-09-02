@@ -26,8 +26,6 @@ body {
 
 :root {
   --studio-header: 60px;
-  --studio-rail: 56px;
-  --studio-drawer: 236px;
 }
 
 .studio {
@@ -48,146 +46,6 @@ body {
   flex: 1;
   display: flex;
   min-height: 0;
-}
-
-.studio-sidebar {
-  flex-shrink: 0;
-  display: flex;
-  min-height: 0;
-  border-right: 1px solid #e0e0e0;
-  background: #fff;
-}
-
-/* Tab column. Its right border is the divider between rail and drawer. */
-.studio-rail {
-  width: var(--studio-rail);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 5px;
-  border-right: 1px solid #e0e0e0;
-}
-
-.rail-tab {
-  appearance: none;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 2px 6px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: #888;
-  font: inherit;
-  font-size: 10px;
-  line-height: 1.2;
-  cursor: pointer;
-}
-
-.rail-tab-icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  color: #555;
-}
-
-.rail-tab:hover .rail-tab-icon {
-  background: #f5f5f5;
-}
-
-.rail-tab.is-active {
-  color: #111;
-  font-weight: 500;
-}
-
-.rail-tab.is-active .rail-tab-icon,
-.rail-tab.is-active:hover .rail-tab-icon {
-  background: #e8f4ff;
-  color: #0d99ff;
-}
-
-.rail-tab-label {
-  line-height: 1.2;
-}
-
-.rail-tab:focus-visible {
-  outline: 1px solid #111;
-  outline-offset: -1px;
-}
-
-.assets-drawer {
-  width: var(--studio-drawer);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.assets-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 12px 8px;
-  background: #fff;
-}
-
-.assets-head-title {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #888;
-}
-
-.assets-import {
-  appearance: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: #555;
-  cursor: pointer;
-}
-
-.assets-import:hover {
-  background: #f5f5f5;
-  color: #111;
-}
-
-.assets-import:focus-visible {
-  outline: 1px solid #111;
-  outline-offset: 1px;
-}
-
-.assets-empty {
-  margin: 0;
-  padding: 4px 12px 12px;
-  color: #b0b0b0;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.assets-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 10px;
-  padding: 4px 12px 14px;
 }
 
 .asset-card {
@@ -591,14 +449,6 @@ body {
   will-change: transform;
   pointer-events: none;
   box-shadow: 0 0 0 1px #e0e0e0;
-}
-
-.studio-frame {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: 0 0;
-  background: #fff;
 }
 
 .studio-grid {

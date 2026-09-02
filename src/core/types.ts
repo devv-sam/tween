@@ -54,10 +54,13 @@ export interface Layer {
 
 export interface Track { layer: Layer; modules: ModuleData[]; }
 
-export interface Driver { kind: "time" | "scroll" | "cursor"; }
+/** `input` is declared but not yet evaluated — the module increment gives it meaning. */
+export interface Driver { kind: "time" | "input" | "scroll" | "cursor"; }
 
 export interface Composition {
   fps: number; duration: number; driver: Driver;
+  /** Paper colour behind every layer. Undefined leaves the frame transparent. */
+  background?: string;
   fields?: FieldDef[];
   tracks: Track[];
 }

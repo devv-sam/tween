@@ -1,43 +1,73 @@
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Inspector } from "./Inspector";
 import { StudioCanvas } from "./StudioCanvas";
 import { Timeline } from "./Timeline";
 import { useStudio, type ImageAsset } from "./store";
 import { IMAGE_ACCEPT, baseName, extensionOf } from "./files";
 import { contentScale } from "./view";
+import { readAssetsCollapsed, writeAssetsCollapsed } from "./prefs";
 
 export function Studio() {
   const assets = useStudio((s) => s.assets);
-  // The rail tab is a panel switch, so it collapses the drawer as well as opening it.
-  const [open, setOpen] = useState(true);
+  // Read once on mount so the drawer opens in the state it was left in, without a
+  // frame of the wrong width first.
+  const [collapsed, setCollapsed] = useState(readAssetsCollapsed);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => writeAssetsCollapsed(collapsed), [collapsed]);
 
   return (
     <div className="studio">
       <header className="studio-header" />
       <div className="studio-body">
-        <nav className="studio-sidebar" aria-label="studio">
-          <div className="studio-rail">
+        {/* Both panels are always in the layout. Only the rail's own width changes on
+            collapse, so the frame grows from the left and never from the right. */}
+        <nav
+          className="flex min-h-0 shrink-0 border-r border-[#e0e0e0] bg-white"
+          aria-label="studio"
+        >
+          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-[#e0e0e0] px-[5px] py-2">
             <button
               type="button"
-              className={`rail-tab${open ? " is-active" : ""}`}
-              aria-expanded={open}
+              className={`flex w-full flex-col items-center gap-1 rounded-[7px] px-0.5 pt-[5px] pb-1.5 text-[10px] leading-tight focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[#111] ${
+                collapsed ? "text-[#888]" : "font-medium text-[#111]"
+              }`}
+              aria-expanded={!collapsed}
               aria-controls="assets-drawer"
-              onClick={() => setOpen((v) => !v)}
+              title={collapsed ? "expand" : "collapse"}
+              onClick={() => setCollapsed((v) => !v)}
             >
-              <span className="rail-tab-icon">
+              <span
+                className={`grid h-7 w-7 place-items-center rounded-[7px] ${
+                  collapsed
+                    ? "text-[#555] hover:bg-[#f5f5f5]"
+                    : "bg-[#e8f4ff] text-[#0d99ff]"
+                }`}
+              >
                 <ImageIcon />
               </span>
-              <span className="rail-tab-label">Assets</span>
+              <span className="leading-tight">Assets</span>
             </button>
           </div>
-          {open ? (
-            <div className="assets-drawer" id="assets-drawer">
-              <div className="assets-head">
-                <span className="assets-head-title">Assets</span>
+          {collapsed ? null : (
+            <div
+              className="flex w-[236px] shrink-0 flex-col overflow-y-auto [scrollbar-width:none]"
+              id="assets-drawer"
+            >
+              <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-white px-3 pt-3 pb-2">
                 <button
                   type="button"
-                  className="assets-import"
+                  className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888] hover:text-[#111]"
+                  title="collapse"
+                  aria-expanded
+                  aria-controls="assets-drawer"
+                  onClick={() => setCollapsed(true)}
+                >
+                  Assets
+                </button>
+                <button
+                  type="button"
+                  className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
                   aria-label="Import images"
                   title="Import images"
                   onClick={() => inputRef.current?.click()}
@@ -61,18 +91,18 @@ export function Studio() {
                 }}
               />
               {assets.length === 0 ? (
-                <p className="assets-empty">
+                <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-[#b0b0b0]">
                   Nothing here yet. Import png, jpg, or webp.
                 </p>
               ) : (
-                <div className="assets-grid">
+                <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 px-3 pt-1 pb-3.5">
                   {assets.map((asset) => (
                     <AssetCard key={asset.id} asset={asset} />
                   ))}
                 </div>
               )}
             </div>
-          ) : null}
+          )}
         </nav>
         <div className="studio-main">
           <StudioCanvas />
