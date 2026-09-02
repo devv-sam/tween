@@ -9,10 +9,14 @@ import type { ModuleData } from "../core/types";
 import { Preview } from "../render/preview";
 import { useStudio } from "./store";
 import {
+  BLOCK_HEIGHT,
   PROP_COLOR,
+  blockTop,
   layerName,
   moduleLabel,
   moduleProp,
+  moduleStops,
+  rowHeight,
   slideRange,
   trimRange,
   type Range,
@@ -182,6 +186,7 @@ export function Timeline() {
       id: track.layer.id,
       name: layerName(track.layer, asset?.name, i),
       modules: track.modules,
+      height: rowHeight(track.modules.length, TRACK_HEIGHT),
     };
   });
 
@@ -232,7 +237,7 @@ export function Timeline() {
             <div
               key={row.id}
               className="timeline-track-label"
-              style={{ height: TRACK_HEIGHT }}
+              style={{ height: row.height }}
               title={row.name}
             >
               {row.name}
@@ -278,13 +283,14 @@ export function Timeline() {
               <div
                 key={row.id}
                 className="relative border-b border-[#f0f0f0] bg-[#fafafa]"
-                style={{ height: TRACK_HEIGHT }}
+                style={{ height: row.height }}
               >
                 {row.modules.map((md, i) => (
                   <TrackBlock
                     key={i}
                     layerId={row.id}
                     index={i}
+                    count={row.modules.length}
                     module={md}
                     width={width}
                   />
@@ -325,18 +331,6 @@ type BlockDrag = { pointerId: number; fromX: number; start: Range; edge: "start"
 /** Edge grab width, in px. Wide enough to hit, narrow enough to leave a body. */
 const EDGE_GRAB = 6;
 
-/** Block height and the step each successive block in a lane is dropped by. */
-const BLOCK_HEIGHT = 18;
-const BLOCK_STEP = 5;
-const BLOCK_SLOTS = 3;
-
-/**
- * Where a block sits inside its lane. Modules share one row and may overlap — two
- * properties animating over the same window is the point — so each is dropped a few
- * pixels below the last, and one covering another still leaves its colour showing.
- */
-const blockTop = (index: number) => 3 + (index % BLOCK_SLOTS) * BLOCK_STEP;
-
 /**
  * A module's window, drawn in its element's lane. Dragging it writes `module.range`
  * through the same store action the inspector's start / end fields use, so the two
@@ -345,11 +339,13 @@ const blockTop = (index: number) => 3 + (index % BLOCK_SLOTS) * BLOCK_STEP;
 function TrackBlock({
   layerId,
   index,
+  count,
   module: md,
   width,
 }: {
   layerId: string;
   index: number;
+  count: number;
   module: ModuleData;
   width: number;
 }) {
@@ -422,7 +418,7 @@ function TrackBlock({
       style={{
         left,
         width: Math.max(2, right - left),
-        top: blockTop(index),
+        top: blockTop(index, count, TRACK_HEIGHT),
         height: BLOCK_HEIGHT,
       }}
       onPointerDown={onDown}
@@ -435,6 +431,15 @@ function TrackBlock({
       <span className="pointer-events-none block truncate px-2 text-[10px] leading-4">
         {moduleLabel(md)}
       </span>
+      {moduleStops(md).map((stop, i) => (
+        // A stop's t is a share of this block, so its diamond rides the block as it is
+        // trimmed. The nudge keeps the end diamonds off the rounded corners.
+        <span
+          key={i}
+          className="pointer-events-none absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-current bg-white"
+          style={{ left: `calc(${stop.t * 100}% + ${(0.5 - stop.t) * 9}px)` }}
+        />
+      ))}
     </div>
   );
 }

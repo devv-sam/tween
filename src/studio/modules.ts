@@ -85,6 +85,31 @@ export function layerName(
   return layer.name?.trim() || assetName || `Element ${index + 1}`;
 }
 
+/**
+ * Lane geometry. Each module gets its own band inside its element's row, so two
+ * modules covering the same span are read apart at a glance — they overlap in time
+ * without overlapping on screen. The row grows to fit them and the gutter label
+ * follows, which is why this is one function both columns call.
+ */
+export const BLOCK_HEIGHT = 18;
+export const BLOCK_GAP = 4;
+const ROW_PAD = 4;
+
+export function rowHeight(moduleCount: number, min: number): number {
+  const stack =
+    moduleCount < 1
+      ? 0
+      : moduleCount * BLOCK_HEIGHT + (moduleCount - 1) * BLOCK_GAP + ROW_PAD * 2;
+  return Math.max(min, stack);
+}
+
+/** Top of a module's band, centred in whatever height the row settled on. */
+export function blockTop(index: number, moduleCount: number, min: number): number {
+  const stack = moduleCount * BLOCK_HEIGHT + (moduleCount - 1) * BLOCK_GAP;
+  const top = (rowHeight(moduleCount, min) - stack) / 2;
+  return top + index * (BLOCK_HEIGHT + BLOCK_GAP);
+}
+
 /** Narrower than this and a block has no body left to grab between its two edges. */
 export const MIN_RANGE = 0.02;
 

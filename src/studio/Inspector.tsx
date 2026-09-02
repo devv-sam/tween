@@ -3,7 +3,6 @@ import type { ModuleData, Track, Transform } from "../core/types";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
 import { useStudio, type ImageAsset } from "./store";
-import { MAX_DURATION, MIN_DURATION } from "./ruler";
 import {
   EASINGS,
   PROPS,
@@ -32,13 +31,18 @@ const BOX =
 const GHOST_BTN =
   "rounded-md border border-[#e0e0e0] px-2 h-[26px] text-[11px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]";
 
+/**
+ * Contextual: the panel exists only while an element is selected. With nothing
+ * selected there is nothing to inspect, so it unmounts rather than stand there
+ * empty — the frame takes the width back.
+ */
 export function Inspector() {
   const composition = useStudio((s) => s.composition);
   const assets = useStudio((s) => s.assets);
   const selectedId = useStudio((s) => s.selectedId);
 
   const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
-  const track = index < 0 ? null : composition.tracks[index];
+  if (index < 0) return null;
 
   return (
     <aside
@@ -46,59 +50,17 @@ export function Inspector() {
       aria-label="inspector"
     >
       <header className="flex h-9 shrink-0 items-center border-b border-[#e0e0e0] px-3">
-        <span className={LABEL}>{track ? "element" : "nothing selected"}</span>
+        <span className={LABEL}>element</span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {track ? (
-          <ElementPanel
-            track={track}
-            index={index}
-            assets={assets}
-            duration={composition.duration}
-          />
-        ) : (
-          <CompositionPanel />
-        )}
+        <ElementPanel
+          track={composition.tracks[index]}
+          index={index}
+          assets={assets}
+          duration={composition.duration}
+        />
       </div>
     </aside>
-  );
-}
-
-/** What the inspector falls back to: the composition itself is always selected. */
-function CompositionPanel() {
-  const { duration, fps } = useStudio((s) => s.composition);
-  const frame = useStudio((s) => s.frame);
-  return (
-    <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>composition</p>
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumberField
-          label="dur"
-          title="duration in seconds"
-          value={duration}
-          min={MIN_DURATION}
-          max={MAX_DURATION}
-          step={0.5}
-          onChange={(v) => useStudio.getState().setDuration(v)}
-        />
-        <NumberField
-          label="fps"
-          title="frames per second"
-          value={fps}
-          min={1}
-          max={120}
-          step={1}
-          precision={0}
-          onChange={(v) => useStudio.getState().setFps(v)}
-        />
-      </div>
-      <div className="mt-1.5 flex h-[26px] items-center gap-1.5 rounded-md border border-[#e0e0e0] px-2">
-        <span className={`${LABEL} shrink-0`}>preset</span>
-        <span className="text-[11px] tabular-nums text-[#555]">
-          {frame.width} × {frame.height}
-        </span>
-      </div>
-    </section>
   );
 }
 
@@ -334,7 +296,7 @@ function KeyframeInspector({
 
   return (
     <section className={`${SECTION} bg-[#fbfbfb]`}>
-      <p className={`${LABEL} mb-2`}>keyframes</p>
+      <p className={`${LABEL} mb-2`}>keyframes · {prop}</p>
 
       <label className={`${BOX} justify-between`}>
         <span className={LABEL}>property</span>
@@ -384,13 +346,14 @@ function KeyframeInspector({
       </div>
 
       <div className="mt-3 flex items-center justify-between">
-        <p className={LABEL}>stops</p>
+        <p className={LABEL}>keyframes</p>
         <button
           type="button"
-          className="rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
           onClick={() => params({ stops: addStop(stops) })}
         >
-          add stop
+          <DiamondPlusIcon />
+          add keyframe
         </button>
       </div>
       {/* The remap is the one thing that surprises people: a stop's t is a share of
@@ -444,13 +407,13 @@ function KeyframeInspector({
             </select>
             <button
               type="button"
-              aria-label="remove stop"
-              title="remove stop"
+              aria-label="remove keyframe"
+              title="remove keyframe"
               disabled={stops.length <= 2}
-              className="grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
+              className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
               onClick={() => params({ stops: removeStop(stops, i) })}
             >
-              ×
+              <DiamondMinusIcon />
             </button>
           </li>
         ))}
@@ -517,5 +480,46 @@ function NumberField({
         }}
       />
     </label>
+  );
+}
+
+/** Lucide `diamond-plus` / `diamond-minus` — a keyframe is a diamond everywhere else
+ *  in the studio, so the buttons that add and remove one carry the same shape. */
+function DiamondPlusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 8v8" />
+      <path d="M8 12h8" />
+      <path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.4l7.6 7.6a2.41 2.41 0 0 0 3.4 0l7.6-7.6a2.41 2.41 0 0 0 0-3.4l-7.6-7.6a2.41 2.41 0 0 0-3.4 0Z" />
+    </svg>
+  );
+}
+
+function DiamondMinusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 12h8" />
+      <path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.4l7.6 7.6a2.41 2.41 0 0 0 3.4 0l7.6-7.6a2.41 2.41 0 0 0 0-3.4l-7.6-7.6a2.41 2.41 0 0 0-3.4 0Z" />
+    </svg>
   );
 }

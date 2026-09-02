@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { sampleStops } from "../core/curve";
 import { remap } from "../core/math";
 import {
+  BLOCK_HEIGHT,
+  BLOCK_GAP,
   MIN_RANGE,
+  blockTop,
+  rowHeight,
   addStop,
   baseValue,
   layerName,
@@ -32,6 +36,30 @@ describe("newKeyframeModule", () => {
       { t: 0, v: 2, ease: "linear" },
       { t: 1, v: 2, ease: "linear" },
     ]);
+  });
+});
+
+describe("lane geometry", () => {
+  it("keeps a short stack at the row's minimum height", () => {
+    expect(rowHeight(0, 32)).toBe(32);
+    expect(rowHeight(1, 32)).toBe(32);
+  });
+
+  it("grows the row so every module gets its own band", () => {
+    expect(rowHeight(2, 32)).toBe(BLOCK_HEIGHT * 2 + BLOCK_GAP + 8);
+    expect(rowHeight(3, 32)).toBe(BLOCK_HEIGHT * 3 + BLOCK_GAP * 2 + 8);
+  });
+
+  it("centres a lone block and stacks the rest without overlapping", () => {
+    expect(blockTop(0, 1, 32)).toBe(7);
+    for (const count of [2, 3, 4]) {
+      const tops = Array.from({ length: count }, (_, i) => blockTop(i, count, 32));
+      tops.forEach((top, i) => {
+        if (i > 0) expect(top - tops[i - 1]).toBeGreaterThanOrEqual(BLOCK_HEIGHT);
+      });
+      expect(tops[0]).toBeGreaterThanOrEqual(0);
+      expect(tops[count - 1] + BLOCK_HEIGHT).toBeLessThanOrEqual(rowHeight(count, 32));
+    }
   });
 });
 

@@ -95,7 +95,6 @@ type StudioState = {
   setPlaying: (playing: boolean) => void;
   toggleLoop: () => void;
   setDuration: (seconds: number) => void;
-  setFps: (fps: number) => void;
   setViewport: (viewport: Size) => void;
   zoomAroundPoint: (screen: Point, nextZoom: number) => void;
   panBy: (dx: number, dy: number) => void;
@@ -140,12 +139,6 @@ export const useStudio = create<StudioState>((set, get) => ({
   setDuration: (seconds) => {
     set((s) => ({
       composition: { ...s.composition, duration: clampDuration(seconds) },
-    }));
-  },
-
-  setFps: (fps) => {
-    set((s) => ({
-      composition: { ...s.composition, fps: clamp(Math.round(fps), 1, 120) },
     }));
   },
 
