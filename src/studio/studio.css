@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 *,
 *::before,
 *::after {
@@ -528,11 +530,6 @@ body {
 
 .duration-handle:hover {
   border-right-color: #0d99ff;
-}
-
-.timeline-lane {
-  border-bottom: 1px solid #f0f0f0;
-  background: #fafafa;
 }
 
 .timeline-playhead {

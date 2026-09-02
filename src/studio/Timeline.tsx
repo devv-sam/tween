@@ -5,8 +5,22 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import type { ModuleData } from "../core/types";
 import { Preview } from "../render/preview";
 import { useStudio } from "./store";
+import {
+  BLOCK_HEIGHT,
+  PROP_COLOR,
+  blockTop,
+  layerName,
+  moduleLabel,
+  moduleProp,
+  moduleStops,
+  rowHeight,
+  slideRange,
+  trimRange,
+  type Range,
+} from "./modules";
 import {
   RULER_HEIGHT,
   TRACK_HEIGHT,
@@ -168,7 +182,12 @@ export function Timeline() {
       track.layer.source.kind === "image"
         ? assets.find((a) => a.id === track.layer.source.value)
         : undefined;
-    return { id: track.layer.id, name: asset?.name ?? `Element ${i + 1}` };
+    return {
+      id: track.layer.id,
+      name: layerName(track.layer, asset?.name, i),
+      modules: track.modules,
+      height: rowHeight(track.modules.length, TRACK_HEIGHT),
+    };
   });
 
   return (
@@ -218,7 +237,7 @@ export function Timeline() {
             <div
               key={row.id}
               className="timeline-track-label"
-              style={{ height: TRACK_HEIGHT }}
+              style={{ height: row.height }}
               title={row.name}
             >
               {row.name}
@@ -263,9 +282,20 @@ export function Timeline() {
             {rows.map((row) => (
               <div
                 key={row.id}
-                className="timeline-lane"
-                style={{ height: TRACK_HEIGHT }}
-              />
+                className="relative border-b border-[#f0f0f0] bg-[#fafafa]"
+                style={{ height: row.height }}
+              >
+                {row.modules.map((md, i) => (
+                  <TrackBlock
+                    key={i}
+                    layerId={row.id}
+                    index={i}
+                    count={row.modules.length}
+                    module={md}
+                    width={width}
+                  />
+                ))}
+              </div>
             ))}
           </div>
 
@@ -291,6 +321,125 @@ export function Timeline() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Which part of a block a drag grabbed. The body slides the window; an edge trims it. */
+type BlockDrag = { pointerId: number; fromX: number; start: Range; edge: "start" | "end" | null };
+
+/** Edge grab width, in px. Wide enough to hit, narrow enough to leave a body. */
+const EDGE_GRAB = 6;
+
+/**
+ * A module's window, drawn in its element's lane. Dragging it writes `module.range`
+ * through the same store action the inspector's start / end fields use, so the two
+ * surfaces can never drift apart.
+ */
+function TrackBlock({
+  layerId,
+  index,
+  count,
+  module: md,
+  width,
+}: {
+  layerId: string;
+  index: number;
+  count: number;
+  module: ModuleData;
+  width: number;
+}) {
+  const selected = useStudio(
+    (s) => s.selectedId === layerId && s.selectedModule === index,
+  );
+  const dragRef = useRef<BlockDrag | null>(null);
+  const prop = moduleProp(md);
+  const left = timeToX(md.range[0], width);
+  const right = timeToX(md.range[1], width);
+
+  const edgeAt = (e: ReactPointerEvent<HTMLElement>): "start" | "end" | null => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientX - rect.left <= EDGE_GRAB) return "start";
+    if (rect.right - e.clientX <= EDGE_GRAB) return "end";
+    return null;
+  };
+
+  const onDown = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    useStudio.getState().selectModule(layerId, index);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      return;
+    }
+    dragRef.current = {
+      pointerId: e.pointerId,
+      fromX: e.clientX,
+      start: md.range,
+      edge: edgeAt(e),
+    };
+  };
+
+  const onMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag) {
+      e.currentTarget.style.cursor = edgeAt(e) ? "ew-resize" : "grab";
+      return;
+    }
+    if (drag.pointerId !== e.pointerId || width < 1) return;
+    const delta = (e.clientX - drag.fromX) / width;
+    const next = drag.edge
+      ? trimRange(drag.start, drag.edge, drag.start[drag.edge === "start" ? 0 : 1] + delta)
+      : slideRange(drag.start, delta);
+    useStudio.getState().setModuleRange(layerId, index, next);
+  };
+
+  const onUp = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${moduleLabel(md)} module`}
+      aria-pressed={selected}
+      title={`${moduleLabel(md)} — drag to move, drag an edge to trim`}
+      className={`absolute cursor-grab touch-none overflow-hidden rounded-[4px] border ${PROP_COLOR[prop]} ${
+        selected ? "ring-1 ring-[#0d99ff]" : ""
+      }`}
+      style={{
+        left,
+        width: Math.max(2, right - left),
+        top: blockTop(index, count, TRACK_HEIGHT),
+        height: BLOCK_HEIGHT,
+      }}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-current opacity-25" />
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] bg-current opacity-25" />
+      <span className="pointer-events-none block truncate px-2 text-[10px] leading-4">
+        {moduleLabel(md)}
+      </span>
+      {moduleStops(md).map((stop, i) => (
+        // A stop's t is a share of this block, so its diamond rides the block as it is
+        // trimmed. The nudge keeps the end diamonds off the rounded corners.
+        <span
+          key={i}
+          className="pointer-events-none absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-current bg-white"
+          style={{ left: `calc(${stop.t * 100}% + ${(0.5 - stop.t) * 9}px)` }}
+        />
+      ))}
     </div>
   );
 }

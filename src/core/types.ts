@@ -43,6 +43,8 @@ export type LayerSource = { kind: "image" | "text" | "shape"; value: string };
 
 export interface Layer {
   id: string;
+  /** What the studio calls this element. Falls back to the asset's filename. */
+  name?: string;
   source: LayerSource;
   base: Transform;
   /** Constrain width and height to their current ratio while resizing. Off by default. */

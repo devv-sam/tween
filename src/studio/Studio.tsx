@@ -1,4 +1,5 @@
 import { useRef, useState, type DragEvent } from "react";
+import { Inspector } from "./Inspector";
 import { StudioCanvas } from "./StudioCanvas";
 import { Timeline } from "./Timeline";
 import { useStudio, type ImageAsset } from "./store";
@@ -77,6 +78,7 @@ export function Studio() {
           <StudioCanvas />
           <Timeline />
         </div>
+        <Inspector />
       </div>
     </div>
   );
