@@ -8,7 +8,9 @@ import {
   MIN_RANGE,
   blockTop,
   rowHeight,
-  addStop,
+  secondsToT,
+  stopAtTime,
+  stopSeconds,
   baseValue,
   layerName,
   newKeyframes,
@@ -211,14 +213,6 @@ describe("stops", () => {
     { t: 0.8, v: 1, ease: "linear" as const },
   ];
 
-  it("adds into the widest gap, on the line already drawn", () => {
-    expect(addStop(stops)).toEqual([
-      { t: 0.2, v: 0.5, ease: "linear" },
-      { t: 0.5, v: 0.75, ease: "linear" },
-      { t: 0.8, v: 1, ease: "linear" },
-    ]);
-  });
-
   it("re-sorts when a stop is dragged past its neighbour", () => {
     expect(patchStop(stops, 0, { t: 0.9 }).map((s) => s.t)).toEqual([0.8, 0.9]);
     expect(patchStop(stops, 1, { t: 0.1 }).map((s) => s.v)).toEqual([1, 0.5]);
@@ -226,7 +220,68 @@ describe("stops", () => {
 
   it("keeps the two a curve needs", () => {
     expect(removeStop(stops, 0)).toHaveLength(2);
-    expect(removeStop(addStop(stops), 1)).toHaveLength(2);
+    expect(removeStop(stopAtTime(stops, 0.5, 7), 1)).toHaveLength(2);
+  });
+});
+
+describe("stop times in seconds", () => {
+  const full: [number, number] = [0, 1];
+  const trimmed: [number, number] = [0.5, 1];
+
+  it("reads a full-range block straight off the ruler", () => {
+    expect(stopSeconds(0, full, 3)).toBe(0);
+    expect(stopSeconds(0.5, full, 3)).toBe(1.5);
+    expect(stopSeconds(1, full, 3)).toBe(3);
+  });
+
+  it("reads a trimmed block at the ruler time it actually sits on", () => {
+    expect(stopSeconds(0, trimmed, 3)).toBe(1.5);
+    expect(stopSeconds(1, trimmed, 3)).toBe(3);
+  });
+
+  it("round-trips through the block's window", () => {
+    for (const range of [full, trimmed]) {
+      for (const t of [0, 0.25, 0.5, 1]) {
+        expect(secondsToT(stopSeconds(t, range, 3), range, 3)).toBeCloseTo(t);
+      }
+    }
+  });
+
+  it("pins a time outside the block to its nearest edge", () => {
+    expect(secondsToT(-5, full, 3)).toBe(0);
+    expect(secondsToT(99, full, 3)).toBe(1);
+    expect(secondsToT(0, trimmed, 3)).toBe(0);
+    expect(secondsToT(99, trimmed, 3)).toBe(1);
+  });
+
+  it("has no answer to divide by for an empty block or composition", () => {
+    expect(secondsToT(1, [0.4, 0.4], 3)).toBe(0);
+    expect(secondsToT(1, full, 0)).toBe(0);
+  });
+});
+
+describe("stopAtTime", () => {
+  const stops = [
+    { t: 0, v: 10, ease: "linear" as const },
+    { t: 1, v: 90, ease: "inout" as const },
+  ];
+
+  it("inserts in time order", () => {
+    expect(stopAtTime(stops, 0.4, 55).map((s) => [s.t, s.v])).toEqual([
+      [0, 10],
+      [0.4, 55],
+      [1, 90],
+    ]);
+  });
+
+  it("carries the easing of the stop it follows", () => {
+    expect(stopAtTime(stops, 0.4, 55)[1].ease).toBe("linear");
+  });
+
+  it("revalues rather than doubling up on an existing keyframe", () => {
+    const next = stopAtTime(stops, 0, 42);
+    expect(next).toHaveLength(2);
+    expect(next[0].v).toBe(42);
   });
 });
 

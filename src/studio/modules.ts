@@ -1,4 +1,4 @@
-import { clamp, lerp } from "../core/math";
+import { clamp } from "../core/math";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import type { KeyframeSet, Layer, ModuleData, Track, Transform } from "../core/types";
@@ -258,19 +258,33 @@ export function patchStop(stops: Stop[], i: number, patch: Partial<Stop>): Stop[
 }
 
 /**
- * A new stop in the widest gap, valued where the curve already passes through — the
- * added stop changes the shape only once it is edited.
+ * Where a stop sits on the ruler, in seconds. Stops are stored normalized inside
+ * their block so they ride it as it is trimmed; the editor talks in the same
+ * seconds the ruler is labelled with, so a stop reading 1.5 lines up with 1.50.
  */
-export function addStop(stops: Stop[]): Stop[] {
-  if (stops.length < 2) return [...stops, { t: 1, v: stops[0]?.v ?? 0, ease: "linear" }];
-  let at = 0;
-  for (let i = 0; i < stops.length - 1; i++) {
-    if (stops[i + 1].t - stops[i].t > stops[at + 1].t - stops[at].t) at = i;
-  }
-  const a = stops[at];
-  const b = stops[at + 1];
-  const mid: Stop = { t: (a.t + b.t) / 2, v: lerp(a.v, b.v, 0.5), ease: b.ease ?? "linear" };
-  return [...stops.slice(0, at + 1), mid, ...stops.slice(at + 1)];
+export const stopSeconds = (t: number, range: Range, duration: number): number =>
+  (range[0] + t * (range[1] - range[0])) * duration;
+
+/** The inverse. A time outside the block pins to the nearest edge. */
+export function secondsToT(seconds: number, range: Range, duration: number): number {
+  const span = range[1] - range[0];
+  if (span <= 0 || duration <= 0) return 0;
+  return clamp(seconds / duration - range[0], 0, span) / span;
+}
+
+/** Close enough on the ruler to be the same keyframe rather than a second one. */
+const SAME_STOP = 1e-4;
+
+/**
+ * A stop at the playhead, holding whatever the property evaluates to right there —
+ * so adding one changes nothing until it is moved, and lands where you are looking
+ * rather than at some midpoint. Landing on an existing stop revalues it.
+ */
+export function stopAtTime(stops: Stop[], t: number, v: number): Stop[] {
+  const at = stops.findIndex((s) => Math.abs(s.t - t) < SAME_STOP);
+  if (at >= 0) return stops.map((s, i) => (i === at ? { ...s, v } : s));
+  const before = stops.filter((s) => s.t < t).pop();
+  return sortStops([...stops, { t, v, ease: before?.ease ?? "linear" }]);
 }
 
 /** Remove a stop, never below the two a curve needs. */

@@ -3,6 +3,7 @@ import type { Driver, ModuleData, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
+import { renderState } from "../core/renderState";
 import { useStudio, type ImageAsset } from "./store";
 import {
   DRIVERS,
@@ -19,7 +20,6 @@ import {
   PROP_DOT,
   PROP_STEP,
   PROP_TEXT,
-  addStop,
   baseValue,
   keyframesFor,
   layerName,
@@ -28,7 +28,11 @@ import {
   moduleStops,
   patchStop,
   removeStop,
+  secondsToT,
+  stopAtTime,
+  stopSeconds,
   type KeyProp,
+  type Range,
 } from "./modules";
 
 /** Muted chrome shared by every control in the panel, kept in one place so the
@@ -71,31 +75,32 @@ export function Inspector() {
         </span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {track ? (
-          <ElementPanel track={track} index={index} assets={assets} />
-        ) : (
-          <CompositionPanel />
-        )}
+        {/* The composition is always there to edit, so it stays put and the element's
+            own panel stacks under it rather than replacing it. */}
+        <CompositionPanel labelled={Boolean(track)} />
+        {track ? <ElementPanel track={track} index={index} assets={assets} /> : null}
       </div>
     </aside>
   );
 }
 
 /**
- * What the panel holds with nothing selected. The header already says "composition",
- * so the section does not repeat it.
+ * The composition's own settings, kept compact so an element's panel has room under
+ * them. Its heading only appears once the panel header is naming an element instead
+ * — with nothing selected the header already says "composition".
  *
  * No duration field: length is not a setting to fill in before you can animate. It
  * follows from the work, and the ruler's end handle is there when you want to say
  * otherwise.
  */
-function CompositionPanel() {
+function CompositionPanel({ labelled }: { labelled: boolean }) {
   const { fps, driver, background } = useStudio((s) => s.composition);
   const frame = useStudio((s) => s.frame);
 
   return (
     <section className={SECTION}>
-      <div className="flex flex-col gap-1.5">
+      {labelled ? <p className={`${LABEL} mb-2`}>composition</p> : null}
+      <div className="grid grid-cols-2 gap-1.5">
         <SelectField
           label="fps"
           value={String(fps)}
@@ -104,7 +109,8 @@ function CompositionPanel() {
         />
 
         <SelectField
-          label="resolution"
+          label="res"
+          title="resolution"
           value={resolutionKey(frame)}
           onChange={(v) => {
             const size = resolutionFor(v);
@@ -115,8 +121,7 @@ function CompositionPanel() {
 
         <BackgroundField value={background ?? "#ffffff"} />
 
-        <div className={`${BOX} justify-between`}>
-          <span className={LABEL}>driver</span>
+        <div className={`${BOX} justify-between px-1`} title="driver">
           <DriverToggle value={driver.kind} />
         </div>
       </div>
@@ -134,12 +139,11 @@ function BackgroundField({ value }: { value: string }) {
   const set = (hex: string) => useStudio.getState().setBackground(hex);
 
   return (
-    <div className={BOX}>
-      <span className={`${LABEL} shrink-0`}>background</span>
+    <div className={BOX} title="background">
       <input
         type="color"
         aria-label="background colour"
-        className="ml-auto h-[16px] w-[22px] shrink-0 cursor-pointer rounded-[3px] border border-[#e0e0e0] bg-transparent p-0"
+        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-[#e0e0e0] bg-transparent p-0"
         value={value}
         onChange={(e) => {
           setDraft(null);
@@ -147,7 +151,7 @@ function BackgroundField({ value }: { value: string }) {
         }}
       />
       <input
-        className={`${INPUT} w-[64px] shrink-0 text-right uppercase`}
+        className={`${INPUT} min-w-0 flex-1 text-right uppercase`}
         aria-label="background hex"
         spellCheck={false}
         value={draft ?? value}
@@ -165,13 +169,13 @@ function BackgroundField({ value }: { value: string }) {
 /** Two segments, one value. `input` is declared here before anything evaluates it. */
 function DriverToggle({ value }: { value: Driver["kind"] }) {
   return (
-    <div className="flex overflow-hidden rounded-md border border-[#e0e0e0]">
+    <div className="flex w-full overflow-hidden rounded-[5px]">
       {DRIVERS.map((kind) => (
         <button
           key={kind}
           type="button"
           aria-pressed={value === kind}
-          className={`px-2 py-0.5 text-[10px] ${
+          className={`flex-1 py-0.5 text-[10px] ${
             value === kind
               ? "bg-[#e8f4ff] text-[#0d99ff]"
               : "text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
@@ -187,17 +191,19 @@ function DriverToggle({ value }: { value: Driver["kind"] }) {
 
 function SelectField({
   label,
+  title,
   value,
   options,
   onChange,
 }: {
   label: string;
+  title?: string;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
 }) {
   return (
-    <label className={`${BOX} justify-between`}>
+    <label className={`${BOX} justify-between`} title={title ?? label}>
       <span className={LABEL}>{label}</span>
       <select
         className="bg-transparent text-[11px] text-[#111] outline-none"
@@ -260,6 +266,7 @@ function ElementPanel({
           layerId={layer.id}
           prop={activeKeyframes}
           stops={keyframesFor(track, activeKeyframes)!.stops}
+          range={keyframesFor(track, activeKeyframes)!.range}
         />
       ) : null}
 
@@ -514,7 +521,13 @@ function KeyframeInspector({
         </select>
       </label>
 
-      <StopList prop={prop} stops={stops} onChange={(next) => params({ stops: next })} />
+      <StopList
+        layerId={layerId}
+        prop={prop}
+        stops={stops}
+        range={md.range}
+        onChange={(next) => params({ stops: next })}
+      />
     </section>
   );
 }
@@ -525,10 +538,12 @@ function StopEditor({
   layerId,
   prop,
   stops,
+  range,
 }: {
   layerId: string;
   prop: KeyProp;
   stops: Stop[];
+  range: Range;
 }) {
   return (
     <section className={`${SECTION} bg-[#fbfbfb]`}>
@@ -546,8 +561,10 @@ function StopEditor({
         </button>
       </div>
       <StopList
+        layerId={layerId}
         prop={prop}
         stops={stops}
+        range={range}
         onChange={(next) => useStudio.getState().setKeyframeStops(layerId, prop, next)}
       />
     </section>
@@ -555,19 +572,32 @@ function StopEditor({
 }
 
 /**
- * Position, value, easing, one row per stop. `t` stays a share of the block's own
- * window — the block on the track is what sets that window, so this list never has
- * to talk about seconds.
+ * Time, value, easing, one row per stop. Time is read in the same seconds the ruler
+ * is labelled with, so a stop and the tick it sits under say the same number.
  */
 function StopList({
+  layerId,
   prop,
   stops,
+  range,
   onChange,
 }: {
+  layerId: string;
   prop: KeyProp;
   stops: Stop[];
+  range: Range;
   onChange: (stops: Stop[]) => void;
 }) {
+  const duration = useStudio((s) => s.composition.duration);
+
+  /** At the playhead, holding whatever the property reads there right now. */
+  const addAtPlayhead = () => {
+    const { composition, t } = useStudio.getState();
+    const item = renderState(composition, t).find((it) => it.id === layerId);
+    const v = item ? baseValue(item.state, prop) : stops[stops.length - 1].v;
+    onChange(stopAtTime(stops, clamp(secondsToT(t * duration, range, duration), 0, 1), v));
+  };
+
   return (
     <>
       <div className="flex items-center justify-between">
@@ -575,7 +605,7 @@ function StopList({
         <button
           type="button"
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
-          onClick={() => onChange(addStop(stops))}
+          onClick={addAtPlayhead}
         >
           <DiamondPlusIcon />
           add keyframe
@@ -584,16 +614,16 @@ function StopList({
       <ul className="mt-2 flex flex-col gap-1">
         {stops.map((stop, i) => (
           <li key={i} className="flex items-center gap-1">
-            <div className="w-[62px] shrink-0">
+            <div className="w-[68px] shrink-0">
               <NumberField
-                label="at"
-                title="position in this block's window"
-                value={stop.t * 100}
-                step={5}
+                label="s"
+                title="time in seconds"
+                value={stopSeconds(stop.t, range, duration)}
+                step={0.1}
                 min={0}
-                max={100}
-                precision={0}
-                onChange={(v) => onChange(patchStop(stops, i, { t: clamp(v / 100, 0, 1) }))}
+                onChange={(v) =>
+                  onChange(patchStop(stops, i, { t: secondsToT(v, range, duration) }))
+                }
               />
             </div>
             <div className="min-w-0 flex-1">
