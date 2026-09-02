@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import { clamp } from "../core/math";
-import type { Composition, Track, Transform } from "../core/types";
+import type { Composition, ModuleData, Track, Transform } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
 import { imageError } from "./files";
 import { boundsHalf, clampToFrame } from "./selection";
+import { newKeyframeModule, type KeyProp, type Range } from "./modules";
 import { clampDuration } from "./ruler";
 import {
   DEFAULT_FRAME,
@@ -59,6 +60,23 @@ async function readImageAsset(file: File): Promise<ImageAsset> {
   }
 }
 
+const patchTrack = (
+  composition: Composition,
+  layerId: string,
+  fn: (track: Track) => Track,
+): { composition: Composition } => ({
+  composition: {
+    ...composition,
+    tracks: composition.tracks.map((tr) => (tr.layer.id === layerId ? fn(tr) : tr)),
+  },
+});
+
+const patchModule = (
+  modules: ModuleData[],
+  index: number,
+  fn: (md: ModuleData) => ModuleData,
+): ModuleData[] => modules.map((md, i) => (i === index ? fn(md) : md));
+
 type StudioState = {
   composition: Composition;
   assets: ImageAsset[];
@@ -68,12 +86,16 @@ type StudioState = {
   playing: boolean;
   loop: boolean;
   selectedId: string | null;
+  /** Index into the selected layer's module stack. The inspector layers its context
+   *  on one panel, so the module selection hangs off the element selection. */
+  selectedModule: number | null;
   viewport: Size;
   view: View;
   setT: (t: number) => void;
   setPlaying: (playing: boolean) => void;
   toggleLoop: () => void;
   setDuration: (seconds: number) => void;
+  setFps: (fps: number) => void;
   setViewport: (viewport: Size) => void;
   zoomAroundPoint: (screen: Point, nextZoom: number) => void;
   panBy: (dx: number, dy: number) => void;
@@ -82,6 +104,12 @@ type StudioState = {
   placeElement: (assetId: string, at?: Point) => void;
   removeAsset: (id: string) => void;
   select: (layerId: string | null) => void;
+  selectModule: (layerId: string, index: number | null) => void;
+  renameLayer: (layerId: string, name: string) => void;
+  addKeyframeModule: (layerId: string, prop: KeyProp) => void;
+  removeModule: (layerId: string, index: number) => void;
+  setModuleParams: (layerId: string, index: number, patch: Record<string, unknown>) => void;
+  setModuleRange: (layerId: string, index: number, range: Range) => void;
   setLayerBase: (layerId: string, patch: Partial<Transform>) => void;
   nudgeSelected: (dx: number, dy: number) => void;
   deleteSelected: () => void;
@@ -97,6 +125,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   playing: false,
   loop: true,
   selectedId: null,
+  selectedModule: null,
   viewport: { width: 0, height: 0 },
   view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
 
@@ -111,6 +140,12 @@ export const useStudio = create<StudioState>((set, get) => ({
   setDuration: (seconds) => {
     set((s) => ({
       composition: { ...s.composition, duration: clampDuration(seconds) },
+    }));
+  },
+
+  setFps: (fps) => {
+    set((s) => ({
+      composition: { ...s.composition, fps: clamp(Math.round(fps), 1, 120) },
     }));
   },
 
@@ -178,6 +213,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     const layerId = crypto.randomUUID();
     set((s) => ({
       selectedId: layerId,
+      selectedModule: null,
       composition: {
         ...s.composition,
         tracks: [...s.composition.tracks, imageTrack(layerId, assetId, place)],
@@ -194,15 +230,69 @@ export const useStudio = create<StudioState>((set, get) => ({
       const tracks = s.composition.tracks.filter(
         (tr) => !(tr.layer.source.kind === "image" && tr.layer.source.value === id),
       );
+      const kept = tracks.some((tr) => tr.layer.id === s.selectedId);
       return {
         assets: s.assets.filter((a) => a.id !== id),
         composition: { ...s.composition, tracks },
-        selectedId: tracks.some((tr) => tr.layer.id === s.selectedId) ? s.selectedId : null,
+        selectedId: kept ? s.selectedId : null,
+        selectedModule: kept ? s.selectedModule : null,
       };
     });
   },
 
-  select: (layerId) => set({ selectedId: layerId }),
+  select: (layerId) => set({ selectedId: layerId, selectedModule: null }),
+
+  selectModule: (layerId, index) => set({ selectedId: layerId, selectedModule: index }),
+
+  renameLayer: (layerId, name) => {
+    set((s) => patchTrack(s.composition, layerId, (tr) => ({
+      ...tr,
+      layer: { ...tr.layer, name },
+    })));
+  },
+
+  addKeyframeModule: (layerId, prop) => {
+    const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
+    if (!track) return;
+    const md = newKeyframeModule(prop, track.layer.base);
+    set((s) => ({
+      selectedModule: track.modules.length,
+      ...patchTrack(s.composition, layerId, (tr) => ({
+        ...tr,
+        modules: [...tr.modules, md],
+      })),
+    }));
+  },
+
+  removeModule: (layerId, index) => {
+    set((s) => ({
+      // The stack shifts under the selection, so drop it rather than point it elsewhere.
+      selectedModule: s.selectedModule === index ? null : s.selectedModule,
+      ...patchTrack(s.composition, layerId, (tr) => ({
+        ...tr,
+        modules: tr.modules.filter((_, i) => i !== index),
+      })),
+    }));
+  },
+
+  setModuleParams: (layerId, index, patch) => {
+    set((s) => patchTrack(s.composition, layerId, (tr) => ({
+      ...tr,
+      modules: patchModule(tr.modules, index, (md) => ({
+        ...md,
+        params: { ...md.params, ...patch },
+      })),
+    })));
+  },
+
+  /** The one writer for a module's window. Both the inspector's start / end fields
+   *  and the timeline block's drags land here. */
+  setModuleRange: (layerId, index, range) => {
+    set((s) => patchTrack(s.composition, layerId, (tr) => ({
+      ...tr,
+      modules: patchModule(tr.modules, index, (md) => ({ ...md, range })),
+    })));
+  },
 
   setLayerBase: (layerId, patch) => {
     set((s) => ({
@@ -254,6 +344,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     if (!selectedId) return;
     set((s) => ({
       selectedId: null,
+      selectedModule: null,
       composition: {
         ...s.composition,
         tracks: s.composition.tracks.filter((tr) => tr.layer.id !== selectedId),

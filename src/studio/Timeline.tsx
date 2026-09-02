@@ -5,8 +5,18 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import type { ModuleData } from "../core/types";
 import { Preview } from "../render/preview";
 import { useStudio } from "./store";
+import {
+  PROP_COLOR,
+  layerName,
+  moduleLabel,
+  moduleProp,
+  slideRange,
+  trimRange,
+  type Range,
+} from "./modules";
 import {
   RULER_HEIGHT,
   TRACK_HEIGHT,
@@ -168,7 +178,11 @@ export function Timeline() {
       track.layer.source.kind === "image"
         ? assets.find((a) => a.id === track.layer.source.value)
         : undefined;
-    return { id: track.layer.id, name: asset?.name ?? `Element ${i + 1}` };
+    return {
+      id: track.layer.id,
+      name: layerName(track.layer, asset?.name, i),
+      modules: track.modules,
+    };
   });
 
   return (
@@ -263,9 +277,19 @@ export function Timeline() {
             {rows.map((row) => (
               <div
                 key={row.id}
-                className="timeline-lane"
+                className="relative border-b border-[#f0f0f0] bg-[#fafafa]"
                 style={{ height: TRACK_HEIGHT }}
-              />
+              >
+                {row.modules.map((md, i) => (
+                  <TrackBlock
+                    key={i}
+                    layerId={row.id}
+                    index={i}
+                    module={md}
+                    width={width}
+                  />
+                ))}
+              </div>
             ))}
           </div>
 
@@ -291,6 +315,126 @@ export function Timeline() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Which part of a block a drag grabbed. The body slides the window; an edge trims it. */
+type BlockDrag = { pointerId: number; fromX: number; start: Range; edge: "start" | "end" | null };
+
+/** Edge grab width, in px. Wide enough to hit, narrow enough to leave a body. */
+const EDGE_GRAB = 6;
+
+/** Block height and the step each successive block in a lane is dropped by. */
+const BLOCK_HEIGHT = 18;
+const BLOCK_STEP = 5;
+const BLOCK_SLOTS = 3;
+
+/**
+ * Where a block sits inside its lane. Modules share one row and may overlap — two
+ * properties animating over the same window is the point — so each is dropped a few
+ * pixels below the last, and one covering another still leaves its colour showing.
+ */
+const blockTop = (index: number) => 3 + (index % BLOCK_SLOTS) * BLOCK_STEP;
+
+/**
+ * A module's window, drawn in its element's lane. Dragging it writes `module.range`
+ * through the same store action the inspector's start / end fields use, so the two
+ * surfaces can never drift apart.
+ */
+function TrackBlock({
+  layerId,
+  index,
+  module: md,
+  width,
+}: {
+  layerId: string;
+  index: number;
+  module: ModuleData;
+  width: number;
+}) {
+  const selected = useStudio(
+    (s) => s.selectedId === layerId && s.selectedModule === index,
+  );
+  const dragRef = useRef<BlockDrag | null>(null);
+  const prop = moduleProp(md);
+  const left = timeToX(md.range[0], width);
+  const right = timeToX(md.range[1], width);
+
+  const edgeAt = (e: ReactPointerEvent<HTMLElement>): "start" | "end" | null => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientX - rect.left <= EDGE_GRAB) return "start";
+    if (rect.right - e.clientX <= EDGE_GRAB) return "end";
+    return null;
+  };
+
+  const onDown = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    useStudio.getState().selectModule(layerId, index);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      return;
+    }
+    dragRef.current = {
+      pointerId: e.pointerId,
+      fromX: e.clientX,
+      start: md.range,
+      edge: edgeAt(e),
+    };
+  };
+
+  const onMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag) {
+      e.currentTarget.style.cursor = edgeAt(e) ? "ew-resize" : "grab";
+      return;
+    }
+    if (drag.pointerId !== e.pointerId || width < 1) return;
+    const delta = (e.clientX - drag.fromX) / width;
+    const next = drag.edge
+      ? trimRange(drag.start, drag.edge, drag.start[drag.edge === "start" ? 0 : 1] + delta)
+      : slideRange(drag.start, delta);
+    useStudio.getState().setModuleRange(layerId, index, next);
+  };
+
+  const onUp = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${moduleLabel(md)} module`}
+      aria-pressed={selected}
+      title={`${moduleLabel(md)} — drag to move, drag an edge to trim`}
+      className={`absolute cursor-grab touch-none overflow-hidden rounded-[4px] border ${PROP_COLOR[prop]} ${
+        selected ? "ring-1 ring-[#0d99ff]" : ""
+      }`}
+      style={{
+        left,
+        width: Math.max(2, right - left),
+        top: blockTop(index),
+        height: BLOCK_HEIGHT,
+      }}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-current opacity-25" />
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] bg-current opacity-25" />
+      <span className="pointer-events-none block truncate px-2 text-[10px] leading-4">
+        {moduleLabel(md)}
+      </span>
     </div>
   );
 }
