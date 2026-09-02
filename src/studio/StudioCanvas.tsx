@@ -570,10 +570,11 @@ export function StudioCanvas() {
           }}
         >
           <div
-            className="studio-frame"
+            className="absolute left-0 top-0 origin-top-left"
             style={{
               width: frame.width,
               height: frame.height,
+              background: composition.background ?? "#fff",
               transform: `translate(${view.panX}px, ${view.panY}px) scale(${scale})`,
             }}
           >

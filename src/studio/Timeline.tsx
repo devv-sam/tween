@@ -32,15 +32,13 @@ import {
   type Unit,
 } from "./ruler";
 
-/** The pill is an affordance for the module increment — `input` drives nothing yet. */
-type DriverPill = "time" | "input";
-
 export function Timeline() {
   const composition = useStudio((s) => s.composition);
   const assets = useStudio((s) => s.assets);
   const t = useStudio((s) => s.t);
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);
+  const driver = composition.driver.kind;
 
   const areaRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<Preview | null>(null);
@@ -52,7 +50,6 @@ export function Timeline() {
     perPx: number;
   } | null>(null);
   const [width, setWidth] = useState(0);
-  const [driver, setDriver] = useState<DriverPill>("time");
   const [unit, setUnit] = useState<Unit>("s");
 
   const { duration } = composition;
@@ -224,7 +221,9 @@ export function Timeline() {
           type="button"
           className="driver-pill"
           title={`driver: ${driver}`}
-          onClick={() => setDriver((d) => (d === "time" ? "input" : "time"))}
+          onClick={() =>
+            useStudio.getState().setDriver(driver === "time" ? "input" : "time")
+          }
         >
           {driver}
         </button>

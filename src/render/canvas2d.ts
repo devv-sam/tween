@@ -11,8 +11,13 @@ export function drawScene(
   w: number,
   h: number,
   imageOf?: ImageLookup,
+  background?: string,
 ): void {
   ctx.clearRect(0, 0, w, h);
+  if (background) {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, w, h);
+  }
   for (const item of scene) {
     const s = item.state;
     ctx.save();
