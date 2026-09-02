@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Driver, ModuleData, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
@@ -18,6 +18,7 @@ import {
   PROP_COLOR,
   PROP_DOT,
   PROP_STEP,
+  PROP_TEXT,
   addStop,
   baseValue,
   keyframesFor,
@@ -252,24 +253,7 @@ function ElementPanel({
         </div>
       </section>
 
-      <BaseTransform layerId={layer.id} base={layer.base} />
-
-      {/* Authoring motion is a primitive action, so it lives one click from the
-          property itself rather than behind a module-creation flow. */}
-      <section className={SECTION}>
-        <p className={`${LABEL} mb-2`}>properties</p>
-        <ul className="flex flex-col gap-0.5">
-          {PROPS.map((prop) => (
-            <PropertyRow
-              key={prop}
-              layerId={layer.id}
-              prop={prop}
-              keyframed={Boolean(keyframesFor(track, prop))}
-              selected={activeKeyframes === prop}
-            />
-          ))}
-        </ul>
-      </section>
+      <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
       {activeKeyframes ? (
         <StopEditor
@@ -311,67 +295,6 @@ function ElementPanel({
   );
 }
 
-/** One animatable property: a way in when it has no motion yet, a way back to its
- *  stops once it does. */
-function PropertyRow({
-  layerId,
-  prop,
-  keyframed,
-  selected,
-}: {
-  layerId: string;
-  prop: KeyProp;
-  keyframed: boolean;
-  selected: boolean;
-}) {
-  const open = () =>
-    keyframed
-      ? useStudio.getState().selectPart(layerId, { kind: "keyframes", property: prop })
-      : useStudio.getState().addKeyframes(layerId, prop);
-
-  return (
-    <li className="flex items-center gap-1">
-      <button
-        type="button"
-        aria-pressed={selected}
-        title={keyframed ? "edit keyframes" : "add keyframe"}
-        className={`flex h-[24px] min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] ${
-          selected ? "bg-[#e8f4ff] text-[#111]" : "text-[#555] hover:bg-[#f5f5f5]"
-        }`}
-        onClick={open}
-      >
-        {/* Filled means this property already carries motion. */}
-        <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-            keyframed ? PROP_DOT[prop] : "bg-transparent"
-          }`}
-        />
-        <span className="truncate">{prop}</span>
-      </button>
-      <button
-        type="button"
-        aria-label={keyframed ? `edit ${prop} keyframes` : `add ${prop} keyframe`}
-        title={keyframed ? "edit keyframes" : "add keyframe"}
-        className="grid h-[24px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
-        onClick={open}
-      >
-        <DiamondPlusIcon />
-      </button>
-      {keyframed ? (
-        <button
-          type="button"
-          aria-label={`remove ${prop} keyframes`}
-          title="remove keyframes"
-          className="grid h-[24px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
-          onClick={() => useStudio.getState().removeKeyframes(layerId, prop)}
-        >
-          ×
-        </button>
-      ) : null}
-    </li>
-  );
-}
-
 /** Stub for the next increment: bundling authored keyframes into a named, reusable
  *  module. Disabled rather than hidden, so the path is visible before it exists. */
 function SaveAsModule() {
@@ -390,45 +313,113 @@ function SaveAsModule() {
 }
 
 /** The element's own transform, before any module runs. */
-function BaseTransform({ layerId, base }: { layerId: string; base: Transform }) {
-  const set = (patch: Partial<Transform>) =>
-    useStudio.getState().setLayerBase(layerId, patch);
+/**
+ * The element's base transform, with each field's keyframe button beside it.
+ * Authoring motion belongs next to the value it animates rather than in a second
+ * list of the same five properties.
+ */
+function BaseTransform({
+  track,
+  activeKeyframes,
+}: {
+  track: Track;
+  activeKeyframes: KeyProp | null;
+}) {
+  const { id, base } = track.layer;
+  const set = (patch: Partial<Transform>) => useStudio.getState().setLayerBase(id, patch);
 
   // One scale field for two axes: it drives scaleX and carries scaleY along at the
   // ratio a non-uniform resize left behind.
   const ratio = base.scaleX === 0 ? 1 : base.scaleY / base.scaleX;
 
+  const cell = (prop: KeyProp, field: ReactNode) => (
+    <div className="flex min-w-0 items-center gap-1">
+      <div className="min-w-0 flex-1">{field}</div>
+      <KeyframeButton
+        layerId={id}
+        prop={prop}
+        keyframed={Boolean(keyframesFor(track, prop))}
+        selected={activeKeyframes === prop}
+      />
+    </div>
+  );
+
   return (
     <section className={SECTION}>
       <p className={`${LABEL} mb-2`}>transform</p>
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} />
-        <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} />
-        <NumberField
-          label="s"
-          title="scale"
-          value={base.scaleX}
-          step={0.05}
-          min={0}
-          onChange={(v) => set({ scaleX: v, scaleY: v * ratio })}
-        />
-        <NumberField
-          label="r"
-          title="rotation in degrees"
-          value={base.rotation}
-          onChange={(v) => set({ rotation: v })}
-        />
-        <NumberField
-          label="o"
-          title="opacity"
-          value={base.opacity}
-          step={0.05}
-          min={0}
-          max={1}
-          onChange={(v) => set({ opacity: v })}
-        />
+      <div className="grid grid-cols-2 gap-x-1.5 gap-y-1">
+        {cell("x", <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} />)}
+        {cell("y", <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} />)}
+        {cell(
+          "scale",
+          <NumberField
+            label="s"
+            title="scale"
+            value={base.scaleX}
+            step={0.05}
+            min={0}
+            onChange={(v) => set({ scaleX: v, scaleY: v * ratio })}
+          />,
+        )}
+        {cell(
+          "rotation",
+          <NumberField
+            label="r"
+            title="rotation in degrees"
+            value={base.rotation}
+            onChange={(v) => set({ rotation: v })}
+          />,
+        )}
+        {cell(
+          "opacity",
+          <NumberField
+            label="o"
+            title="opacity"
+            value={base.opacity}
+            step={0.05}
+            min={0}
+            max={1}
+            onChange={(v) => set({ opacity: v })}
+          />,
+        )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Hollow means this property has no motion yet and a click starts some; filled, in
+ * the property's own colour, means it does and a click opens its stops.
+ */
+function KeyframeButton({
+  layerId,
+  prop,
+  keyframed,
+  selected,
+}: {
+  layerId: string;
+  prop: KeyProp;
+  keyframed: boolean;
+  selected: boolean;
+}) {
+  const label = keyframed ? "edit keyframes" : "add keyframe";
+  return (
+    <button
+      type="button"
+      aria-label={`${label}: ${prop}`}
+      aria-pressed={selected}
+      title={label}
+      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
+        selected ? "bg-[#e8f4ff]" : "hover:bg-[#f5f5f5]"
+      } ${keyframed ? PROP_TEXT[prop] : "text-[#c0c0c0] hover:text-[#555]"}`}
+      onClick={() => {
+        const store = useStudio.getState();
+        if (!keyframed) return store.addKeyframes(layerId, prop);
+        store.selectPart(layerId, selected ? null : { kind: "keyframes", property: prop });
+      }}
+    >
+      <DiamondIcon filled={keyframed} />
+    </button>
   );
 }
 
@@ -544,6 +535,15 @@ function StopEditor({
       <div className="mb-2 flex items-center gap-1.5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PROP_DOT[prop]}`} />
         <p className={LABEL}>{prop} keyframes</p>
+        <button
+          type="button"
+          aria-label={`remove ${prop} keyframes`}
+          title="remove keyframes"
+          className="ml-auto grid h-[20px] w-[20px] place-items-center rounded text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"
+          onClick={() => useStudio.getState().removeKeyframes(layerId, prop)}
+        >
+          ×
+        </button>
       </div>
       <StopList
         prop={prop}
@@ -697,6 +697,24 @@ function NumberField({
 
 /** Lucide `diamond-plus` / `diamond-minus` — a keyframe is a diamond everywhere else
  *  in the studio, so the buttons that add and remove one carry the same shape. */
+function DiamondIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.4l7.6 7.6a2.41 2.41 0 0 0 3.4 0l7.6-7.6a2.41 2.41 0 0 0 0-3.4l-7.6-7.6a2.41 2.41 0 0 0-3.4 0Z" />
+    </svg>
+  );
+}
+
 function DiamondPlusIcon() {
   return (
     <svg

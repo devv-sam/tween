@@ -65,6 +65,16 @@ export const PROP_OUTLINE: Record<KeyProp, string> = {
   opacity: "border-rose-400 bg-white text-rose-700",
 };
 
+/** The same hues as the blocks, as text — a filled diamond means this property
+ *  carries motion. */
+export const PROP_TEXT: Record<KeyProp, string> = {
+  x: "text-sky-500",
+  y: "text-teal-500",
+  scale: "text-violet-500",
+  rotation: "text-amber-500",
+  opacity: "text-rose-500",
+};
+
 /** The same hues as the blocks, solid — a filled dot means this property carries motion. */
 export const PROP_DOT: Record<KeyProp, string> = {
   x: "bg-sky-500",
