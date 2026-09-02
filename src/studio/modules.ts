@@ -110,6 +110,31 @@ export function blockTop(index: number, moduleCount: number, min: number): numbe
   return top + index * (BLOCK_HEIGHT + BLOCK_GAP);
 }
 
+/**
+ * Which axes a track's modules own outright.
+ *
+ * A `set` blend replaces the property rather than adding to it, so while such a
+ * module is on the stack the base value has nothing to show — dragging the element
+ * would write to `base.x` and change nothing on screen. Moving the element has to
+ * move these instead, which slides the whole curve and leaves its shape alone.
+ */
+export type PositionDriver = { axis: "x" | "y"; index: number; stops: Stop[] };
+
+export function positionDrivers(modules: ModuleData[]): PositionDriver[] {
+  const out: PositionDriver[] = [];
+  modules.forEach((md, index) => {
+    const axis = moduleProp(md);
+    if (md.type !== "keyframes" || (axis !== "x" && axis !== "y")) return;
+    if ((md.params.blend ?? "set") !== "set") return;
+    out.push({ axis, index, stops: moduleStops(md) });
+  });
+  return out;
+}
+
+/** Every stop moved by the same amount: the curve travels, its shape does not. */
+export const shiftStops = (stops: Stop[], delta: number): Stop[] =>
+  stops.map((s) => ({ ...s, v: s.v + delta }));
+
 /** Narrower than this and a block has no body left to grab between its two edges. */
 export const MIN_RANGE = 0.02;
 
@@ -125,11 +150,6 @@ export function trimRange([s, e]: Range, edge: "start" | "end", t: number): Rang
   return edge === "start"
     ? [clamp(t, 0, Math.max(0, e - MIN_RANGE)), e]
     : [s, clamp(t, Math.min(1, s + MIN_RANGE), 1)];
-}
-
-/** Both edges at once, from the inspector's start / end fields. */
-export function withRangeEdge(range: Range, edge: "start" | "end", t: number): Range {
-  return trimRange(range, edge, clamp(t, 0, 1));
 }
 
 /** Stops in time order, which is what `sampleStops` walks. */

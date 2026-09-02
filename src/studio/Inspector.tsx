@@ -24,7 +24,6 @@ import {
   moduleStops,
   patchStop,
   removeStop,
-  withRangeEdge,
   type KeyProp,
 } from "./modules";
 
@@ -59,7 +58,7 @@ export function Inspector() {
 
   return (
     <aside
-      className="flex h-full w-[300px] shrink-0 flex-col border-l border-[#e0e0e0] bg-white"
+      className="flex h-full w-[260px] shrink-0 flex-col border-l border-[#e0e0e0] bg-white"
       aria-label="inspector"
     >
       <header className="flex h-9 shrink-0 items-center border-b border-[#e0e0e0] px-3">
@@ -69,12 +68,7 @@ export function Inspector() {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {track ? (
-          <ElementPanel
-            track={track}
-            index={index}
-            assets={assets}
-            duration={composition.duration}
-          />
+          <ElementPanel track={track} index={index} assets={assets} />
         ) : (
           <CompositionPanel />
         )}
@@ -220,12 +214,10 @@ function ElementPanel({
   track,
   index,
   assets,
-  duration,
 }: {
   track: Track;
   index: number;
   assets: ImageAsset[];
-  duration: number;
 }) {
   const selectedModule = useStudio((s) => s.selectedModule);
   const { layer, modules } = track;
@@ -275,12 +267,7 @@ function ElementPanel({
       </section>
 
       {active !== null ? (
-        <KeyframeInspector
-          layerId={layer.id}
-          index={active}
-          module={modules[active]}
-          duration={duration}
-        />
+        <KeyframeInspector layerId={layer.id} index={active} module={modules[active]} />
       ) : null}
     </>
   );
@@ -429,22 +416,15 @@ function KeyframeInspector({
   layerId,
   index,
   module: md,
-  duration,
 }: {
   layerId: string;
   index: number;
   module: ModuleData;
-  duration: number;
 }) {
   const prop = moduleProp(md);
   const stops = moduleStops(md);
-  const [start, end] = md.range;
   const params = (patch: Record<string, unknown>) =>
     useStudio.getState().setModuleParams(layerId, index, patch);
-  const setRange = (edge: "start" | "end", seconds: number) =>
-    useStudio
-      .getState()
-      .setModuleRange(layerId, index, withRangeEdge(md.range, edge, seconds / duration));
 
   return (
     <section className={`${SECTION} bg-[#fbfbfb]`}>
@@ -476,27 +456,6 @@ function KeyframeInspector({
         </select>
       </label>
 
-      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-        <NumberField
-          label="start"
-          title="range start in seconds"
-          value={start * duration}
-          step={0.1}
-          min={0}
-          max={duration}
-          onChange={(v) => setRange("start", v)}
-        />
-        <NumberField
-          label="end"
-          title="range end in seconds"
-          value={end * duration}
-          step={0.1}
-          min={0}
-          max={duration}
-          onChange={(v) => setRange("end", v)}
-        />
-      </div>
-
       <div className="mt-3 flex items-center justify-between">
         <p className={LABEL}>keyframes</p>
         <button
@@ -508,13 +467,6 @@ function KeyframeInspector({
           add keyframe
         </button>
       </div>
-      {/* The remap is the one thing that surprises people: a stop's t is a share of
-          this module's own window, not of the whole timeline. */}
-      <p className="mt-1 text-[10px] leading-snug text-[#999]">
-        % of this module's window — 0% is {(start * duration).toFixed(2)}s, 100% is{" "}
-        {(end * duration).toFixed(2)}s.
-      </p>
-
       <ul className="mt-2 flex flex-col gap-1">
         {stops.map((stop, i) => (
           <li key={i} className="flex items-center gap-1">
