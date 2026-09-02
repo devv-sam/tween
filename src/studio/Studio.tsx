@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent } from "react";
 import { StudioCanvas } from "./StudioCanvas";
+import { Timeline } from "./Timeline";
 import { useStudio, type ImageAsset } from "./store";
 import { IMAGE_ACCEPT, baseName, extensionOf } from "./files";
 import { contentScale } from "./view";
@@ -74,7 +75,7 @@ export function Studio() {
         </nav>
         <div className="studio-main">
           <StudioCanvas />
-          <div className="studio-timeline" />
+          <Timeline />
         </div>
       </div>
     </div>

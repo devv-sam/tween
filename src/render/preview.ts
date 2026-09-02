@@ -6,17 +6,23 @@ import { paintComposition } from "./paint";
 export class Preview {
   playing = false;
   t = 0;
+  /** Off, playback stops on the last frame instead of wrapping. */
+  loop = true;
   onTick?: (t: number) => void;
+  /** Fired when playback runs off the end with `loop` off. */
+  onEnd?: () => void;
 
-  private canvas: HTMLCanvasElement;
+  /** Null when the preview is only a clock — the timeline drives its own canvas. */
+  private canvas: HTMLCanvasElement | null;
   private comp: Composition;
-  private ctx: CanvasRenderingContext2D;
+  private ctx: CanvasRenderingContext2D | null = null;
   private raf = 0;
   private last = 0;
 
-  constructor(canvas: HTMLCanvasElement, comp: Composition) {
+  constructor(canvas: HTMLCanvasElement | null, comp: Composition) {
     this.canvas = canvas;
     this.comp = comp;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context");
     this.ctx = ctx;
@@ -24,7 +30,14 @@ export class Preview {
     this.render();
   }
 
+  /** The composition is immutable upstream, so playback is handed the new one. */
+  setComposition(comp: Composition): void {
+    this.comp = comp;
+    this.render();
+  }
+
   resize(): void {
+    if (!this.canvas || !this.ctx) return;
     const dpr = window.devicePixelRatio || 1;
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     this.canvas.width = w * dpr;
@@ -34,6 +47,7 @@ export class Preview {
   }
 
   render(): void {
+    if (!this.canvas || !this.ctx) return;
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
     paintComposition(this.ctx, this.comp, this.t, w, h);
     drawFieldMarkers(this.ctx, this.comp, this.t);
@@ -62,7 +76,16 @@ export class Preview {
     if (!this.last) this.last = ts;
     const dt = (ts - this.last) / 1000;
     this.last = ts;
-    this.t = (this.t + dt / this.comp.duration) % 1;
+    const next = this.t + dt / this.comp.duration;
+    if (next >= 1 && !this.loop) {
+      this.pause();
+      this.t = 1;
+      this.onTick?.(this.t);
+      this.render();
+      this.onEnd?.();
+      return;
+    }
+    this.t = next % 1;
     this.onTick?.(this.t);
     this.render();
     this.raf = requestAnimationFrame(this.frame);
