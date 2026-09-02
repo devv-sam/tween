@@ -1,7 +1,25 @@
 import { clamp, lerp } from "../core/math";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
-import type { Layer, ModuleData, Transform } from "../core/types";
+import type { KeyframeSet, Layer, ModuleData, Track, Transform } from "../core/types";
+
+/**
+ * What the inspector is currently focused on inside an element. A standalone
+ * keyframed property and a module are both "a thing with a block on the track", so
+ * one selection covers both rather than two fields that could disagree.
+ */
+export type SelectedPart =
+  | { kind: "keyframes"; property: KeyProp }
+  | { kind: "module"; index: number };
+
+export const samePart = (a: SelectedPart | null, b: SelectedPart): boolean =>
+  a?.kind !== b.kind
+    ? false
+    : a.kind === "keyframes" && b.kind === "keyframes"
+      ? a.property === b.property
+      : a.kind === "module" && b.kind === "module"
+        ? a.index === b.index
+        : false;
 
 /** A module's window on the timeline, normalized over the composition. */
 export type Range = [number, number];
@@ -35,6 +53,27 @@ export const PROP_COLOR: Record<KeyProp, string> = {
   opacity: "border-rose-300 bg-rose-100 text-rose-900",
 };
 
+/**
+ * The same hues, unfilled. A standalone set is raw material — it reads as an outline
+ * until it is bundled into a module, which reads as a solid.
+ */
+export const PROP_OUTLINE: Record<KeyProp, string> = {
+  x: "border-sky-400 bg-white text-sky-700",
+  y: "border-teal-400 bg-white text-teal-700",
+  scale: "border-violet-400 bg-white text-violet-700",
+  rotation: "border-amber-400 bg-white text-amber-700",
+  opacity: "border-rose-400 bg-white text-rose-700",
+};
+
+/** The same hues as the blocks, solid — a filled dot means this property carries motion. */
+export const PROP_DOT: Record<KeyProp, string> = {
+  x: "bg-sky-500",
+  y: "bg-teal-500",
+  scale: "bg-violet-500",
+  rotation: "bg-amber-500",
+  opacity: "bg-rose-500",
+};
+
 /** Sensible input steps per property — degrees move faster than opacity. */
 export const PROP_STEP: Record<KeyProp, number> = {
   x: 1,
@@ -58,13 +97,14 @@ export function defaultStops(v: number): Stop[] {
   ];
 }
 
-export function newKeyframeModule(prop: KeyProp, base: Transform): ModuleData {
-  return {
-    type: "keyframes",
-    range: [0, 1],
-    params: { property: prop, stops: defaultStops(baseValue(base, prop)), blend: "set" },
-  };
+/** A fresh standalone set: flat on the element's current value, spanning the whole
+ *  composition until its block is trimmed. */
+export function newKeyframes(prop: KeyProp, base: Transform): KeyframeSet {
+  return { stops: defaultStops(baseValue(base, prop)), range: [0, 1] };
 }
+
+export const keyframesFor = (track: Track, prop: KeyProp): KeyframeSet | undefined =>
+  track.keyframes?.[prop];
 
 export const moduleProp = (md: ModuleData): KeyProp => {
   const p = md.params.property;
@@ -73,6 +113,47 @@ export const moduleProp = (md: ModuleData): KeyProp => {
 
 export const moduleStops = (md: ModuleData): Stop[] =>
   Array.isArray(md.params.stops) ? (md.params.stops as Stop[]) : [];
+
+/**
+ * Everything on a track that draws a block, in evaluation order: the element's own
+ * keyframes first, then the modules layered over them. `standalone` is what the two
+ * are drawn differently by — raw material reads as an outline, a packaged module as
+ * a solid.
+ */
+export type BlockView = {
+  part: SelectedPart;
+  prop: KeyProp;
+  label: string;
+  range: Range;
+  stops: Stop[];
+  standalone: boolean;
+};
+
+export function trackBlocks(track: Track): BlockView[] {
+  const out: BlockView[] = [];
+  for (const [key, set] of Object.entries(track.keyframes ?? {})) {
+    if (!isKeyProp(key)) continue;
+    out.push({
+      part: { kind: "keyframes", property: key },
+      prop: key,
+      label: key,
+      range: set.range,
+      stops: set.stops,
+      standalone: true,
+    });
+  }
+  track.modules.forEach((md, index) => {
+    out.push({
+      part: { kind: "module", index },
+      prop: moduleProp(md),
+      label: moduleLabel(md),
+      range: md.range,
+      stops: moduleStops(md),
+      standalone: false,
+    });
+  });
+  return out;
+}
 
 /** Label on the track block and in the module stack: the property, lowercase. */
 export const moduleLabel = (md: ModuleData): string => moduleProp(md);
@@ -118,15 +199,20 @@ export function blockTop(index: number, moduleCount: number, min: number): numbe
  * would write to `base.x` and change nothing on screen. Moving the element has to
  * move these instead, which slides the whole curve and leaves its shape alone.
  */
-export type PositionDriver = { axis: "x" | "y"; index: number; stops: Stop[] };
+export type PositionDriver = { axis: "x" | "y"; part: SelectedPart; stops: Stop[] };
 
-export function positionDrivers(modules: ModuleData[]): PositionDriver[] {
+export function positionDrivers(track: Track): PositionDriver[] {
   const out: PositionDriver[] = [];
-  modules.forEach((md, index) => {
+  for (const axis of ["x", "y"] as const) {
+    const set = track.keyframes?.[axis];
+    // Standalone keyframes always `set`, so they always own their axis.
+    if (set) out.push({ axis, part: { kind: "keyframes", property: axis }, stops: set.stops });
+  }
+  track.modules.forEach((md, index) => {
     const axis = moduleProp(md);
     if (md.type !== "keyframes" || (axis !== "x" && axis !== "y")) return;
     if ((md.params.blend ?? "set") !== "set") return;
-    out.push({ axis, index, stops: moduleStops(md) });
+    out.push({ axis, part: { kind: "module", index }, stops: moduleStops(md) });
   });
   return out;
 }

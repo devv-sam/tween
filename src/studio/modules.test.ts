@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sampleStops } from "../core/curve";
 import { remap } from "../core/math";
+import type { Track } from "../core/types";
 import {
   BLOCK_HEIGHT,
   BLOCK_GAP,
@@ -10,9 +11,10 @@ import {
   addStop,
   baseValue,
   layerName,
-  newKeyframeModule,
+  newKeyframes,
   positionDrivers,
   shiftStops,
+  trackBlocks,
   patchStop,
   removeStop,
   slideRange,
@@ -29,11 +31,11 @@ describe("baseValue", () => {
   });
 });
 
-describe("newKeyframeModule", () => {
+describe("newKeyframes", () => {
   it("spans the composition and starts flat on the element's current value", () => {
-    const md = newKeyframeModule("scale", base);
-    expect(md.range).toEqual([0, 1]);
-    expect(md.params.stops).toEqual([
+    const set = newKeyframes("scale", base);
+    expect(set.range).toEqual([0, 1]);
+    expect(set.stops).toEqual([
       { t: 0, v: 2, ease: "linear" },
       { t: 1, v: 2, ease: "linear" },
     ]);
@@ -46,25 +48,89 @@ describe("positionDrivers", () => {
     range: [0, 1] as [number, number],
     params: { property, stops: [{ t: 0, v: 10 }, { t: 1, v: 90 }], ...(blend ? { blend } : {}) },
   });
+  const track = (over: Partial<Track>): Track => ({
+    layer: { id: "a", source: { kind: "image", value: "x" }, base },
+    modules: [],
+    ...over,
+  });
+  const set = (v: number) => ({ stops: [{ t: 0, v }, { t: 1, v: v + 5 }], range: [0, 1] as [number, number] });
 
   it("names the axes a set-blend keyframe module owns outright", () => {
-    expect(positionDrivers([kf("x"), kf("y")]).map((d) => d.axis)).toEqual(["x", "y"]);
-    expect(positionDrivers([kf("y")]).map((d) => d.index)).toEqual([0]);
+    const drivers = positionDrivers(track({ modules: [kf("x"), kf("y")] }));
+    expect(drivers.map((d) => d.axis)).toEqual(["x", "y"]);
+    expect(drivers.map((d) => d.part)).toEqual([
+      { kind: "module", index: 0 },
+      { kind: "module", index: 1 },
+    ]);
+  });
+
+  it("names standalone keyframes too, which always set their axis", () => {
+    const drivers = positionDrivers(track({ keyframes: { x: set(10), y: set(20) } }));
+    expect(drivers.map((d) => d.part)).toEqual([
+      { kind: "keyframes", property: "x" },
+      { kind: "keyframes", property: "y" },
+    ]);
   });
 
   it("ignores properties that are not a position", () => {
-    expect(positionDrivers([kf("scale"), kf("opacity"), kf("rotation")])).toEqual([]);
+    expect(positionDrivers(track({ modules: [kf("scale"), kf("opacity")] }))).toEqual([]);
+    expect(positionDrivers(track({ keyframes: { scale: set(2) } }))).toEqual([]);
   });
 
   it("ignores a blend that only offsets the base, since base still moves it", () => {
-    expect(positionDrivers([kf("x", "add"), kf("y", "mul")])).toEqual([]);
+    expect(positionDrivers(track({ modules: [kf("x", "add"), kf("y", "mul")] }))).toEqual([]);
   });
 
   it("carries the stops the move will be measured from", () => {
-    expect(positionDrivers([kf("x")])[0].stops).toEqual([
+    expect(positionDrivers(track({ modules: [kf("x")] }))[0].stops).toEqual([
       { t: 0, v: 10 },
       { t: 1, v: 90 },
     ]);
+  });
+});
+
+describe("trackBlocks", () => {
+  const kfSet = (v: number) => ({
+    stops: [{ t: 0, v }, { t: 1, v }],
+    range: [0, 1] as [number, number],
+  });
+  const built: Track = {
+    layer: { id: "a", source: { kind: "image", value: "x" }, base },
+    keyframes: { scale: kfSet(1), opacity: kfSet(0.5) },
+    modules: [
+      {
+        type: "keyframes",
+        range: [0.25, 0.75],
+        params: { property: "x", stops: [{ t: 0, v: 0 }, { t: 1, v: 100 }] },
+      },
+    ],
+  };
+
+  it("lists standalone sets before modules, matching evaluation order", () => {
+    expect(trackBlocks(built).map((b) => [b.label, b.standalone])).toEqual([
+      ["scale", true],
+      ["opacity", true],
+      ["x", false],
+    ]);
+  });
+
+  it("addresses each block by what selecting it means", () => {
+    expect(trackBlocks(built).map((b) => b.part)).toEqual([
+      { kind: "keyframes", property: "scale" },
+      { kind: "keyframes", property: "opacity" },
+      { kind: "module", index: 0 },
+    ]);
+  });
+
+  it("carries each block's own window and stops", () => {
+    const blocks = trackBlocks(built);
+    expect(blocks[0].range).toEqual([0, 1]);
+    expect(blocks[2].range).toEqual([0.25, 0.75]);
+    expect(blocks[2].stops).toHaveLength(2);
+  });
+
+  it("has nothing to draw for a bare element", () => {
+    expect(trackBlocks({ layer: built.layer, modules: [] })).toEqual([]);
   });
 });
 

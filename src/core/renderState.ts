@@ -1,6 +1,8 @@
-import type { Composition, Scene, EvalCtx } from "./types";
+import type { Composition, Prop, Scene, EvalCtx } from "./types";
 import { getModule } from "./registry";
 import { remap } from "./math";
+import { sampleStops } from "./curve";
+import { apply } from "./blend";
 import { expand } from "./distribute";
 import { fieldValue } from "./fields";
 
@@ -14,6 +16,12 @@ export function renderState(comp: Composition, t: number): Scene {
   for (const track of comp.tracks) {
     for (const inst of expand(track.layer)) {
       let state = { ...inst.base };
+      // Standalone keyframes are the element's own authored motion, so they settle
+      // first and modules layer over the result.
+      for (const [prop, set] of Object.entries(track.keyframes ?? {})) {
+        if (t < set.range[0] || t > set.range[1]) continue;
+        state = apply(state, prop as Prop, sampleStops(set.stops, remap(t, set.range)), "set");
+      }
       for (const md of track.modules) {
         if (t < md.range[0] || t > md.range[1]) continue;
         const ctx: EvalCtx = { t, localT: remap(t, md.range), u: inst.u, i: inst.i, count: inst.count, field: sample };

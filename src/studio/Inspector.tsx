@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { Driver, ModuleData, Track, Transform } from "../core/types";
+import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
 import { useStudio, type ImageAsset } from "./store";
@@ -15,9 +16,11 @@ import {
   EASINGS,
   PROPS,
   PROP_COLOR,
+  PROP_DOT,
   PROP_STEP,
   addStop,
   baseValue,
+  keyframesFor,
   layerName,
   moduleLabel,
   moduleProp,
@@ -219,14 +222,21 @@ function ElementPanel({
   index: number;
   assets: ImageAsset[];
 }) {
-  const selectedModule = useStudio((s) => s.selectedModule);
+  const selectedPart = useStudio((s) => s.selectedPart);
   const { layer, modules } = track;
   const asset =
     layer.source.kind === "image"
       ? assets.find((a) => a.id === layer.source.value)
       : undefined;
-  const active =
-    selectedModule !== null && selectedModule < modules.length ? selectedModule : null;
+  const activeModule =
+    selectedPart?.kind === "module" && selectedPart.index < modules.length
+      ? selectedPart.index
+      : null;
+  const activeKeyframes =
+    selectedPart?.kind === "keyframes" && keyframesFor(track, selectedPart.property)
+      ? selectedPart.property
+      : null;
+  const authored = PROPS.filter((p) => keyframesFor(track, p));
 
   return (
     <>
@@ -244,13 +254,36 @@ function ElementPanel({
 
       <BaseTransform layerId={layer.id} base={layer.base} />
 
+      {/* Authoring motion is a primitive action, so it lives one click from the
+          property itself rather than behind a module-creation flow. */}
       <section className={SECTION}>
-        <p className={`${LABEL} mb-2`}>modules</p>
-        {modules.length === 0 ? (
-          <p className="text-[11px] leading-relaxed text-[#b0b0b0]">
-            No modules yet. Add one to animate this element.
-          </p>
-        ) : (
+        <p className={`${LABEL} mb-2`}>properties</p>
+        <ul className="flex flex-col gap-0.5">
+          {PROPS.map((prop) => (
+            <PropertyRow
+              key={prop}
+              layerId={layer.id}
+              prop={prop}
+              keyframed={Boolean(keyframesFor(track, prop))}
+              selected={activeKeyframes === prop}
+            />
+          ))}
+        </ul>
+      </section>
+
+      {activeKeyframes ? (
+        <StopEditor
+          layerId={layer.id}
+          prop={activeKeyframes}
+          stops={keyframesFor(track, activeKeyframes)!.stops}
+        />
+      ) : null}
+
+      {/* Only what an element actually carries — there is no way to add a module
+          until there are real module types to add. */}
+      {modules.length > 0 ? (
+        <section className={SECTION}>
+          <p className={`${LABEL} mb-2`}>modules</p>
           <ul className="flex flex-col gap-1">
             {modules.map((md, i) => (
               <ModuleRow
@@ -258,18 +291,101 @@ function ElementPanel({
                 module={md}
                 index={i}
                 layerId={layer.id}
-                selected={i === active}
+                selected={i === activeModule}
               />
             ))}
           </ul>
-        )}
-        <AddModule layerId={layer.id} />
-      </section>
-
-      {active !== null ? (
-        <KeyframeInspector layerId={layer.id} index={active} module={modules[active]} />
+        </section>
       ) : null}
+
+      {activeModule !== null ? (
+        <KeyframeInspector
+          layerId={layer.id}
+          index={activeModule}
+          module={modules[activeModule]}
+        />
+      ) : null}
+
+      {authored.length > 0 ? <SaveAsModule /> : null}
     </>
+  );
+}
+
+/** One animatable property: a way in when it has no motion yet, a way back to its
+ *  stops once it does. */
+function PropertyRow({
+  layerId,
+  prop,
+  keyframed,
+  selected,
+}: {
+  layerId: string;
+  prop: KeyProp;
+  keyframed: boolean;
+  selected: boolean;
+}) {
+  const open = () =>
+    keyframed
+      ? useStudio.getState().selectPart(layerId, { kind: "keyframes", property: prop })
+      : useStudio.getState().addKeyframes(layerId, prop);
+
+  return (
+    <li className="flex items-center gap-1">
+      <button
+        type="button"
+        aria-pressed={selected}
+        title={keyframed ? "edit keyframes" : "add keyframe"}
+        className={`flex h-[24px] min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] ${
+          selected ? "bg-[#e8f4ff] text-[#111]" : "text-[#555] hover:bg-[#f5f5f5]"
+        }`}
+        onClick={open}
+      >
+        {/* Filled means this property already carries motion. */}
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+            keyframed ? PROP_DOT[prop] : "bg-transparent"
+          }`}
+        />
+        <span className="truncate">{prop}</span>
+      </button>
+      <button
+        type="button"
+        aria-label={keyframed ? `edit ${prop} keyframes` : `add ${prop} keyframe`}
+        title={keyframed ? "edit keyframes" : "add keyframe"}
+        className="grid h-[24px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+        onClick={open}
+      >
+        <DiamondPlusIcon />
+      </button>
+      {keyframed ? (
+        <button
+          type="button"
+          aria-label={`remove ${prop} keyframes`}
+          title="remove keyframes"
+          className="grid h-[24px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+          onClick={() => useStudio.getState().removeKeyframes(layerId, prop)}
+        >
+          ×
+        </button>
+      ) : null}
+    </li>
+  );
+}
+
+/** Stub for the next increment: bundling authored keyframes into a named, reusable
+ *  module. Disabled rather than hidden, so the path is visible before it exists. */
+function SaveAsModule() {
+  return (
+    <section className={SECTION}>
+      <button
+        type="button"
+        disabled
+        title="coming soon — modules are reusable bundles"
+        className={`${GHOST_BTN} w-full cursor-not-allowed opacity-50`}
+      >
+        save as module
+      </button>
+    </section>
   );
 }
 
@@ -339,7 +455,9 @@ function ModuleRow({
             : "border-[#e0e0e0] text-[#555] hover:bg-[#f5f5f5]"
         }`}
         onClick={() =>
-          useStudio.getState().selectModule(layerId, selected ? null : index)
+          useStudio
+            .getState()
+            .selectPart(layerId, selected ? null : { kind: "module", index })
         }
       >
         <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] border ${PROP_COLOR[prop]}`} />
@@ -358,57 +476,6 @@ function ModuleRow({
         ×
       </button>
     </li>
-  );
-}
-
-function AddModule({ layerId }: { layerId: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div className="relative mt-2" ref={ref}>
-      <button
-        type="button"
-        aria-expanded={open}
-        className={`${GHOST_BTN} w-full`}
-        onClick={() => setOpen((v) => !v)}
-      >
-        add module
-      </button>
-      {open ? (
-        // Opens upward: the button lives at the foot of a scrolling panel.
-        <div className="absolute bottom-full left-0 z-10 mb-1 w-full rounded-md border border-[#e0e0e0] bg-white p-1 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
-          <button
-            type="button"
-            className="w-full rounded px-2 py-1.5 text-left text-[11px] text-[#111] hover:bg-[#f5f5f5]"
-            onClick={() => {
-              // Seeded on the element's current x, so a fresh module animates nothing
-              // until a stop is edited.
-              useStudio.getState().addKeyframeModule(layerId, "x");
-              setOpen(false);
-            }}
-          >
-            keyframes
-          </button>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -456,12 +523,59 @@ function KeyframeInspector({
         </select>
       </label>
 
-      <div className="mt-3 flex items-center justify-between">
+      <StopList prop={prop} stops={stops} onChange={(next) => params({ stops: next })} />
+    </section>
+  );
+}
+
+/** The element's own authored motion for one property: the same stop list a module
+ *  gets, without a property picker — the property is what was clicked. */
+function StopEditor({
+  layerId,
+  prop,
+  stops,
+}: {
+  layerId: string;
+  prop: KeyProp;
+  stops: Stop[];
+}) {
+  return (
+    <section className={`${SECTION} bg-[#fbfbfb]`}>
+      <div className="mb-2 flex items-center gap-1.5">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PROP_DOT[prop]}`} />
+        <p className={LABEL}>{prop} keyframes</p>
+      </div>
+      <StopList
+        prop={prop}
+        stops={stops}
+        onChange={(next) => useStudio.getState().setKeyframeStops(layerId, prop, next)}
+      />
+    </section>
+  );
+}
+
+/**
+ * Position, value, easing, one row per stop. `t` stays a share of the block's own
+ * window — the block on the track is what sets that window, so this list never has
+ * to talk about seconds.
+ */
+function StopList({
+  prop,
+  stops,
+  onChange,
+}: {
+  prop: KeyProp;
+  stops: Stop[];
+  onChange: (stops: Stop[]) => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center justify-between">
         <p className={LABEL}>keyframes</p>
         <button
           type="button"
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
-          onClick={() => params({ stops: addStop(stops) })}
+          onClick={() => onChange(addStop(stops))}
         >
           <DiamondPlusIcon />
           add keyframe
@@ -472,16 +586,14 @@ function KeyframeInspector({
           <li key={i} className="flex items-center gap-1">
             <div className="w-[62px] shrink-0">
               <NumberField
-                label="%"
-                title="position in the module's window"
+                label="at"
+                title="position in this block's window"
                 value={stop.t * 100}
                 step={5}
                 min={0}
                 max={100}
                 precision={0}
-                onChange={(v) =>
-                  params({ stops: patchStop(stops, i, { t: clamp(v / 100, 0, 1) }) })
-                }
+                onChange={(v) => onChange(patchStop(stops, i, { t: clamp(v / 100, 0, 1) }))}
               />
             </div>
             <div className="min-w-0 flex-1">
@@ -490,18 +602,14 @@ function KeyframeInspector({
                 title={`${prop} value`}
                 value={stop.v}
                 step={PROP_STEP[prop]}
-                onChange={(v) => params({ stops: patchStop(stops, i, { v }) })}
+                onChange={(v) => onChange(patchStop(stops, i, { v }))}
               />
             </div>
             <select
               className="h-[26px] w-[74px] shrink-0 rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none"
               aria-label="easing"
               value={stop.ease ?? "linear"}
-              onChange={(e) =>
-                params({
-                  stops: patchStop(stops, i, { ease: e.target.value as Easing }),
-                })
-              }
+              onChange={(e) => onChange(patchStop(stops, i, { ease: e.target.value as Easing }))}
             >
               {EASINGS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -515,14 +623,14 @@ function KeyframeInspector({
               title="remove keyframe"
               disabled={stops.length <= 2}
               className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
-              onClick={() => params({ stops: removeStop(stops, i) })}
+              onClick={() => onChange(removeStop(stops, i))}
             >
               <DiamondMinusIcon />
             </button>
           </li>
         ))}
       </ul>
-    </section>
+    </>
   );
 }
 
