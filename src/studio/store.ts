@@ -1,8 +1,10 @@
 import { create } from "zustand";
+import { clamp } from "../core/math";
 import type { Composition, Track, Transform } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
 import { imageError } from "./files";
 import { boundsHalf, clampToFrame } from "./selection";
+import { clampDuration } from "./ruler";
 import {
   DEFAULT_FRAME,
   DEFAULT_VIEW_SCALE,
@@ -63,9 +65,15 @@ type StudioState = {
   importError: string | null;
   frame: Size;
   t: number;
+  playing: boolean;
+  loop: boolean;
   selectedId: string | null;
   viewport: Size;
   view: View;
+  setT: (t: number) => void;
+  setPlaying: (playing: boolean) => void;
+  toggleLoop: () => void;
+  setDuration: (seconds: number) => void;
   setViewport: (viewport: Size) => void;
   zoomAroundPoint: (screen: Point, nextZoom: number) => void;
   panBy: (dx: number, dy: number) => void;
@@ -86,9 +94,25 @@ export const useStudio = create<StudioState>((set, get) => ({
   importError: null,
   frame: DEFAULT_FRAME,
   t: 0,
+  playing: false,
+  loop: true,
   selectedId: null,
   viewport: { width: 0, height: 0 },
   view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
+
+  // `t` is normalized over the composition — the playhead and the rAF loop both
+  // land here, so the renderer has one clock to read.
+  setT: (t) => set({ t: clamp(t, 0, 1) }),
+
+  setPlaying: (playing) => set({ playing }),
+
+  toggleLoop: () => set((s) => ({ loop: !s.loop })),
+
+  setDuration: (seconds) => {
+    set((s) => ({
+      composition: { ...s.composition, duration: clampDuration(seconds) },
+    }));
+  },
 
   setViewport: (viewport) => {
     const { frame, view } = get();
