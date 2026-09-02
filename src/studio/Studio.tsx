@@ -27,15 +27,22 @@ export function Studio() {
           aria-label="studio"
         >
           <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-[#e0e0e0] px-[5px] py-2">
+            {/* Collapsed, the rail is the only thing left — so the toggle comes with
+                it, keeping its own divided slot above the panel tabs. */}
+            {collapsed ? (
+              <div className="mb-1 w-full border-b border-[#e0e0e0] pb-2">
+                <PanelToggle collapsed onToggle={() => setCollapsed(false)} />
+              </div>
+            ) : null}
             <button
               type="button"
               className={`flex w-full flex-col items-center gap-1 rounded-[7px] px-0.5 pt-[5px] pb-1.5 text-[10px] leading-tight focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[#111] ${
                 collapsed ? "text-[#888]" : "font-medium text-[#111]"
               }`}
-              aria-expanded={!collapsed}
+              aria-pressed={!collapsed}
               aria-controls="assets-drawer"
-              title={collapsed ? "expand" : "collapse"}
-              onClick={() => setCollapsed((v) => !v)}
+              title="Assets"
+              onClick={() => setCollapsed(false)}
             >
               <span
                 className={`grid h-7 w-7 place-items-center rounded-[7px] ${
@@ -50,21 +57,17 @@ export function Studio() {
             </button>
           </div>
           {collapsed ? null : (
-            <div
-              className="flex w-[236px] shrink-0 flex-col overflow-y-auto [scrollbar-width:none]"
-              id="assets-drawer"
-            >
+            <div className="flex w-[236px] shrink-0 flex-col" id="assets-drawer">
+              {/* Its own strip above the panel's contents, matched to the inspector
+                  header's height so the two panels line up across the studio. */}
+              <div className="flex h-9 shrink-0 items-center justify-end border-b border-[#e0e0e0] px-2">
+                <PanelToggle collapsed={false} onToggle={() => setCollapsed(true)} />
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-width:none]">
               <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-white px-3 pt-3 pb-2">
-                <button
-                  type="button"
-                  className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888] hover:text-[#111]"
-                  title="collapse"
-                  aria-expanded
-                  aria-controls="assets-drawer"
-                  onClick={() => setCollapsed(true)}
-                >
+                <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888]">
                   Assets
-                </button>
+                </span>
                 <button
                   type="button"
                   className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
@@ -101,6 +104,7 @@ export function Studio() {
                   ))}
                 </div>
               )}
+              </div>
             </div>
           )}
         </nav>
@@ -111,6 +115,30 @@ export function Studio() {
         <Inspector />
       </div>
     </div>
+  );
+}
+
+/** The panel's own collapse control, so the Assets tab is left to mean "Assets". */
+function PanelToggle({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const label = collapsed ? "expand" : "collapse";
+  return (
+    <button
+      type="button"
+      className="mx-auto grid h-7 w-7 place-items-center rounded-[7px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+      aria-label={label}
+      aria-expanded={!collapsed}
+      aria-controls="assets-drawer"
+      title={label}
+      onClick={onToggle}
+    >
+      <PanelLeftIcon />
+    </button>
   );
 }
 
@@ -172,7 +200,8 @@ function AssetCard({ asset }: { asset: ImageAsset }) {
   );
 }
 
-/** Lucide `image` / `plus` / `x`, inlined so a few glyphs don't pull in an icon package. */
+/** Lucide `image` / `panel-left` / `plus` / `x`, inlined so a few glyphs don't pull
+ *  in an icon package. */
 function ImageIcon() {
   return (
     <svg
@@ -189,6 +218,25 @@ function ImageIcon() {
       <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
       <circle cx="9" cy="9" r="2" />
       <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </svg>
+  );
+}
+
+function PanelLeftIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
     </svg>
   );
 }
