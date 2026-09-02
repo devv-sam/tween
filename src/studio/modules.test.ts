@@ -11,11 +11,12 @@ import {
   baseValue,
   layerName,
   newKeyframeModule,
+  positionDrivers,
+  shiftStops,
   patchStop,
   removeStop,
   slideRange,
   trimRange,
-  withRangeEdge,
   type Range,
 } from "./modules";
 
@@ -36,6 +37,49 @@ describe("newKeyframeModule", () => {
       { t: 0, v: 2, ease: "linear" },
       { t: 1, v: 2, ease: "linear" },
     ]);
+  });
+});
+
+describe("positionDrivers", () => {
+  const kf = (property: string, blend?: string) => ({
+    type: "keyframes",
+    range: [0, 1] as [number, number],
+    params: { property, stops: [{ t: 0, v: 10 }, { t: 1, v: 90 }], ...(blend ? { blend } : {}) },
+  });
+
+  it("names the axes a set-blend keyframe module owns outright", () => {
+    expect(positionDrivers([kf("x"), kf("y")]).map((d) => d.axis)).toEqual(["x", "y"]);
+    expect(positionDrivers([kf("y")]).map((d) => d.index)).toEqual([0]);
+  });
+
+  it("ignores properties that are not a position", () => {
+    expect(positionDrivers([kf("scale"), kf("opacity"), kf("rotation")])).toEqual([]);
+  });
+
+  it("ignores a blend that only offsets the base, since base still moves it", () => {
+    expect(positionDrivers([kf("x", "add"), kf("y", "mul")])).toEqual([]);
+  });
+
+  it("carries the stops the move will be measured from", () => {
+    expect(positionDrivers([kf("x")])[0].stops).toEqual([
+      { t: 0, v: 10 },
+      { t: 1, v: 90 },
+    ]);
+  });
+});
+
+describe("shiftStops", () => {
+  it("travels the curve without changing its shape", () => {
+    const stops = [
+      { t: 0, v: 10, ease: "linear" as const },
+      { t: 1, v: 90, ease: "inout" as const },
+    ];
+    const moved = shiftStops(stops, -25);
+    expect(moved.map((s) => s.v)).toEqual([-15, 65]);
+    expect(moved.map((s) => s.t)).toEqual([0, 1]);
+    expect(moved.map((s) => s.ease)).toEqual(["linear", "inout"]);
+    // The gap between stops is what the shape is: the move must leave it alone.
+    expect(moved[1].v - moved[0].v).toBe(stops[1].v - stops[0].v);
   });
 });
 
@@ -90,8 +134,8 @@ describe("trimRange", () => {
   });
 
   it("clamps to the composition", () => {
-    expect(withRangeEdge([0.2, 0.8], "start", -3)).toEqual([0, 0.8]);
-    expect(withRangeEdge([0.2, 0.8], "end", 4)).toEqual([0.2, 1]);
+    expect(trimRange([0.2, 0.8], "start", -3)).toEqual([0, 0.8]);
+    expect(trimRange([0.2, 0.8], "end", 4)).toEqual([0.2, 1]);
   });
 });
 

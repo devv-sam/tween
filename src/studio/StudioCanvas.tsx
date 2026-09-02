@@ -11,7 +11,7 @@ import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
 import { IMAGE_ACCEPT } from "./files";
 import { paintComposition } from "../render/paint";
-import { useStudio } from "./store";
+import { useStudio, type MoveAnchor } from "./store";
 import {
   CORNERS,
   HANDLES,
@@ -53,6 +53,9 @@ type Drag = {
   handle: Handle | null;
   startBase: Transform;
   startRendered: Transform;
+  /** Where the element's position was held when the drag began — a module's stops
+   *  when one owns the axis, `base` otherwise. */
+  anchor: MoveAnchor | null;
   size: Size;
   from: Point;
   /** Pointer angle about the element's centre when a rotate drag began. */
@@ -344,6 +347,7 @@ export function StudioCanvas() {
         handle,
         startBase: { ...base },
         startRendered: { ...item.state },
+        anchor: useStudio.getState().moveAnchor(item.id),
         size: itemSize,
         from: point,
         startAngle: angleTo(centreOf(item.state), point),
@@ -473,10 +477,15 @@ export function StudioCanvas() {
         boundsHalf(drag.startRendered, drag.size),
         frame,
       );
-      setLayerBase(drag.id, {
-        x: drag.startBase.x + (at.x - drag.startRendered.x),
-        y: drag.startBase.y + (at.y - drag.startRendered.y),
-      });
+      const { moveLayer } = useStudio.getState();
+      if (drag.anchor) {
+        moveLayer(
+          drag.id,
+          drag.anchor,
+          at.x - drag.startRendered.x,
+          at.y - drag.startRendered.y,
+        );
+      }
       return;
     }
 

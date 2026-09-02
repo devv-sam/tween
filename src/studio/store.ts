@@ -3,8 +3,16 @@ import { clamp } from "../core/math";
 import type { Composition, Driver, ModuleData, Track, Transform } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
 import { imageError } from "./files";
+import { renderState } from "../core/renderState";
 import { boundsHalf, clampToFrame } from "./selection";
-import { newKeyframeModule, type KeyProp, type Range } from "./modules";
+import {
+  newKeyframeModule,
+  positionDrivers,
+  shiftStops,
+  type KeyProp,
+  type PositionDriver,
+  type Range,
+} from "./modules";
 import { clampFps } from "./composition";
 import { clampDuration } from "./ruler";
 import {
@@ -18,6 +26,12 @@ import {
   type Size,
   type View,
 } from "./view";
+
+/** A move's starting point, captured before the first pointer move. */
+export type MoveAnchor = {
+  base: { x: number; y: number };
+  driven: PositionDriver[];
+};
 
 export type ImageAsset = {
   id: string;
@@ -116,6 +130,8 @@ type StudioState = {
   setModuleParams: (layerId: string, index: number, patch: Record<string, unknown>) => void;
   setModuleRange: (layerId: string, index: number, range: Range) => void;
   setLayerBase: (layerId: string, patch: Partial<Transform>) => void;
+  moveAnchor: (layerId: string) => MoveAnchor | null;
+  moveLayer: (layerId: string, anchor: MoveAnchor, dx: number, dy: number) => void;
   nudgeSelected: (dx: number, dy: number) => void;
   deleteSelected: () => void;
   toggleLayerLock: (layerId: string) => void;
@@ -329,23 +345,64 @@ export const useStudio = create<StudioState>((set, get) => ({
     }));
   },
 
+  /** Where an element's position is held right now — the snapshot a move is measured
+   *  from, so applying the same drag twice lands in the same place. */
+  moveAnchor: (layerId) => {
+    const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
+    if (!track) return null;
+    return {
+      base: { x: track.layer.base.x, y: track.layer.base.y },
+      driven: positionDrivers(track.modules),
+    };
+  },
+
+  /**
+   * Move an element by (dx, dy) from `anchor`, writing to whichever holder owns each
+   * axis: a driving module's stops when there is one, `base` otherwise. One `set`, so
+   * a drag that moves both axes still costs a single render.
+   */
+  moveLayer: (layerId, anchor, dx, dy) => {
+    const by = { x: dx, y: dy };
+    const driven = new Set(anchor.driven.map((d) => d.axis));
+    set((s) =>
+      patchTrack(s.composition, layerId, (tr) => {
+        const base = { ...tr.layer.base };
+        if (!driven.has("x")) base.x = anchor.base.x + dx;
+        if (!driven.has("y")) base.y = anchor.base.y + dy;
+        const modules = tr.modules.map((md, i) => {
+          const drive = anchor.driven.find((d) => d.index === i);
+          if (!drive) return md;
+          return {
+            ...md,
+            params: { ...md.params, stops: shiftStops(drive.stops, by[drive.axis]) },
+          };
+        });
+        return { ...tr, layer: { ...tr.layer, base }, modules };
+      }),
+    );
+  },
+
   nudgeSelected: (dx, dy) => {
-    const { selectedId, composition, assets, frame, setLayerBase } = get();
+    const { selectedId, composition, assets, frame, moveAnchor, moveLayer } = get();
     const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
     if (!track || !selectedId) return;
+    const anchor = moveAnchor(selectedId);
+    if (!anchor) return;
     const { base, source } = track.layer;
     const asset = source.kind === "image" ? assets.find((a) => a.id === source.value) : undefined;
-    const wanted = { x: base.x + dx, y: base.y + dy };
-    setLayerBase(
-      selectedId,
-      asset
-        ? clampToFrame(
-            wanted,
-            boundsHalf(base, { width: asset.naturalW, height: asset.naturalH }),
-            frame,
-          )
-        : wanted,
-    );
+    // Clamp the element's rendered box, then move by whatever the clamp allowed —
+    // a driven axis still has to stay inside the frame.
+    const rendered = renderState(composition, get().t).find((it) => it.id === selectedId);
+    const at = rendered ?? { state: base };
+    const wanted = { x: at.state.x + dx, y: at.state.y + dy };
+    const bounded = asset
+      ? clampToFrame(
+          wanted,
+          boundsHalf(at.state, { width: asset.naturalW, height: asset.naturalH }),
+          frame,
+        )
+      : wanted;
+    moveLayer(selectedId, anchor, bounded.x - at.state.x, bounded.y - at.state.y);
   },
 
   toggleLayerLock: (layerId) => {
