@@ -11,18 +11,15 @@ import {
   RULER_HEIGHT,
   TRACK_HEIGHT,
   clampDuration,
-  formatClock,
-  formatMillis,
+  formatTime,
   ticks,
   timeToX,
   xToTime,
+  type Unit,
 } from "./ruler";
 
 /** The pill is an affordance for the module increment — `input` drives nothing yet. */
 type DriverPill = "time" | "input";
-
-/** The readout's unit. `s` is the clock; `ms` is the raw number the exporter counts in. */
-type Unit = "s" | "ms";
 
 export function Timeline() {
   const composition = useStudio((s) => s.composition);
@@ -88,7 +85,7 @@ export function Timeline() {
     return () => ro.disconnect();
   }, []);
 
-  const marks = useMemo(() => ticks(duration, width), [duration, width]);
+  const marks = useMemo(() => ticks(duration, width, unit), [duration, width, unit]);
   const playheadX = timeToX(t, width);
 
   /** Every seek goes through the preview, so its clock and the store never diverge. */
@@ -197,19 +194,12 @@ export function Timeline() {
         >
           <LoopIcon />
         </button>
-        <span className="transport-readout">
-          <span className="transport-clock">{read(t * duration, unit)}</span>
-          <span className="transport-duration">{read(duration, unit)}</span>
-          <button
-            type="button"
-            className="unit-toggle"
-            title={unit === "s" ? "seconds" : "milliseconds"}
-            aria-label={`readout unit: ${unit === "s" ? "seconds" : "milliseconds"}`}
-            onClick={() => setUnit((u) => (u === "s" ? "ms" : "s"))}
-          >
-            {unit}
-          </button>
-        </span>
+        <Readout
+          time={t * duration}
+          duration={duration}
+          unit={unit}
+          onToggleUnit={() => setUnit((u) => (u === "s" ? "ms" : "s"))}
+        />
         <span className="transport-spacer" />
         <button
           type="button"
@@ -291,7 +281,7 @@ export function Timeline() {
               aria-valuemin={0}
               aria-valuemax={duration}
               aria-valuenow={Number((t * duration).toFixed(2))}
-              aria-valuetext={formatClock(t * duration)}
+              aria-valuetext={`${formatTime(t * duration, unit)}${unit}`}
               onPointerDown={beginScrub}
               onPointerMove={moveScrub}
               onPointerUp={endScrub}
@@ -305,8 +295,44 @@ export function Timeline() {
   );
 }
 
-const read = (seconds: number, unit: Unit) =>
-  unit === "s" ? formatClock(seconds) : formatMillis(seconds);
+/**
+ * Current time, composition length, and the unit both read in — one control, with
+ * the unit switch set apart because it changes what the other two mean.
+ */
+function Readout({
+  time,
+  duration,
+  unit,
+  onToggleUnit,
+}: {
+  time: number;
+  duration: number;
+  unit: Unit;
+  onToggleUnit: () => void;
+}) {
+  const name = unit === "s" ? "seconds" : "milliseconds";
+  return (
+    <div className="transport-readout">
+      <div className="readout-fields">
+        <span className="readout-cell" title="current time">
+          {formatTime(time, unit)}
+        </span>
+        <span className="readout-cell is-muted" title="duration">
+          {formatTime(duration, unit)}
+        </span>
+      </div>
+      <button
+        type="button"
+        className="readout-unit"
+        title={name}
+        aria-label={`readout unit: ${name}`}
+        onClick={onToggleUnit}
+      >
+        {unit}
+      </button>
+    </div>
+  );
+}
 
 /** Lucide `play` / `pause` / `repeat`, inlined to match the rest of the studio chrome. */
 function PlayIcon() {

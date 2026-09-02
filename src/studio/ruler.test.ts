@@ -4,9 +4,9 @@ import {
   MIN_DURATION,
   SNAP_PX,
   clampDuration,
-  formatClock,
   formatMillis,
-  formatTick,
+  formatSeconds,
+  formatTime,
   ticks,
   timeToX,
   xToTime,
@@ -45,24 +45,22 @@ describe("timeToX / xToTime", () => {
   });
 });
 
-describe("formatTick / formatClock", () => {
-  it("labels ticks as MM:SS", () => {
-    expect(formatTick(0)).toBe("00:00");
-    expect(formatTick(75)).toBe("01:15");
+describe("formatSeconds / formatMillis / formatTime", () => {
+  it("reads seconds as 0.00 at every magnitude", () => {
+    expect(formatSeconds(0)).toBe("0.00");
+    expect(formatSeconds(1.5)).toBe("1.50");
+    expect(formatSeconds(61.239)).toBe("61.24");
   });
 
-  it("reads the transport clock to a centisecond", () => {
-    expect(formatClock(0)).toBe("00:00.00");
-    expect(formatClock(2.5)).toBe("00:02.50");
-    expect(formatClock(61.239)).toBe("01:01.23");
-  });
-});
-
-describe("formatMillis", () => {
   it("reads whole milliseconds", () => {
     expect(formatMillis(0)).toBe("0");
     expect(formatMillis(1.4994)).toBe("1499");
     expect(formatMillis(3)).toBe("3000");
+  });
+
+  it("routes both units through one formatter", () => {
+    expect(formatTime(2.5, "s")).toBe("2.50");
+    expect(formatTime(2.5, "ms")).toBe("2500");
   });
 });
 
@@ -80,9 +78,20 @@ describe("ticks", () => {
     }
   });
 
-  it("gives every label a distinct MM:SS", () => {
+  it("gives every label a distinct time", () => {
     const labels = ticks(3, WIDTH).map((tk) => tk.label).filter(Boolean);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("relabels in the unit it is asked for", () => {
+    const at = (unit: "s" | "ms") =>
+      ticks(2, WIDTH, unit).map((tk) => tk.label).filter(Boolean);
+    expect(at("s")).toContain("1.00");
+    expect(at("ms")).toContain("1000");
+    // Same ticks either way — only their labels change.
+    expect(ticks(2, WIDTH, "ms").map((tk) => tk.x)).toEqual(
+      ticks(2, WIDTH, "s").map((tk) => tk.x),
+    );
   });
 
   it("has nothing to draw without a ruler", () => {

@@ -11,7 +11,8 @@ export const RULER_HEIGHT = 28;
 /** Within this many pixels of the left edge the playhead reads as "the start". */
 export const SNAP_PX = 6;
 
-const MAJOR_STEPS = [1, 2, 5, 10];
+/** Seconds a labelled tick can step by. Decimals read fine, so halves are allowed. */
+const MAJOR_STEPS = [0.5, 1, 2, 5, 10];
 const MINOR_DIVISIONS = 5;
 const MIN_LABEL_GAP = 56;
 const MIN_MINOR_GAP = 10;
@@ -32,34 +33,32 @@ export function xToTime(x: number, width: number): number {
   return clamp(x <= SNAP_PX ? 0 : x / width, 0, 1);
 }
 
-/** `MM:SS`, for ruler labels. */
-export function formatTick(seconds: number): string {
-  const whole = Math.max(0, Math.round(seconds));
-  return `${pad(Math.floor(whole / 60))}:${pad(whole % 60)}`;
+/** Which unit the transport and the ruler both read in. */
+export type Unit = "s" | "ms";
+
+/** Seconds to two decimals — the same `0.00` shape at every magnitude. */
+export function formatSeconds(seconds: number): string {
+  return Math.max(0, seconds).toFixed(2);
 }
 
-/** `MM:SS.CC`, for the transport readout — centiseconds, so scrubbing reads live. */
-export function formatClock(seconds: number): string {
-  const total = Math.max(0, seconds);
-  const mm = Math.floor(total / 60);
-  const ss = Math.floor(total % 60);
-  const cs = Math.floor((total - Math.floor(total)) * 100);
-  return `${pad(mm)}:${pad(ss)}.${pad(cs)}`;
-}
-
-/** Whole milliseconds, for the readout's `ms` unit. */
+/** Whole milliseconds, the unit the exporter counts frames in. */
 export function formatMillis(seconds: number): string {
   return String(Math.round(Math.max(0, seconds) * 1000));
+}
+
+/** One formatter for the readout and the ruler, so a unit switch moves both. */
+export function formatTime(seconds: number, unit: Unit): string {
+  return unit === "s" ? formatSeconds(seconds) : formatMillis(seconds);
 }
 
 export type Tick = { t: number; x: number; label: string | null };
 
 /**
- * Tick positions across a ruler of `width` spanning `duration` seconds. Labelled
- * majors are whole seconds so no two labels round to the same `MM:SS`; unlabelled
- * minors subdivide them when there is room.
+ * Tick positions across a ruler of `width` spanning `duration` seconds. Majors
+ * carry a label in the current unit; unlabelled minors subdivide them when there
+ * is room.
  */
-export function ticks(duration: number, width: number): Tick[] {
+export function ticks(duration: number, width: number, unit: Unit = "s"): Tick[] {
   if (width < 1 || duration <= 0) return [];
   const perSecond = width / duration;
   const major =
@@ -76,9 +75,11 @@ export function ticks(duration: number, width: number): Tick[] {
     const t = seconds / duration;
     const ratio = seconds / major;
     const isMajor = Math.abs(ratio - Math.round(ratio)) < 1e-6;
-    out.push({ t, x: timeToX(t, width), label: isMajor ? formatTick(seconds) : null });
+    out.push({
+      t,
+      x: timeToX(t, width),
+      label: isMajor ? formatTime(seconds, unit) : null,
+    });
   }
   return out;
 }
-
-const pad = (n: number) => String(n).padStart(2, "0");
