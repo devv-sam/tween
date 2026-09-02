@@ -1,4 +1,5 @@
 import type { Composition } from "../core/types";
+import { contentEnd } from "../core/bounds";
 import { drawFieldMarkers } from "./canvas2d";
 import { paintComposition } from "./paint";
 
@@ -76,16 +77,19 @@ export class Preview {
     if (!this.last) this.last = ts;
     const dt = (ts - this.last) / 1000;
     this.last = ts;
+    // The loop turns over where the work ends, not where the timeline does — an
+    // empty tail is time the composition owns but has nothing to show in.
+    const end = contentEnd(this.comp);
     const next = this.t + dt / this.comp.duration;
-    if (next >= 1 && !this.loop) {
+    if (next >= end && !this.loop) {
       this.pause();
-      this.t = 1;
+      this.t = end;
       this.onTick?.(this.t);
       this.render();
       this.onEnd?.();
       return;
     }
-    this.t = next % 1;
+    this.t = next % end;
     this.onTick?.(this.t);
     this.render();
     this.raf = requestAnimationFrame(this.frame);

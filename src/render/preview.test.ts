@@ -95,3 +95,67 @@ describe("Preview as a clock", () => {
     expect(p.playing).toBe(false);
   });
 });
+
+describe("Preview loops at the end of the work", () => {
+  /** A 2s composition whose only animation stops a quarter of the way in. */
+  const trimmed = (end: number): Composition => ({
+    fps: 30,
+    duration: 2,
+    driver: { kind: "time" },
+    tracks: [
+      {
+        layer: {
+          id: "el",
+          source: { kind: "image", value: "img" },
+          base: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 },
+        },
+        keyframes: { scale: { stops: [{ t: 0, v: 0 }, { t: 1, v: 1 }], range: [0, end] } },
+        modules: [],
+      },
+    ],
+  });
+
+  it("turns over once the work ends, not when the timeline does", () => {
+    const p = new Preview(null, trimmed(0.5));
+    p.play();
+    step(0);
+    step(900); // 0.45 of a 2s comp — still inside the work
+    expect(p.t).toBeCloseTo(0.45);
+    step(200); // 0.55 would be past the end, so it wraps
+    expect(p.t).toBeCloseTo(0.05);
+    expect(p.playing).toBe(true);
+  });
+
+  it("stops at the end of the work with loop off", () => {
+    const p = new Preview(null, trimmed(0.5));
+    const ended = vi.fn();
+    p.loop = false;
+    p.onEnd = ended;
+    p.play();
+    step(0);
+    step(1500);
+    expect(p.t).toBeCloseTo(0.5);
+    expect(p.playing).toBe(false);
+    expect(ended).toHaveBeenCalledOnce();
+  });
+
+  it("reaches for the furthest block when several disagree", () => {
+    const c = trimmed(0.3);
+    c.tracks[0].modules = [
+      { type: "keyframes", range: [0, 0.8], params: { property: "x", stops: [] } },
+    ];
+    const p = new Preview(null, c);
+    p.play();
+    step(0);
+    step(1400); // 0.7 — inside the further block, so no wrap yet
+    expect(p.t).toBeCloseTo(0.7);
+  });
+
+  it("plays its whole length when there is nothing on it", () => {
+    const p = new Preview(null, comp(2));
+    p.play();
+    step(0);
+    step(1800);
+    expect(p.t).toBeCloseTo(0.9);
+  });
+});
