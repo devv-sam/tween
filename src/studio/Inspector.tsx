@@ -11,7 +11,6 @@ import {
   resolutionFor,
   resolutionKey,
 } from "./composition";
-import { MAX_DURATION, MIN_DURATION } from "./ruler";
 import {
   EASINGS,
   PROPS,
@@ -84,26 +83,21 @@ export function Inspector() {
   );
 }
 
-/** What the panel holds with nothing selected: the composition is always there to edit. */
+/**
+ * What the panel holds with nothing selected. The header already says "composition",
+ * so the section does not repeat it.
+ *
+ * No duration field: length is not a setting to fill in before you can animate. It
+ * follows from the work, and the ruler's end handle is there when you want to say
+ * otherwise.
+ */
 function CompositionPanel() {
-  const { duration, fps, driver, background } = useStudio((s) => s.composition);
+  const { fps, driver, background } = useStudio((s) => s.composition);
   const frame = useStudio((s) => s.frame);
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>composition</p>
-
       <div className="flex flex-col gap-1.5">
-        <NumberField
-          label="duration"
-          title="duration in seconds"
-          value={duration}
-          min={MIN_DURATION}
-          max={MAX_DURATION}
-          step={0.5}
-          onChange={(v) => useStudio.getState().setDuration(v)}
-        />
-
         <SelectField
           label="fps"
           value={String(fps)}
