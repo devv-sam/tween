@@ -199,3 +199,75 @@ describe("position keyframes", () => {
     expect(keyframes().y.stops.map((s) => s.v)).toEqual([200, 200]);
   });
 });
+
+describe("moving a keyframed element", () => {
+  beforeEach(seed);
+
+  const keyframes = () => useStudio.getState().composition.tracks[0].keyframes ?? {};
+  /** A three-second element with position keyframes at 0s and 3s. */
+  const keyframed = (): string => {
+    const id = layer().id;
+    useStudio.getState().addKeyframes(id, "position");
+    useStudio.getState().setPositionStops(id, {
+      x: [{ t: 0, v: 100 }, { t: 1, v: 400 }],
+      y: [{ t: 0, v: 100 }, { t: 1, v: 400 }],
+    });
+    useStudio.getState().sealHistory();
+    return id;
+  };
+
+  const drag = (id: string, dx: number, dy: number) => {
+    const anchor = useStudio.getState().moveAnchor(id)!;
+    useStudio.getState().moveLayer(id, anchor, dx, dy);
+    useStudio.getState().sealHistory();
+  };
+
+  it("writes the keyframe the playhead is on, and leaves the others alone", () => {
+    const id = keyframed();
+    useStudio.getState().setT(0);
+    drag(id, 50, -20);
+
+    expect(keyframes().x.stops.map((s) => s.v)).toEqual([150, 400]);
+    expect(keyframes().y.stops.map((s) => s.v)).toEqual([80, 400]);
+  });
+
+  it("captures a new keyframe at a time that had none", () => {
+    const id = keyframed();
+    // Halfway, where the element reads 250 on both axes.
+    useStudio.getState().setT(0.5);
+    drag(id, 30, 0);
+
+    expect(keyframes().x.stops.map((s) => s.t)).toEqual([0, 0.5, 1]);
+    expect(keyframes().x.stops.map((s) => s.v)).toEqual([100, 280, 400]);
+    // The axis that did not move still gets the keyframe, holding what it was showing.
+    expect(keyframes().y.stops.map((s) => s.v)).toEqual([100, 250, 400]);
+  });
+
+  it("leaves one keyframe behind however far the pointer wanders", () => {
+    const id = keyframed();
+    useStudio.getState().setT(0.5);
+    const anchor = useStudio.getState().moveAnchor(id)!;
+    for (const dx of [5, 40, 12, -30, 60]) {
+      useStudio.getState().moveLayer(id, anchor, dx, 0);
+    }
+    useStudio.getState().sealHistory();
+
+    expect(keyframes().x.stops).toHaveLength(3);
+    expect(keyframes().x.stops[1].v).toBe(310);
+  });
+
+  it("stays one undo step, and puts every keyframe back", () => {
+    const id = keyframed();
+    useStudio.getState().setT(0.5);
+    drag(id, 30, 0);
+
+    useStudio.getState().undo();
+    expect(keyframes().x.stops.map((s) => s.v)).toEqual([100, 400]);
+  });
+
+  it("moves the base of an element that carries no keyframes", () => {
+    const id = layer().id;
+    drag(id, 50, 50);
+    expect(layer().base).toMatchObject({ x: 250, y: 250 });
+  });
+});

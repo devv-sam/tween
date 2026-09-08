@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { clamp } from "../core/math";
+import { sampleStops } from "../core/curve";
 import type {
   Composition,
   Driver,
@@ -16,7 +17,9 @@ import {
   newKeyframes,
   newPosition,
   positionDrivers,
+  secondsToT,
   shiftStops,
+  stopAtTime,
   type KeyProp,
   type KeyTarget,
   type PositionDriver,
@@ -49,6 +52,10 @@ import {
 export type MoveAnchor = {
   base: { x: number; y: number };
   driven: PositionDriver[];
+  /** Where the playhead was when the drag began, in seconds. Held here rather than
+   *  read live so every move in one drag writes the same keyframe, and dropping in
+   *  the same place twice lands the same value. */
+  seconds: number;
 };
 
 export type ImageAsset = {
@@ -546,13 +553,24 @@ export const useStudio = create<StudioState>((set, get) => {
       return {
         base: { x: track.layer.base.x, y: track.layer.base.y },
         driven: positionDrivers(track),
+        seconds: get().t * get().composition.duration,
       };
     },
 
     /**
      * Move an element by (dx, dy) from `anchor`, writing to whichever holder owns each
-     * axis: a driving module's stops when there is one, `base` otherwise. One `set`, so
+     * axis: the keyframe under the playhead when the element carries its own motion, a
+     * driving module's stops when one is on the stack, `base` otherwise. One `set`, so
      * a drag that moves both axes still costs a single render.
+     *
+     * On a keyframed axis the drag captures rather than translates: it writes the value
+     * it was dropped at into the keyframe at the playhead, leaving every other keyframe
+     * where the author put it. With no keyframe at that time there is one afterwards —
+     * moving an element at a moment is how a keyframe is made.
+     *
+     * A module is the exception, and stays a slide. Its stops are a packaged bundle
+     * whose shape is the whole point of having bundled it; dragging the element it
+     * drives asks for that motion somewhere else, not for a dent in the middle of it.
      */
     moveLayer: (layerId, anchor, dx, dy) => {
       const by = { x: dx, y: dy };
@@ -577,9 +595,14 @@ export const useStudio = create<StudioState>((set, get) => {
             if (drive.part.kind !== "keyframes") continue;
             const current = keyframes[drive.part.property];
             if (!current) continue;
+            // Every move in the drag starts from the stops the drag began with, so a
+            // pointer wandering back over its own path leaves one keyframe behind and
+            // not a trail of them.
+            const at = secondsToT(anchor.seconds, current.range, s.composition.duration);
+            const held = sampleStops(drive.stops, at);
             keyframes[drive.part.property] = {
               ...current,
-              stops: shiftStops(drive.stops, by[drive.axis]),
+              stops: stopAtTime(drive.stops, at, held + by[drive.axis]),
             };
           }
           return { ...tr, layer: { ...tr.layer, base }, keyframes, modules };
