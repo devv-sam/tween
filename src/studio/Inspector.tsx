@@ -40,6 +40,9 @@ import {
 /** Muted chrome shared by every control in the panel, kept in one place so the
  *  inspector reads as one surface rather than a pile of inputs. */
 const LABEL = "text-[10px] uppercase tracking-[0.04em] text-[#888]";
+/** A label for one row inside a section — quieter than the section's own, so it
+ *  groups the fields under it without competing with the heading above them. */
+const SUBLABEL = "text-[9px] uppercase tracking-[0.04em] text-[#b0b0b0]";
 const SECTION = "border-b border-[#e0e0e0] px-3 py-3";
 const INPUT =
   "min-w-0 bg-transparent text-[11px] text-[#111] tabular-nums outline-none placeholder:text-[#c0c0c0]";
@@ -325,8 +328,10 @@ function BaseTransform({
     <section className={SECTION}>
       <p className={`${LABEL} mb-2`}>transform</p>
       {/* Position is one property with two fields: one diamond keyframes the pair,
-          and the toggle beside it is how you ask for the axes apart. */}
-      <div className="mb-1 flex items-center gap-1.5">
+          and the toggle beside it is how you ask for the axes apart. Two fields on
+          one row want saying what they are together. */}
+      <p className={`${SUBLABEL} mb-1`}>position</p>
+      <div className="mb-2 flex items-center gap-1.5">
         {separate ? (
           <>
             {cell("x", x)}
