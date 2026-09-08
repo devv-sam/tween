@@ -121,3 +121,81 @@ describe("undo and redo", () => {
     expect(useStudio.getState().view.scale).not.toBe(scaled);
   });
 });
+
+describe("position keyframes", () => {
+  beforeEach(seed);
+
+  const keyframes = () => useStudio.getState().composition.tracks[0].keyframes ?? {};
+
+  it("keyframes both axes at once, and selects the pair", () => {
+    const id = layer().id;
+    useStudio.getState().addKeyframes(id, "position");
+    expect(Object.keys(keyframes())).toEqual(["x", "y"]);
+    expect(useStudio.getState().selectedPart).toEqual({
+      kind: "keyframes",
+      property: "position",
+    });
+    // Flat on where the element already is, so nothing moves until a value changes.
+    expect(keyframes().x.stops.map((s) => s.v)).toEqual([200, 200]);
+  });
+
+  it("removes both axes together", () => {
+    const id = layer().id;
+    useStudio.getState().addKeyframes(id, "position");
+    useStudio.getState().removeKeyframes(id, "position");
+    expect(Object.keys(keyframes())).toEqual([]);
+  });
+
+  it("moves one window when the block is dragged", () => {
+    const id = layer().id;
+    useStudio.getState().addKeyframes(id, "position");
+    useStudio.getState().setKeyframeRange(id, "position", [0.2, 0.8]);
+    expect(keyframes().x.range).toEqual([0.2, 0.8]);
+    expect(keyframes().y.range).toEqual([0.2, 0.8]);
+  });
+
+  it("splits into two properties and back into one", () => {
+    const id = layer().id;
+    useStudio.getState().addKeyframes(id, "position");
+    useStudio.getState().setSeparatePosition(id, true);
+    expect(layer().separatePosition).toBe(true);
+    // The selection follows the split rather than going blank.
+    expect(useStudio.getState().selectedPart).toEqual({
+      kind: "keyframes",
+      property: "x",
+    });
+
+    // A time authored on y alone survives the trip back.
+    useStudio.getState().setKeyframeStops(id, "y", [
+      { t: 0, v: 0 },
+      { t: 0.5, v: 100 },
+      { t: 1, v: 0 },
+    ]);
+    useStudio.getState().setSeparatePosition(id, false);
+    expect(layer().separatePosition).toBe(false);
+    expect(keyframes().x.stops.map((s) => s.t)).toEqual([0, 0.5, 1]);
+    expect(keyframes().y.stops.map((s) => s.v)).toEqual([0, 100, 0]);
+    // x had no keyframe at 0.5, so it takes the value it was already showing there.
+    expect(keyframes().x.stops[1].v).toBe(200);
+  });
+
+  it("does not invent keyframes when an element without any is recombined", () => {
+    const id = layer().id;
+    useStudio.getState().setSeparatePosition(id, true);
+    useStudio.getState().setSeparatePosition(id, false);
+    expect(Object.keys(keyframes())).toEqual([]);
+  });
+
+  it("writes both axes as one undo step", () => {
+    const id = layer().id;
+    useStudio.getState().addKeyframes(id, "position");
+    useStudio.getState().setPositionStops(id, {
+      x: [{ t: 0, v: 1 }, { t: 1, v: 2 }],
+      y: [{ t: 0, v: 3 }, { t: 1, v: 4 }],
+    });
+    useStudio.getState().sealHistory();
+    useStudio.getState().undo();
+    expect(keyframes().x.stops.map((s) => s.v)).toEqual([200, 200]);
+    expect(keyframes().y.stops.map((s) => s.v)).toEqual([200, 200]);
+  });
+});

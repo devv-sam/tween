@@ -9,9 +9,9 @@ export const FPS_CHOICES = [24, 30, 60] as const;
  * numbers are shown alongside, but the shape is what a user is choosing.
  */
 export const RESOLUTIONS: { label: string; size: Size }[] = [
-  { label: "1920 × 1080", size: { width: 1920, height: 1080 } },
-  { label: "1080 × 1080", size: { width: 1080, height: 1080 } },
-  { label: "1080 × 1920", size: { width: 1080, height: 1920 } },
+  { label: "1920×1080", size: { width: 1920, height: 1080 } },
+  { label: "1080×1080", size: { width: 1080, height: 1080 } },
+  { label: "1080×1920", size: { width: 1080, height: 1920 } },
 ];
 
 export const DRIVERS = ["time", "input"] as const;

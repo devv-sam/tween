@@ -17,8 +17,11 @@ import {
   positionDrivers,
   shiftStops,
   trackBlocks,
+  mergePosition,
+  newPosition,
   patchStop,
   removeStop,
+  positionSets,
   slideRange,
   trimRange,
   type Range,
@@ -305,5 +308,87 @@ describe("layerName", () => {
     expect(layerName({ ...layer, name: "hero" }, "star.png", 0)).toBe("hero");
     expect(layerName({ ...layer, name: "  " }, "star.png", 0)).toBe("star.png");
     expect(layerName(layer, undefined, 2)).toBe("Element 3");
+  });
+});
+
+describe("position", () => {
+  const track = (
+    keyframes: Track["keyframes"],
+    separatePosition?: boolean,
+  ): Track => ({
+    layer: { id: "a", source: { kind: "image", value: "i" }, base, separatePosition },
+    keyframes,
+    modules: [],
+  });
+  const set = (stops: { t: number; v: number }[], range: Range = [0, 1]) => ({
+    stops,
+    range,
+  });
+
+  it("is one property while both axes are held together", () => {
+    const both = track({ x: set([{ t: 0, v: 0 }]), y: set([{ t: 0, v: 0 }]) });
+    expect(positionSets(both)).not.toBeNull();
+    expect(trackBlocks(both).map((b) => b.label)).toEqual(["position"]);
+  });
+
+  it("is two once the axes are separated, or when only one carries motion", () => {
+    const apart = track({ x: set([{ t: 0, v: 0 }]), y: set([{ t: 0, v: 0 }]) }, true);
+    expect(positionSets(apart)).toBeNull();
+    expect(trackBlocks(apart).map((b) => b.label)).toEqual(["x", "y"]);
+    expect(positionSets(track({ x: set([{ t: 0, v: 0 }]) }))).toBeNull();
+  });
+
+  it("leaves axes that already agree exactly as they are", () => {
+    const x = set([{ t: 0, v: 0 }, { t: 1, v: 10 }]);
+    const y = set([{ t: 0, v: 5 }, { t: 1, v: 50 }]);
+    expect(mergePosition(x, y)).toEqual({ x, y });
+  });
+
+  it("keeps every stop time from either axis, sampling the one that lacks it", () => {
+    const x = set([{ t: 0, v: 0 }, { t: 1, v: 100 }]);
+    const y = set([{ t: 0, v: 0 }, { t: 0.5, v: 50 }, { t: 1, v: 0 }]);
+    const merged = mergePosition(x, y);
+    expect(merged.x.stops.map((s) => [s.t, s.v])).toEqual([
+      [0, 0],
+      [0.5, 50],
+      [1, 100],
+    ]);
+    expect(merged.y.stops.map((s) => [s.t, s.v])).toEqual([
+      [0, 0],
+      [0.5, 50],
+      [1, 0],
+    ]);
+  });
+
+  it("spans both windows, holding an axis at its end past its own edge", () => {
+    const x = set([{ t: 0, v: 0 }, { t: 1, v: 10 }], [0, 0.5]);
+    const y = set([{ t: 0, v: 100 }, { t: 1, v: 200 }], [0.5, 1]);
+    const merged = mergePosition(x, y);
+    expect(merged.x.range).toEqual([0, 1]);
+    expect(merged.y.range).toEqual([0, 1]);
+    expect(merged.x.stops.map((s) => [s.t, s.v])).toEqual([
+      [0, 0],
+      [0.5, 10],
+      [1, 10],
+    ]);
+    expect(merged.y.stops.map((s) => [s.t, s.v])).toEqual([
+      [0, 100],
+      [0.5, 100],
+      [1, 200],
+    ]);
+  });
+
+  it("gives a missing axis the other's timing, held at the element's value", () => {
+    const x = set([{ t: 0, v: 0 }, { t: 0.5, v: 40 }, { t: 1, v: 0 }]);
+    expect(newPosition(track({ x }))).toEqual({
+      x,
+      y: { range: [0, 1], stops: x.stops.map((s) => ({ ...s, v: base.y })) },
+    });
+  });
+
+  it("starts both axes flat on the element when there is nothing to merge", () => {
+    const fresh = newPosition(track(undefined));
+    expect(fresh.x.stops.map((s) => s.v)).toEqual([base.x, base.x]);
+    expect(fresh.y.stops.map((s) => s.v)).toEqual([base.y, base.y]);
   });
 });

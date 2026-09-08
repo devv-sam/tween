@@ -1,5 +1,5 @@
 import { clamp } from "../core/math";
-import type { Stop } from "../core/curve";
+import { sampleStops, type Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import type { KeyframeSet, Layer, ModuleData, Track, Transform } from "../core/types";
 
@@ -9,7 +9,7 @@ import type { KeyframeSet, Layer, ModuleData, Track, Transform } from "../core/t
  * one selection covers both rather than two fields that could disagree.
  */
 export type SelectedPart =
-  | { kind: "keyframes"; property: KeyProp }
+  | { kind: "keyframes"; property: KeyTarget }
   | { kind: "module"; index: number };
 
 export const samePart = (a: SelectedPart | null, b: SelectedPart): boolean =>
@@ -34,6 +34,13 @@ export type KeyProp = (typeof PROPS)[number];
 export const isKeyProp = (v: string): v is KeyProp =>
   (PROPS as readonly string[]).includes(v);
 
+/**
+ * What a keyframe button, a block, or a stop editor can be pointed at. `position` is
+ * the pair: x and y authored as one property, which is how an element is animated
+ * until someone asks for the axes apart.
+ */
+export type KeyTarget = KeyProp | "position";
+
 export const EASINGS: { value: Easing; label: string }[] = [
   { value: "linear", label: "linear" },
   { value: "in", label: "ease in" },
@@ -45,7 +52,8 @@ export const EASINGS: { value: Easing; label: string }[] = [
  * One muted colour per property, so two blocks in the same lane are told apart at a
  * glance without competing with the frame.
  */
-export const PROP_COLOR: Record<KeyProp, string> = {
+export const PROP_COLOR: Record<KeyTarget, string> = {
+  position: "border-indigo-300 bg-indigo-100 text-indigo-900",
   x: "border-sky-300 bg-sky-100 text-sky-900",
   y: "border-teal-300 bg-teal-100 text-teal-900",
   scale: "border-violet-300 bg-violet-100 text-violet-900",
@@ -57,7 +65,8 @@ export const PROP_COLOR: Record<KeyProp, string> = {
  * The same hues, unfilled. A standalone set is raw material — it reads as an outline
  * until it is bundled into a module, which reads as a solid.
  */
-export const PROP_OUTLINE: Record<KeyProp, string> = {
+export const PROP_OUTLINE: Record<KeyTarget, string> = {
+  position: "border-indigo-400 bg-white text-indigo-700",
   x: "border-sky-400 bg-white text-sky-700",
   y: "border-teal-400 bg-white text-teal-700",
   scale: "border-violet-400 bg-white text-violet-700",
@@ -67,7 +76,8 @@ export const PROP_OUTLINE: Record<KeyProp, string> = {
 
 /** The same hues as the blocks, as text — a filled diamond means this property
  *  carries motion. */
-export const PROP_TEXT: Record<KeyProp, string> = {
+export const PROP_TEXT: Record<KeyTarget, string> = {
+  position: "text-indigo-500",
   x: "text-sky-500",
   y: "text-teal-500",
   scale: "text-violet-500",
@@ -76,7 +86,8 @@ export const PROP_TEXT: Record<KeyProp, string> = {
 };
 
 /** The same hues as the blocks, solid — a filled dot means this property carries motion. */
-export const PROP_DOT: Record<KeyProp, string> = {
+export const PROP_DOT: Record<KeyTarget, string> = {
+  position: "bg-indigo-500",
   x: "bg-sky-500",
   y: "bg-teal-500",
   scale: "bg-violet-500",
@@ -85,7 +96,8 @@ export const PROP_DOT: Record<KeyProp, string> = {
 };
 
 /** Sensible input steps per property — degrees move faster than opacity. */
-export const PROP_STEP: Record<KeyProp, number> = {
+export const PROP_STEP: Record<KeyTarget, number> = {
+  position: 1,
   x: 1,
   y: 1,
   scale: 0.05,
@@ -116,6 +128,12 @@ export function newKeyframes(prop: KeyProp, base: Transform): KeyframeSet {
 export const keyframesFor = (track: Track, prop: KeyProp): KeyframeSet | undefined =>
   track.keyframes?.[prop];
 
+/** Whether a target already carries motion — for position, both axes have to. */
+export const hasKeyframes = (track: Track, target: KeyTarget): boolean =>
+  target === "position"
+    ? Boolean(positionSets(track))
+    : Boolean(track.keyframes?.[target]);
+
 export const moduleProp = (md: ModuleData): KeyProp => {
   const p = md.params.property;
   return typeof p === "string" && isKeyProp(p) ? p : "x";
@@ -123,6 +141,95 @@ export const moduleProp = (md: ModuleData): KeyProp => {
 
 export const moduleStops = (md: ModuleData): Stop[] =>
   Array.isArray(md.params.stops) ? (md.params.stops as Stop[]) : [];
+
+/** The two axes of a combined position, kept in lockstep: same range, same stop
+ *  times, same easings. Only the values differ. */
+export type PositionSets = { x: KeyframeSet; y: KeyframeSet };
+
+/**
+ * The pair to treat as one property, or null when the axes stand alone — because the
+ * element was separated, or because only one of them carries motion.
+ */
+export function positionSets(track: Track): PositionSets | null {
+  if (track.layer.separatePosition) return null;
+  const x = track.keyframes?.x;
+  const y = track.keyframes?.y;
+  return x && y ? { x, y } : null;
+}
+
+/** Where a stop sits over the whole composition, rather than inside its block. */
+const absoluteT = (set: KeyframeSet, stop: Stop): number =>
+  set.range[0] + stop.t * (set.range[1] - set.range[0]);
+
+/** One axis timed like another but holding still — the shape of nothing happening,
+ *  so an axis with no motion of its own can join one that has some. */
+export const flatLike = (set: KeyframeSet, v: number): KeyframeSet => ({
+  range: set.range,
+  stops: set.stops.map((s) => ({ ...s, v })),
+});
+
+/**
+ * Two independently authored axes brought back into lockstep. Every stop time from
+ * either one survives; the axis that was missing a time is sampled at it, so the
+ * element traces the same path it did before. Easing comes from whichever axis
+ * actually had a keyframe there — the merged curve can only carry one.
+ */
+export function mergePosition(x: KeyframeSet, y: KeyframeSet): PositionSets {
+  const range: Range = [
+    Math.min(x.range[0], y.range[0]),
+    Math.max(x.range[1], y.range[1]),
+  ];
+  const span = range[1] - range[0];
+
+  const times: number[] = [];
+  for (const set of [x, y]) {
+    for (const stop of set.stops) {
+      const at = absoluteT(set, stop);
+      if (!times.some((t) => Math.abs(t - at) < SAME_STOP)) times.push(at);
+    }
+  }
+  times.sort((a, b) => a - b);
+
+  /** The easing an axis carries at an absolute time: its own stop's when it has one
+   *  there, otherwise the one governing the segment that time falls inside. */
+  const easeAt = (set: KeyframeSet, at: number): Easing | undefined => {
+    const own = set.stops.find((s) => Math.abs(absoluteT(set, s) - at) < SAME_STOP);
+    if (own) return own.ease;
+    return set.stops.find((s) => absoluteT(set, s) > at)?.ease;
+  };
+  // Undefined where neither axis had an opinion, which is what a stop written
+  // without one carries — the sampler reads that as linear.
+  const eases = times.map((at) => easeAt(x, at) ?? easeAt(y, at));
+
+  const axis = (set: KeyframeSet): KeyframeSet => {
+    const width = set.range[1] - set.range[0];
+    return {
+      range,
+      stops: times.map((at, i) => ({
+        t: span <= 0 ? 0 : (at - range[0]) / span,
+        // Outside its own block a curve holds its end value, which is what
+        // `sampleStops` returns for a time past either edge.
+        v: sampleStops(set.stops, width <= 0 ? 0 : (at - set.range[0]) / width),
+        ease: eases[i],
+      })),
+    };
+  };
+  return { x: axis(x), y: axis(y) };
+}
+
+/**
+ * The pair to write when position is asked for as one property: whatever the element
+ * already carries, merged into lockstep, with a missing axis timed to match the one
+ * that is there and held at the element's current value.
+ */
+export function newPosition(track: Track): PositionSets {
+  const { x, y } = track.keyframes ?? {};
+  const base = track.layer.base;
+  if (x && y) return mergePosition(x, y);
+  if (x) return { x, y: flatLike(x, base.y) };
+  if (y) return { x: flatLike(y, base.x), y };
+  return { x: newKeyframes("x", base), y: newKeyframes("y", base) };
+}
 
 /**
  * Everything on a track that draws a block, in evaluation order: the element's own
@@ -132,7 +239,7 @@ export const moduleStops = (md: ModuleData): Stop[] =>
  */
 export type BlockView = {
   part: SelectedPart;
-  prop: KeyProp;
+  prop: KeyTarget;
   label: string;
   range: Range;
   stops: Stop[];
@@ -141,16 +248,23 @@ export type BlockView = {
 
 export function trackBlocks(track: Track): BlockView[] {
   const out: BlockView[] = [];
-  for (const [key, set] of Object.entries(track.keyframes ?? {})) {
-    if (!isKeyProp(key)) continue;
-    out.push({
-      part: { kind: "keyframes", property: key },
-      prop: key,
-      label: key,
-      range: set.range,
-      stops: set.stops,
-      standalone: true,
-    });
+  const block = (target: KeyTarget, set: KeyframeSet): BlockView => ({
+    part: { kind: "keyframes", property: target },
+    prop: target,
+    label: target,
+    range: set.range,
+    stops: set.stops,
+    standalone: true,
+  });
+  // A fixed order rather than whatever order the sets were authored in, so a block
+  // stays in the lane the eye last found it in. Position leads, as it does in the
+  // inspector; its two axes draw one block until they are separated.
+  const position = positionSets(track);
+  if (position) out.push(block("position", position.x));
+  for (const prop of PROPS) {
+    if (position && (prop === "x" || prop === "y")) continue;
+    const set = track.keyframes?.[prop];
+    if (set) out.push(block(prop, set));
   }
   track.modules.forEach((md, index) => {
     out.push({
@@ -273,7 +387,7 @@ export function secondsToT(seconds: number, range: Range, duration: number): num
 }
 
 /** Close enough on the ruler to be the same keyframe rather than a second one. */
-const SAME_STOP = 1e-4;
+export const SAME_STOP = 1e-4;
 
 /**
  * A stop at the playhead, holding whatever the property evaluates to right there —

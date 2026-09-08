@@ -4,7 +4,7 @@ import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
-import { useStudio, type ImageAsset } from "./store";
+import { useStudio } from "./store";
 import {
   DRIVERS,
   FPS_CHOICES,
@@ -21,23 +21,28 @@ import {
   PROP_STEP,
   PROP_TEXT,
   baseValue,
+  hasKeyframes,
   keyframesFor,
-  layerName,
   moduleLabel,
   moduleProp,
   moduleStops,
   patchStop,
+  positionSets,
   removeStop,
   secondsToT,
   stopAtTime,
   stopSeconds,
   type KeyProp,
+  type KeyTarget,
   type Range,
 } from "./modules";
 
 /** Muted chrome shared by every control in the panel, kept in one place so the
  *  inspector reads as one surface rather than a pile of inputs. */
 const LABEL = "text-[10px] uppercase tracking-[0.04em] text-[#888]";
+/** A label for one row inside a section — quieter than the section's own, so it
+ *  groups the fields under it without competing with the heading above them. */
+const SUBLABEL = "text-[9px] uppercase tracking-[0.04em] text-[#b0b0b0]";
 const SECTION = "border-b border-[#e0e0e0] px-3 py-3";
 const INPUT =
   "min-w-0 bg-transparent text-[11px] text-[#111] tabular-nums outline-none placeholder:text-[#c0c0c0]";
@@ -48,37 +53,26 @@ const GHOST_BTN =
 
 /**
  * Always in the layout at a fixed width, so selecting an element changes what this
- * panel says and never how wide the frame is. One content slot, three possible
- * occupants: composition settings, the element inspector, and the module inspector
- * nested inside it.
+ * panel says and never how wide the frame is. One content slot, two occupants:
+ * composition settings, and the element inspector with the module inspector nested
+ * inside it. Naming is the timeline's job — an element is renamed on the track that
+ * already carries its name.
  */
 export function Inspector() {
   const composition = useStudio((s) => s.composition);
-  const assets = useStudio((s) => s.assets);
   const selectedId = useStudio((s) => s.selectedId);
-
-  const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
-  const track = index < 0 ? null : composition.tracks[index];
-  const assetName =
-    track?.layer.source.kind === "image"
-      ? assets.find((a) => a.id === track.layer.source.value)?.name
-      : undefined;
+  const track = composition.tracks.find((tr) => tr.layer.id === selectedId) ?? null;
 
   return (
     <aside
       className="flex h-full w-[260px] shrink-0 flex-col border-l border-[#e0e0e0] bg-white"
       aria-label="inspector"
     >
-      <header className="flex h-9 shrink-0 items-center border-b border-[#e0e0e0] px-3">
-        <span className={`${LABEL} truncate`}>
-          {track ? layerName(track.layer, assetName, index) : "composition"}
-        </span>
-      </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* The composition is always there to edit, so it stays put and the element's
             own panel stacks under it rather than replacing it. */}
-        <CompositionPanel labelled={Boolean(track)} />
-        {track ? <ElementPanel track={track} index={index} assets={assets} /> : null}
+        <CompositionPanel />
+        {track ? <ElementPanel track={track} /> : null}
       </div>
     </aside>
   );
@@ -86,21 +80,22 @@ export function Inspector() {
 
 /**
  * The composition's own settings, kept compact so an element's panel has room under
- * them. Its heading only appears once the panel header is naming an element instead
- * — with nothing selected the header already says "composition".
+ * them.
  *
  * No duration field: length is not a setting to fill in before you can animate. It
  * follows from the work, and the ruler's end handle is there when you want to say
  * otherwise.
  */
-function CompositionPanel({ labelled }: { labelled: boolean }) {
+function CompositionPanel() {
   const { fps, driver, background } = useStudio((s) => s.composition);
   const frame = useStudio((s) => s.frame);
 
   return (
     <section className={SECTION}>
-      {labelled ? <p className={`${LABEL} mb-2`}>composition</p> : null}
-      <div className="grid grid-cols-2 gap-1.5">
+      <p className={`${LABEL} mb-2`}>composition</p>
+      {/* The right column carries the widest values — a resolution, a hex — so it
+          takes the room the left one does not need. */}
+      <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
         <SelectField
           label="fps"
           value={String(fps)}
@@ -207,9 +202,11 @@ function SelectField({
 }) {
   return (
     <label className={`${BOX} justify-between`} title={title ?? label}>
-      <span className={LABEL}>{label}</span>
+      <span className={`${LABEL} shrink-0`}>{label}</span>
+      {/* The select is free to shrink: a native control sizes itself to its widest
+          option, which walks the chevron straight out of the box. */}
       <select
-        className="bg-transparent text-[11px] text-[#111] outline-none"
+        className="min-w-0 flex-1 bg-transparent text-right text-[11px] text-[#111] outline-none"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -223,56 +220,24 @@ function SelectField({
   );
 }
 
-function ElementPanel({
-  track,
-  index,
-  assets,
-}: {
-  track: Track;
-  index: number;
-  assets: ImageAsset[];
-}) {
+function ElementPanel({ track }: { track: Track }) {
   const selectedPart = useStudio((s) => s.selectedPart);
   const { layer, modules } = track;
-  const asset =
-    layer.source.kind === "image"
-      ? assets.find((a) => a.id === layer.source.value)
-      : undefined;
   const activeModule =
     selectedPart?.kind === "module" && selectedPart.index < modules.length
       ? selectedPart.index
       : null;
   const activeKeyframes =
-    selectedPart?.kind === "keyframes" && keyframesFor(track, selectedPart.property)
+    selectedPart?.kind === "keyframes" && hasKeyframes(track, selectedPart.property)
       ? selectedPart.property
       : null;
   const authored = PROPS.filter((p) => keyframesFor(track, p));
 
   return (
     <>
-      <section className={SECTION}>
-        <div className={BOX}>
-          <input
-            className={`${INPUT} w-full`}
-            value={layer.name ?? ""}
-            placeholder={layerName({ ...layer, name: undefined }, asset?.name, index)}
-            aria-label="element name"
-            onChange={(e) => useStudio.getState().renameLayer(layer.id, e.target.value)}
-            onBlur={() => useStudio.getState().sealHistory()}
-          />
-        </div>
-      </section>
-
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
-      {activeKeyframes ? (
-        <StopEditor
-          layerId={layer.id}
-          prop={activeKeyframes}
-          stops={keyframesFor(track, activeKeyframes)!.stops}
-          range={keyframesFor(track, activeKeyframes)!.range}
-        />
-      ) : null}
+      {activeKeyframes ? <StopEditor track={track} target={activeKeyframes} /> : null}
 
       {/* Only what an element actually carries — there is no way to add a module
           until there are real module types to add. */}
@@ -334,33 +299,67 @@ function BaseTransform({
   activeKeyframes,
 }: {
   track: Track;
-  activeKeyframes: KeyProp | null;
+  activeKeyframes: KeyTarget | null;
 }) {
-  const { id, base } = track.layer;
+  const { id, base, separatePosition } = track.layer;
+  const separate = Boolean(separatePosition);
   const set = (patch: Partial<Transform>) => useStudio.getState().setLayerBase(id, patch);
 
   // One scale field for two axes: it drives scaleX and carries scaleY along at the
   // ratio a non-uniform resize left behind.
   const ratio = base.scaleX === 0 ? 1 : base.scaleY / base.scaleX;
 
-  const cell = (prop: KeyProp, field: ReactNode) => (
-    <div className="flex min-w-0 items-center gap-1">
+  const cell = (target: KeyTarget, field: ReactNode) => (
+    <div className="flex min-w-0 flex-1 items-center gap-1">
       <div className="min-w-0 flex-1">{field}</div>
       <KeyframeButton
         layerId={id}
-        prop={prop}
-        keyframed={Boolean(keyframesFor(track, prop))}
-        selected={activeKeyframes === prop}
+        target={target}
+        keyframed={hasKeyframes(track, target)}
+        selected={activeKeyframes === target}
       />
     </div>
+  );
+
+  const x = (join?: Join) => (
+    <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} join={join} />
+  );
+  const y = (join?: Join) => (
+    <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} join={join} />
   );
 
   return (
     <section className={SECTION}>
       <p className={`${LABEL} mb-2`}>transform</p>
+      {/* Position is one property with two fields: one diamond keyframes the pair,
+          and the toggle beside it is how you ask for the axes apart. Two fields on
+          one row want saying what they are together. */}
+      <p className={`${SUBLABEL} mb-1`}>position</p>
+      <div className="mb-2 flex items-center gap-1.5">
+        {separate ? (
+          <>
+            {cell("x", x())}
+            {cell("y", y())}
+          </>
+        ) : (
+          <>
+            {/* One property, so one control: the two halves share an edge rather
+                than sitting apart like the properties below them do. */}
+            <div className="flex min-w-0 flex-1">
+              <div className="min-w-0 flex-1">{x("left")}</div>
+              <div className="min-w-0 flex-1">{y("right")}</div>
+            </div>
+            <KeyframeButton
+              layerId={id}
+              target="position"
+              keyframed={hasKeyframes(track, "position")}
+              selected={activeKeyframes === "position"}
+            />
+          </>
+        )}
+        <SeparateButton layerId={id} separate={separate} />
+      </div>
       <div className="grid grid-cols-2 gap-x-1.5 gap-y-1">
-        {cell("x", <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} />)}
-        {cell("y", <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} />)}
         {cell(
           "scale",
           <NumberField
@@ -404,12 +403,12 @@ function BaseTransform({
  */
 function KeyframeButton({
   layerId,
-  prop,
+  target,
   keyframed,
   selected,
 }: {
   layerId: string;
-  prop: KeyProp;
+  target: KeyTarget;
   keyframed: boolean;
   selected: boolean;
 }) {
@@ -417,19 +416,40 @@ function KeyframeButton({
   return (
     <button
       type="button"
-      aria-label={`${label}: ${prop}`}
+      aria-label={`${label}: ${target}`}
       aria-pressed={selected}
       title={label}
       className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
         selected ? "bg-[#e8f4ff]" : "hover:bg-[#f5f5f5]"
-      } ${keyframed ? PROP_TEXT[prop] : "text-[#c0c0c0] hover:text-[#555]"}`}
+      } ${keyframed ? PROP_TEXT[target] : "text-[#c0c0c0] hover:text-[#555]"}`}
       onClick={() => {
         const store = useStudio.getState();
-        if (!keyframed) return store.addKeyframes(layerId, prop);
-        store.selectPart(layerId, selected ? null : { kind: "keyframes", property: prop });
+        if (!keyframed) return store.addKeyframes(layerId, target);
+        store.selectPart(layerId, selected ? null : { kind: "keyframes", property: target });
       }}
     >
       <DiamondIcon filled={keyframed} />
+    </button>
+  );
+}
+
+/** Pressed, x and y are two properties with two sets of keyframes; released, they are
+ *  one. The keyframes survive the trip either way. */
+function SeparateButton({ layerId, separate }: { layerId: string; separate: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-label="separate dimensions"
+      aria-pressed={separate}
+      title="separate dimensions"
+      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
+        separate
+          ? "bg-[#e8f4ff] text-[#0d99ff]"
+          : "text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
+      }`}
+      onClick={() => useStudio.getState().setSeparatePosition(layerId, !separate)}
+    >
+      <SeparatorVerticalIcon />
     </button>
   );
 }
@@ -527,50 +547,56 @@ function KeyframeInspector({
 
       <StopList
         layerId={layerId}
-        prop={prop}
-        stops={stops}
+        axes={[{ prop, stops }]}
         range={md.range}
-        onChange={(next) => params({ stops: next })}
+        onChange={(next) => params({ stops: next[0] })}
       />
     </section>
   );
 }
 
-/** The element's own authored motion for one property: the same stop list a module
- *  gets, without a property picker — the property is what was clicked. */
-function StopEditor({
-  layerId,
-  prop,
-  stops,
-  range,
-}: {
-  layerId: string;
-  prop: KeyProp;
-  stops: Stop[];
-  range: Range;
-}) {
+/**
+ * The element's own authored motion for one property: the same stop list a module
+ * gets, without a property picker — the property is what was clicked. Position brings
+ * two axes to the same list, since a combined position keyframes them together.
+ */
+function StopEditor({ track, target }: { track: Track; target: KeyTarget }) {
+  const layerId = track.layer.id;
+  const position = target === "position" ? positionSets(track) : null;
+  const single = target === "position" ? undefined : keyframesFor(track, target);
+  const held = position ?? single;
+  if (!held) return null;
+
+  const axes: Axis[] = position
+    ? [
+        { prop: "x", stops: position.x.stops },
+        { prop: "y", stops: position.y.stops },
+      ]
+    : [{ prop: target as KeyProp, stops: single!.stops }];
+  const range = position ? position.x.range : single!.range;
+
+  const onChange = (next: Stop[][]) => {
+    const store = useStudio.getState();
+    if (position) store.setPositionStops(layerId, { x: next[0], y: next[1] });
+    else store.setKeyframeStops(layerId, target as KeyProp, next[0]);
+  };
+
   return (
     <section className={`${SECTION} bg-[#fbfbfb]`}>
       <div className="mb-2 flex items-center gap-1.5">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PROP_DOT[prop]}`} />
-        <p className={LABEL}>{prop} keyframes</p>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PROP_DOT[target]}`} />
+        <p className={LABEL}>{target} keyframes</p>
         <button
           type="button"
-          aria-label={`remove ${prop} keyframes`}
+          aria-label={`remove ${target} keyframes`}
           title="remove keyframes"
           className="ml-auto grid h-[20px] w-[20px] place-items-center rounded text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"
-          onClick={() => useStudio.getState().removeKeyframes(layerId, prop)}
+          onClick={() => useStudio.getState().removeKeyframes(layerId, target)}
         >
           ×
         </button>
       </div>
-      <StopList
-        layerId={layerId}
-        prop={prop}
-        stops={stops}
-        range={range}
-        onChange={(next) => useStudio.getState().setKeyframeStops(layerId, prop, next)}
-      />
+      <StopList layerId={layerId} axes={axes} range={range} onChange={onChange} />
     </section>
   );
 }
@@ -579,27 +605,38 @@ function StopEditor({
  * Time, value, easing, one row per stop. Time is read in the same seconds the ruler
  * is labelled with, so a stop and the tick it sits under say the same number.
  */
+/** One property inside a stop list. Two of them means a combined position, whose
+ *  axes share every stop time and differ only in value. */
+type Axis = { prop: KeyProp; stops: Stop[] };
+
 function StopList({
   layerId,
-  prop,
-  stops,
+  axes,
   range,
   onChange,
 }: {
   layerId: string;
-  prop: KeyProp;
-  stops: Stop[];
+  axes: Axis[];
   range: Range;
-  onChange: (stops: Stop[]) => void;
+  onChange: (stops: Stop[][]) => void;
 }) {
   const duration = useStudio((s) => s.composition.duration);
+  // Times, easings, and the count are shared, so the first axis speaks for the row.
+  const stops = axes[0].stops;
+  /** The same edit on every axis — what keeps them in lockstep. */
+  const all = (fn: (axis: Axis) => Stop[]) => onChange(axes.map(fn));
 
-  /** At the playhead, holding whatever the property reads there right now. */
+  /** At the playhead, each axis holding whatever it reads there right now. */
   const addAtPlayhead = () => {
     const { composition, t } = useStudio.getState();
     const item = renderState(composition, t).find((it) => it.id === layerId);
-    const v = item ? baseValue(item.state, prop) : stops[stops.length - 1].v;
-    onChange(stopAtTime(stops, clamp(secondsToT(t * duration, range, duration), 0, 1), v));
+    const at = clamp(secondsToT(t * duration, range, duration), 0, 1);
+    all((axis) => {
+      const v = item
+        ? baseValue(item.state, axis.prop)
+        : axis.stops[axis.stops.length - 1].v;
+      return stopAtTime(axis.stops, at, v);
+    });
   };
 
   return (
@@ -616,57 +653,84 @@ function StopList({
         </button>
       </div>
       <ul className="mt-2 flex flex-col gap-1">
-        {stops.map((stop, i) => (
-          <li key={i} className="flex items-center gap-1">
-            <div className="w-[68px] shrink-0">
+        {stops.map((stop, i) => {
+          // One axis fits beside the time; two need a line of their own, so the row
+          // wraps rather than squeezing four controls into 236px.
+          const values = axes.map((axis) => (
+            <div key={axis.prop} className="min-w-0 flex-1">
               <NumberField
-                label="s"
-                title="time in seconds"
-                value={stopSeconds(stop.t, range, duration)}
-                step={0.1}
-                min={0}
+                label={axes.length > 1 ? axis.prop : "v"}
+                title={`${axis.prop} value`}
+                value={axis.stops[i].v}
+                step={PROP_STEP[axis.prop]}
                 onChange={(v) =>
-                  onChange(patchStop(stops, i, { t: secondsToT(v, range, duration) }))
+                  onChange(
+                    axes.map((other, k) =>
+                      k === axes.indexOf(axis)
+                        ? patchStop(other.stops, i, { v })
+                        : other.stops,
+                    ),
+                  )
                 }
               />
             </div>
-            <div className="min-w-0 flex-1">
-              <NumberField
-                label="v"
-                title={`${prop} value`}
-                value={stop.v}
-                step={PROP_STEP[prop]}
-                onChange={(v) => onChange(patchStop(stops, i, { v }))}
-              />
-            </div>
-            <select
-              className="h-[26px] w-[74px] shrink-0 rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none"
-              aria-label="easing"
-              value={stop.ease ?? "linear"}
-              onChange={(e) => onChange(patchStop(stops, i, { ease: e.target.value as Easing }))}
-            >
-              {EASINGS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              aria-label="remove keyframe"
-              title="remove keyframe"
-              disabled={stops.length <= 2}
-              className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
-              onClick={() => onChange(removeStop(stops, i))}
-            >
-              <DiamondMinusIcon />
-            </button>
-          </li>
-        ))}
+          ));
+          return (
+            <li key={i} className="flex flex-wrap items-center gap-1">
+              <div className="w-[68px] shrink-0">
+                <NumberField
+                  label="s"
+                  title="time in seconds"
+                  value={stopSeconds(stop.t, range, duration)}
+                  step={0.1}
+                  min={0}
+                  onChange={(v) =>
+                    all((axis) =>
+                      patchStop(axis.stops, i, { t: secondsToT(v, range, duration) }),
+                    )
+                  }
+                />
+              </div>
+              {axes.length === 1 ? values : null}
+              <select
+                className="h-[26px] w-[74px] shrink-0 rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none"
+                aria-label="easing"
+                value={stop.ease ?? "linear"}
+                onChange={(e) =>
+                  all((axis) =>
+                    patchStop(axis.stops, i, { ease: e.target.value as Easing }),
+                  )
+                }
+              >
+                {EASINGS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                aria-label="remove keyframe"
+                title="remove keyframe"
+                disabled={stops.length <= 2}
+                className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
+                onClick={() => all((axis) => removeStop(axis.stops, i))}
+              >
+                <DiamondMinusIcon />
+              </button>
+              {axes.length > 1 ? (
+                <div className="flex w-full items-center gap-1">{values}</div>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </>
   );
 }
+
+/** Which side of a joined pair a field is, when two of them make one control. */
+type Join = "left" | "right";
 
 /**
  * A numeric cell that writes on every valid keystroke — the frame re-evaluates from
@@ -682,6 +746,7 @@ function NumberField({
   min,
   max,
   precision = 2,
+  join,
 }: {
   label: string;
   title?: string;
@@ -691,6 +756,7 @@ function NumberField({
   min?: number;
   max?: number;
   precision?: number;
+  join?: Join;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? String(Number(value.toFixed(precision)));
@@ -703,8 +769,20 @@ function NumberField({
     if (raw.trim() !== "" && Number.isFinite(n)) onChange(bounded(n));
   };
 
+  // Joined, the pair overlaps by the one pixel their shared border is, and whichever
+  // half has focus draws over the other.
+  const joined =
+    join === "left"
+      ? "rounded-r-none"
+      : join === "right"
+        ? "-ml-px rounded-l-none"
+        : "";
+
   return (
-    <label className={BOX} title={title ?? label}>
+    <label
+      className={`${BOX} ${joined} relative focus-within:z-10`}
+      title={title ?? label}
+    >
       <span className={`${LABEL} shrink-0`}>{label}</span>
       <input
         className={`${INPUT} w-full text-right`}
@@ -730,6 +808,27 @@ function NumberField({
         }}
       />
     </label>
+  );
+}
+
+/** Lucide `separator-vertical` — the axes pulled apart from a single line. */
+function SeparatorVerticalIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3v18" />
+      <path d="m16 16 4-4-4-4" />
+      <path d="m8 8-4 4 4 4" />
+    </svg>
   );
 }
 

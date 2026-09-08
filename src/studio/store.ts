@@ -14,9 +14,11 @@ import { renderState } from "../core/renderState";
 import { boundsHalf, clampToFrame } from "./selection";
 import {
   newKeyframes,
+  newPosition,
   positionDrivers,
   shiftStops,
   type KeyProp,
+  type KeyTarget,
   type PositionDriver,
   type Range,
   type SelectedPart,
@@ -140,6 +142,20 @@ const snapshot = (s: StudioState): Snapshot => ({
   selectedPart: s.selectedPart,
 });
 
+/** A selection pointing at position, or at one of its axes, moved to whichever of
+ *  the two the element now has. Anything else is left alone. */
+const retargetPosition = (
+  part: SelectedPart | null,
+  separate: boolean,
+): SelectedPart | null => {
+  if (part?.kind !== "keyframes") return part;
+  if (separate && part.property === "position")
+    return { kind: "keyframes", property: "x" };
+  if (!separate && (part.property === "x" || part.property === "y"))
+    return { kind: "keyframes", property: "position" };
+  return part;
+};
+
 /** The frame refitted to the room the viewport has — a reframe, wherever one comes
  *  from: a resolution change, a resize, or an undo of either. */
 const refit = (viewport: Size, frame: Size, view: View): View => {
@@ -181,10 +197,16 @@ type StudioState = {
   select: (layerId: string | null) => void;
   selectPart: (layerId: string, part: SelectedPart | null) => void;
   renameLayer: (layerId: string, name: string) => void;
-  addKeyframes: (layerId: string, prop: KeyProp) => void;
-  removeKeyframes: (layerId: string, prop: KeyProp) => void;
+  addKeyframes: (layerId: string, target: KeyTarget) => void;
+  removeKeyframes: (layerId: string, target: KeyTarget) => void;
   setKeyframeStops: (layerId: string, prop: KeyProp, stops: KeyframeSet["stops"]) => void;
-  setKeyframeRange: (layerId: string, prop: KeyProp, range: Range) => void;
+  /** Both axes of a combined position at once — they only ever move together. */
+  setPositionStops: (
+    layerId: string,
+    stops: { x: KeyframeSet["stops"]; y: KeyframeSet["stops"] },
+  ) => void;
+  setKeyframeRange: (layerId: string, target: KeyTarget, range: Range) => void;
+  setSeparatePosition: (layerId: string, separate: boolean) => void;
   removeModule: (layerId: string, index: number) => void;
   setModuleParams: (layerId: string, index: number, patch: Record<string, unknown>) => void;
   setModuleRange: (layerId: string, index: number, range: Range) => void;
@@ -378,35 +400,45 @@ export const useStudio = create<StudioState>((set, get) => {
     /** Author motion directly on the element: two flat stops on its current value, so
      *  nothing moves until a value is edited. One set per property — asking again just
      *  opens the one that is already there. */
-    addKeyframes: (layerId, prop) => {
+    addKeyframes: (layerId, target) => {
       const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
       if (!track) return;
-      const part: SelectedPart = { kind: "keyframes", property: prop };
-      if (track.keyframes?.[prop]) {
+      const part: SelectedPart = { kind: "keyframes", property: target };
+      const held =
+        target === "position"
+          ? Boolean(track.keyframes?.x && track.keyframes?.y)
+          : Boolean(track.keyframes?.[target]);
+      if (held) {
         set({ selectedId: layerId, selectedPart: part });
         return;
       }
-      const set_ = newKeyframes(prop, track.layer.base);
+      // Position writes both axes, in lockstep from the start.
+      const added =
+        target === "position"
+          ? newPosition(track)
+          : { [target]: newKeyframes(target, track.layer.base) };
       edit(null, (s) => ({
         selectedId: layerId,
         selectedPart: part,
         ...patchTrack(s.composition, layerId, (tr) => ({
           ...tr,
-          keyframes: { ...tr.keyframes, [prop]: set_ },
+          keyframes: { ...tr.keyframes, ...added },
         })),
       }));
     },
 
-    removeKeyframes: (layerId, prop) => {
+    removeKeyframes: (layerId, target) => {
+      const gone = target === "position" ? ["x", "y"] : [target];
       edit(null, (s) => ({
         selectedPart:
-          s.selectedPart?.kind === "keyframes" && s.selectedPart.property === prop
+          s.selectedPart?.kind === "keyframes" && s.selectedPart.property === target
             ? null
             : s.selectedPart,
         ...patchTrack(s.composition, layerId, (tr) => {
-          const { [prop]: gone, ...rest } = tr.keyframes ?? {};
-          void gone;
-          return { ...tr, keyframes: rest };
+          const kept = Object.fromEntries(
+            Object.entries(tr.keyframes ?? {}).filter(([k]) => !gone.includes(k)),
+          );
+          return { ...tr, keyframes: kept };
         }),
       }));
     },
@@ -416,11 +448,48 @@ export const useStudio = create<StudioState>((set, get) => {
         patchTrack(s.composition, layerId, (tr) => patchKeyframes(tr, prop, { stops })));
     },
 
+    setPositionStops: (layerId, stops) => {
+      edit(`stops:${layerId}:position`, (s) =>
+        patchTrack(s.composition, layerId, (tr) =>
+          patchKeyframes(patchKeyframes(tr, "x", { stops: stops.x }), "y", {
+            stops: stops.y,
+          }),
+        ));
+    },
+
     /** The one writer for a standalone set's window — the block's edges are its only
-     *  editor, the same way a module's range works. */
-    setKeyframeRange: (layerId, prop, range) => {
-      edit(`range:${layerId}:${prop}`, (s) =>
-        patchTrack(s.composition, layerId, (tr) => patchKeyframes(tr, prop, { range })));
+     *  editor, the same way a module's range works. A combined position moves both of
+     *  its axes, which is what keeps them one block. */
+    setKeyframeRange: (layerId, target, range) => {
+      edit(`range:${layerId}:${target}`, (s) =>
+        patchTrack(s.composition, layerId, (tr) =>
+          target === "position"
+            ? patchKeyframes(patchKeyframes(tr, "x", { range }), "y", { range })
+            : patchKeyframes(tr, target, { range }),
+        ));
+    },
+
+    /**
+     * Split position into two properties, or put it back together. Separating leaves
+     * the axes exactly as they were — they were already two sets kept in step, so the
+     * split is free. Combining merges them, which is where a time one axis has and the
+     * other does not gets sampled rather than dropped.
+     */
+    setSeparatePosition: (layerId, separate) => {
+      const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (!track) return;
+      const authored = Boolean(track.keyframes?.x || track.keyframes?.y);
+      const merged = !separate && authored ? newPosition(track) : null;
+      edit(null, (s) => ({
+        // The selection was pointing at a property that no longer exists under that
+        // name, so it follows the split rather than going blank.
+        selectedPart: retargetPosition(s.selectedPart, separate),
+        ...patchTrack(s.composition, layerId, (tr) => ({
+          ...tr,
+          layer: { ...tr.layer, separatePosition: separate },
+          keyframes: merged ? { ...tr.keyframes, ...merged } : tr.keyframes,
+        })),
+      }));
     },
 
     removeModule: (layerId, index) => {
