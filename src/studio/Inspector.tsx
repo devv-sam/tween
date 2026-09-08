@@ -321,8 +321,12 @@ function BaseTransform({
     </div>
   );
 
-  const x = <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} />;
-  const y = <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} />;
+  const x = (join?: Join) => (
+    <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} join={join} />
+  );
+  const y = (join?: Join) => (
+    <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} join={join} />
+  );
 
   return (
     <section className={SECTION}>
@@ -334,13 +338,17 @@ function BaseTransform({
       <div className="mb-2 flex items-center gap-1.5">
         {separate ? (
           <>
-            {cell("x", x)}
-            {cell("y", y)}
+            {cell("x", x())}
+            {cell("y", y())}
           </>
         ) : (
           <>
-            <div className="min-w-0 flex-1">{x}</div>
-            <div className="min-w-0 flex-1">{y}</div>
+            {/* One property, so one control: the two halves share an edge rather
+                than sitting apart like the properties below them do. */}
+            <div className="flex min-w-0 flex-1">
+              <div className="min-w-0 flex-1">{x("left")}</div>
+              <div className="min-w-0 flex-1">{y("right")}</div>
+            </div>
             <KeyframeButton
               layerId={id}
               target="position"
@@ -721,6 +729,9 @@ function StopList({
   );
 }
 
+/** Which side of a joined pair a field is, when two of them make one control. */
+type Join = "left" | "right";
+
 /**
  * A numeric cell that writes on every valid keystroke — the frame re-evaluates from
  * the store, so there is no commit step to wait for. The draft is held only so a
@@ -735,6 +746,7 @@ function NumberField({
   min,
   max,
   precision = 2,
+  join,
 }: {
   label: string;
   title?: string;
@@ -744,6 +756,7 @@ function NumberField({
   min?: number;
   max?: number;
   precision?: number;
+  join?: Join;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? String(Number(value.toFixed(precision)));
@@ -756,8 +769,20 @@ function NumberField({
     if (raw.trim() !== "" && Number.isFinite(n)) onChange(bounded(n));
   };
 
+  // Joined, the pair overlaps by the one pixel their shared border is, and whichever
+  // half has focus draws over the other.
+  const joined =
+    join === "left"
+      ? "rounded-r-none"
+      : join === "right"
+        ? "-ml-px rounded-l-none"
+        : "";
+
   return (
-    <label className={BOX} title={title ?? label}>
+    <label
+      className={`${BOX} ${joined} relative focus-within:z-10`}
+      title={title ?? label}
+    >
       <span className={`${LABEL} shrink-0`}>{label}</span>
       <input
         className={`${INPUT} w-full text-right`}
