@@ -787,31 +787,56 @@ function KeyframeLog({ track }: { track: Track }) {
   };
 
   /**
-   * A position keyframe where the playhead is, holding what the element reads there —
-   * so it changes nothing until it is edited, and lands under the time you are
-   * already looking at.
+   * Which property a new keyframe lands on. A selected row says what is being worked
+   * on, so the button follows it; with nothing selected there is nothing to follow and
+   * position is what an element is usually animating.
+   */
+  const addTarget: KeyTarget =
+    selected.length === 1
+      ? (groups.find((g) => g.entries.some((e) => e.id === selected[0]))?.property ??
+        "position")
+      : "position";
+
+  /**
+   * A keyframe where the playhead is, holding what the property reads there — so it
+   * changes nothing until it is edited, and lands under the time you are already
+   * looking at.
    */
   const addAtPlayhead = () => {
-    if (!positionSets(track)) useStudio.getState().addKeyframes(layerId, "position");
+    if (!hasKeyframes(track, addTarget))
+      useStudio.getState().addKeyframes(layerId, addTarget);
     const store = useStudio.getState();
+    const { duration: span } = store.composition;
     const current = store.composition.tracks.find((tr) => tr.layer.id === layerId);
-    const position = current ? positionSets(current) : null;
-    if (!current || !position) return;
+    if (!current) return;
 
     const item = renderState(store.composition, store.t).find((it) => it.id === layerId);
     const last = (stops: Stop[]) => stops[stops.length - 1].v;
-    const at = clamp(
-      secondsToT(store.t * store.composition.duration, position.x.range, store.composition.duration),
-      0,
-      1,
-    );
-    const x = stopAtTime(position.x.stops, at, item ? item.state.x : last(position.x.stops));
-    const y = stopAtTime(position.y.stops, at, item ? item.state.y : last(position.y.stops));
-    store.setPositionStops(layerId, { x, y });
+    /** Where the new row ends up once its set is back in time order. */
+    const focus = (stops: Stop[], at: number) => {
+      const index = stops.findIndex((st) => Math.abs(st.t - at) < SAME_STOP);
+      setCollapsed((ids) => ids.filter((id) => id !== addTarget));
+      setSelected(index < 0 ? [] : [entryId(addTarget, index)]);
+    };
 
-    const index = x.findIndex((s) => Math.abs(s.t - at) < SAME_STOP);
-    setCollapsed((ids) => ids.filter((id) => id !== "position"));
-    setSelected(index < 0 ? [] : [entryId("position", index)]);
+    // Position writes both axes at one time, so its two stops stay one row.
+    const position = addTarget === "position" ? positionSets(current) : null;
+    if (position) {
+      const at = clamp(secondsToT(store.t * span, position.x.range, span), 0, 1);
+      const x = stopAtTime(position.x.stops, at, item ? item.state.x : last(position.x.stops));
+      const y = stopAtTime(position.y.stops, at, item ? item.state.y : last(position.y.stops));
+      store.setPositionStops(layerId, { x, y });
+      focus(x, at);
+      return;
+    }
+
+    const set = current.keyframes?.[addTarget];
+    if (!set) return;
+    const at = clamp(secondsToT(store.t * span, set.range, span), 0, 1);
+    const v = item ? baseValue(item.state, addTarget as KeyProp) : last(set.stops);
+    const stops = stopAtTime(set.stops, at, v);
+    store.setKeyframeStops(layerId, addTarget as KeyProp, stops);
+    focus(stops, at);
   };
 
   const saveModule = (name: string) => {
@@ -847,8 +872,12 @@ function KeyframeLog({ track }: { track: Track }) {
             ) : (
               <button
                 type="button"
-                aria-label="add keyframe at playhead"
-                title="add keyframe at playhead"
+                aria-label={`add ${addTarget} keyframe at playhead`}
+                title={
+                  addTarget === "position"
+                    ? "add keyframe at playhead"
+                    : `add ${addTarget} keyframe at playhead`
+                }
                 className="grid h-[20px] w-[20px] place-items-center rounded text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
                 onClick={addAtPlayhead}
               >
