@@ -51,6 +51,9 @@ export interface Layer {
   base: Transform;
   /** Constrain width and height to their current ratio while resizing. Off by default. */
   lockAspect?: boolean;
+  /** Animate x and y apart. Off by default: position is one property until someone
+   *  asks for two, and the two axes are kept in lockstep while it is. */
+  separatePosition?: boolean;
   distributor?: Distributor;
 }
 

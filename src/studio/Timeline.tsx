@@ -185,6 +185,7 @@ export function Timeline() {
     return {
       id: track.layer.id,
       name: layerName(track.layer, asset?.name, i),
+      given: track.layer.name ?? "",
       blocks,
       height: rowHeight(blocks.length, TRACK_HEIGHT),
     };
@@ -236,14 +237,13 @@ export function Timeline() {
         <div className="timeline-gutter">
           <div className="timeline-gutter-head" style={{ height: RULER_HEIGHT }} />
           {rows.map((row) => (
-            <div
+            <TrackLabel
               key={row.id}
-              className="timeline-track-label"
-              style={{ height: row.height }}
-              title={row.name}
-            >
-              {row.name}
-            </div>
+              layerId={row.id}
+              name={row.name}
+              given={row.given}
+              height={row.height}
+            />
           ))}
         </div>
 
@@ -325,6 +325,63 @@ export function Timeline() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * An element's name, in the gutter beside its lane. This is the only place a name is
+ * edited: the track already says what the element is called, so double-clicking it is
+ * where a rename belongs. Enter or clicking away keeps the new name, Escape drops it,
+ * and an empty name falls back to the asset's filename.
+ */
+function TrackLabel({
+  layerId,
+  name,
+  given,
+  height,
+}: {
+  layerId: string;
+  name: string;
+  given: string;
+  height: number;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    if (draft.trim() === given.trim()) return;
+    useStudio.getState().renameLayer(layerId, draft.trim());
+    useStudio.getState().sealHistory();
+  };
+
+  return (
+    <div
+      className="timeline-track-label"
+      style={{ height }}
+      title={draft === null ? `${name} — double-click to rename` : undefined}
+      onDoubleClick={() => setDraft(given)}
+    >
+      {draft === null ? (
+        name
+      ) : (
+        <input
+          autoFocus
+          className="min-w-0 flex-1 rounded-[3px] border border-[#0d99ff] bg-white px-1 py-px text-[11px] text-[#111] outline-none"
+          aria-label="element name"
+          value={draft}
+          placeholder={name}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            // Escape leaves the name alone — nothing was written until now.
+            if (e.key === "Escape") setDraft(null);
+          }}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+      )}
     </div>
   );
 }
