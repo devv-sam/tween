@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Driver, ModuleData, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
@@ -17,7 +17,6 @@ import {
   EASINGS,
   PROPS,
   PROP_COLOR,
-  PROP_DOT,
   PROP_STEP,
   PROP_TEXT,
   baseValue,
@@ -29,6 +28,7 @@ import {
   patchStop,
   positionSets,
   removeStop,
+  SAME_STOP,
   secondsToT,
   stopAtTime,
   stopSeconds,
@@ -36,6 +36,15 @@ import {
   type KeyTarget,
   type Range,
 } from "./modules";
+import {
+  entryId,
+  formatSeconds,
+  formatValue,
+  indexAfterMove,
+  keyframeLog,
+  type LogEntry,
+  type LogValue,
+} from "./keyframeLog";
 
 /** Muted chrome shared by every control in the panel, kept in one place so the
  *  inspector reads as one surface rather than a pile of inputs. */
@@ -237,7 +246,10 @@ function ElementPanel({ track }: { track: Track }) {
     <>
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
-      {activeKeyframes ? <StopEditor track={track} target={activeKeyframes} /> : null}
+      {/* Keyed on the element: the log's collapse and selection describe the rows on
+          screen, so they start fresh when a different element puts different rows
+          there. */}
+      <KeyframeLog key={layer.id} track={track} />
 
       {/* Only what an element actually carries — there is no way to add a module
           until there are real module types to add. */}
@@ -556,52 +568,6 @@ function KeyframeInspector({
 }
 
 /**
- * The element's own authored motion for one property: the same stop list a module
- * gets, without a property picker — the property is what was clicked. Position brings
- * two axes to the same list, since a combined position keyframes them together.
- */
-function StopEditor({ track, target }: { track: Track; target: KeyTarget }) {
-  const layerId = track.layer.id;
-  const position = target === "position" ? positionSets(track) : null;
-  const single = target === "position" ? undefined : keyframesFor(track, target);
-  const held = position ?? single;
-  if (!held) return null;
-
-  const axes: Axis[] = position
-    ? [
-        { prop: "x", stops: position.x.stops },
-        { prop: "y", stops: position.y.stops },
-      ]
-    : [{ prop: target as KeyProp, stops: single!.stops }];
-  const range = position ? position.x.range : single!.range;
-
-  const onChange = (next: Stop[][]) => {
-    const store = useStudio.getState();
-    if (position) store.setPositionStops(layerId, { x: next[0], y: next[1] });
-    else store.setKeyframeStops(layerId, target as KeyProp, next[0]);
-  };
-
-  return (
-    <section className={`${SECTION} bg-[#fbfbfb]`}>
-      <div className="mb-2 flex items-center gap-1.5">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PROP_DOT[target]}`} />
-        <p className={LABEL}>{target} keyframes</p>
-        <button
-          type="button"
-          aria-label={`remove ${target} keyframes`}
-          title="remove keyframes"
-          className="ml-auto grid h-[20px] w-[20px] place-items-center rounded text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"
-          onClick={() => useStudio.getState().removeKeyframes(layerId, target)}
-        >
-          ×
-        </button>
-      </div>
-      <StopList layerId={layerId} axes={axes} range={range} onChange={onChange} />
-    </section>
-  );
-}
-
-/**
  * Time, value, easing, one row per stop. Time is read in the same seconds the ruler
  * is labelled with, so a stop and the tick it sits under say the same number.
  */
@@ -729,6 +695,401 @@ function StopList({
   );
 }
 
+/**
+ * Every keyframe on the element, in one chronological record.
+ *
+ * One log rather than a panel per property: motion is authored across properties at
+ * the same moments, and reading it back means reading what happened when, not
+ * spreadsheet after spreadsheet of the same five columns. Groups are how a property
+ * is found inside that record; they are not separate lists.
+ */
+function KeyframeLog({ track }: { track: Track }) {
+  const duration = useStudio((s) => s.composition.duration);
+  const layerId = track.layer.id;
+  const groups = keyframeLog(track, duration);
+
+  // All three describe the rows on screen rather than the document, so none of them
+  // is recorded, saved, or undone.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [naming, setNaming] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 2400);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  const stopsOf = (property: KeyTarget): Stop[] => {
+    const position = property === "position" ? positionSets(track) : null;
+    return position ? position.x.stops : (track.keyframes?.[property]?.stops ?? []);
+  };
+  const rangeOf = (property: KeyTarget): Range => {
+    const position = property === "position" ? positionSets(track) : null;
+    return position ? position.x.range : (track.keyframes?.[property]?.range ?? [0, 1]);
+  };
+
+  /** One edit reaching both axes of a position, or the single set behind any other
+   *  property — the two writers the store already has, chosen by the property. */
+  const writeStops = (property: KeyTarget, fn: (stops: Stop[], axis: "x" | "y") => Stop[]) => {
+    const store = useStudio.getState();
+    const position = property === "position" ? positionSets(track) : null;
+    if (position) {
+      store.setPositionStops(layerId, {
+        x: fn(position.x.stops, "x"),
+        y: fn(position.y.stops, "y"),
+      });
+      return;
+    }
+    const set = track.keyframes?.[property];
+    if (set) store.setKeyframeStops(layerId, property as KeyProp, fn(set.stops, "x"));
+  };
+
+  /**
+   * Moving a keyframe in time re-sorts its set, which renumbers the rows around it.
+   * The selection is a place in that list, so it moves with the row rather than
+   * jumping to whoever took the old slot.
+   */
+  const followMove = (property: KeyTarget, from: number, to: number) => {
+    if (from === to) return;
+    setSelected((ids) =>
+      ids.map((id) => {
+        if (!id.startsWith(`${property}:`)) return id;
+        const i = Number(id.slice(property.length + 1));
+        if (i === from) return entryId(property, to);
+        if (from < to && i > from && i <= to) return entryId(property, i - 1);
+        if (to < from && i >= to && i < from) return entryId(property, i + 1);
+        return id;
+      }),
+    );
+  };
+
+  const setEntryTime = (entry: LogEntry, seconds: number) => {
+    const t = secondsToT(seconds, rangeOf(entry.property), duration);
+    writeStops(entry.property, (stops) => patchStop(stops, entry.index, { t }));
+    followMove(entry.property, entry.index, indexAfterMove(stopsOf(entry.property), entry.index, t));
+  };
+
+  /** A value on one side of the arrow: `to` is the stop itself, `from` is the stop
+   *  before it, which is where the property was coming from. */
+  const setEntryValue = (entry: LogEntry, side: "from" | "to", axis: "x" | "y", v: number) => {
+    const index = side === "to" ? entry.index : entry.index - 1;
+    if (index < 0) return;
+    writeStops(entry.property, (stops, which) =>
+      which === axis ? patchStop(stops, index, { v }) : stops,
+    );
+  };
+
+  const removeEntry = (entry: LogEntry) => {
+    writeStops(entry.property, (stops) => removeStop(stops, entry.index));
+    setSelected((ids) => ids.filter((id) => id !== entry.id));
+  };
+
+  /**
+   * A position keyframe where the playhead is, holding what the element reads there —
+   * so it changes nothing until it is edited, and lands under the time you are
+   * already looking at.
+   */
+  const addAtPlayhead = () => {
+    if (!positionSets(track)) useStudio.getState().addKeyframes(layerId, "position");
+    const store = useStudio.getState();
+    const current = store.composition.tracks.find((tr) => tr.layer.id === layerId);
+    const position = current ? positionSets(current) : null;
+    if (!current || !position) return;
+
+    const item = renderState(store.composition, store.t).find((it) => it.id === layerId);
+    const last = (stops: Stop[]) => stops[stops.length - 1].v;
+    const at = clamp(
+      secondsToT(store.t * store.composition.duration, position.x.range, store.composition.duration),
+      0,
+      1,
+    );
+    const x = stopAtTime(position.x.stops, at, item ? item.state.x : last(position.x.stops));
+    const y = stopAtTime(position.y.stops, at, item ? item.state.y : last(position.y.stops));
+    store.setPositionStops(layerId, { x, y });
+
+    const index = x.findIndex((s) => Math.abs(s.t - at) < SAME_STOP);
+    setCollapsed((ids) => ids.filter((id) => id !== "position"));
+    setSelected(index < 0 ? [] : [entryId("position", index)]);
+  };
+
+  const saveModule = (name: string) => {
+    // The library that would hold this does not exist yet, so the bundle is named and
+    // acknowledged and the keyframes stay where they are.
+    console.log("module saved (coming soon)", { name, layerId, entries: selected });
+    setToast("module saved (coming soon)");
+    setNaming(false);
+    setSelected([]);
+  };
+
+  const anyOpen = groups.some((g) => !collapsed.includes(g.property));
+
+  return (
+    <section className={SECTION}>
+      <div className="flex items-center gap-1">
+        <p className={LABEL}>keyframes</p>
+        <div className="ml-auto flex items-center gap-0.5">
+          {groups.length > 0 ? (
+            selected.length >= 2 ? (
+              <button
+                type="button"
+                aria-label="save selection as module"
+                title="save selection as module"
+                aria-pressed={naming}
+                className={`grid h-[20px] w-[20px] place-items-center rounded ${
+                  naming ? "bg-[#e8f4ff] text-[#0d99ff]" : "text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
+                }`}
+                onClick={() => setNaming((open) => !open)}
+              >
+                +
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="add keyframe at playhead"
+                title="add keyframe at playhead"
+                className="grid h-[20px] w-[20px] place-items-center rounded text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
+                onClick={addAtPlayhead}
+              >
+                <DiamondPlusIcon />
+              </button>
+            )
+          ) : null}
+          {groups.length > 0 ? (
+            <button
+              type="button"
+              aria-label={anyOpen ? "collapse all groups" : "expand all groups"}
+              title={anyOpen ? "collapse all" : "expand all"}
+              className="grid h-[20px] w-[20px] place-items-center rounded text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"
+              onClick={() => setCollapsed(anyOpen ? groups.map((g) => g.property) : [])}
+            >
+              <ListCollapseIcon />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {naming && selected.length >= 2 ? (
+        <ModuleNameField onConfirm={saveModule} onCancel={() => setNaming(false)} />
+      ) : null}
+
+      {groups.length === 0 ? (
+        <p className="mt-2 text-[11px] text-[#b0b0b0]">no keyframes yet</p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-0.5">
+          {groups.map((group) => {
+            const open = !collapsed.includes(group.property);
+            return (
+              <li key={group.property}>
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  className="flex h-[22px] w-full items-center gap-1.5 rounded px-1 text-left hover:bg-[#f5f5f5]"
+                  onClick={() =>
+                    setCollapsed((ids) =>
+                      open ? [...ids, group.property] : ids.filter((id) => id !== group.property),
+                    )
+                  }
+                >
+                  <span className={`shrink-0 ${open ? "text-[#555]" : "text-[#b0b0b0]"}`}>
+                    <ListCollapseIcon />
+                  </span>
+                  <span className={LABEL}>{group.property}</span>
+                  <span className="ml-auto text-[10px] tabular-nums text-[#b0b0b0]">
+                    {group.entries.length}
+                  </span>
+                </button>
+                {open ? (
+                  <ul className="flex flex-col">
+                    {group.entries.map((entry) => (
+                      <LogRow
+                        key={entry.id}
+                        entry={entry}
+                        selected={selected.includes(entry.id)}
+                        removable={stopsOf(entry.property).length > 2}
+                        onToggle={() => {
+                          // Changing what is selected changes what a bundle would
+                          // hold, so a half-typed name for the old one goes away.
+                          setNaming(false);
+                          setSelected((ids) =>
+                            ids.includes(entry.id)
+                              ? ids.filter((id) => id !== entry.id)
+                              : [...ids, entry.id],
+                          );
+                        }}
+                        onTime={(seconds) => setEntryTime(entry, seconds)}
+                        onValue={(side, axis, v) => setEntryValue(entry, side, axis, v)}
+                        onRemove={() => removeEntry(entry)}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {toast ? (
+        <p role="status" className="mt-2 rounded bg-[#f5f5f5] px-2 py-1 text-[10px] text-[#555]">
+          {toast}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/** Name the bundle, or leave it be. Inline rather than a dialog: the selection it
+ *  describes is right underneath and stays visible while it is named. */
+function ModuleNameField({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  return (
+    <div className={`${BOX} mt-2`}>
+      <input
+        autoFocus
+        className={`${INPUT} w-full`}
+        placeholder="name this module"
+        aria-label="name this module"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && name.trim()) onConfirm(name.trim());
+          if (e.key === "Escape") onCancel();
+        }}
+      />
+      <span className="shrink-0 text-[10px] text-[#b0b0b0]">↵</span>
+    </div>
+  );
+}
+
+/**
+ * One keyframe: what it set, and when. The diamond is the same shape the property
+ * buttons and the track blocks use, so a keyframe looks like a keyframe wherever it
+ * turns up — filled here means this row is part of the current selection.
+ */
+function LogRow({
+  entry,
+  selected,
+  removable,
+  onToggle,
+  onTime,
+  onValue,
+  onRemove,
+}: {
+  entry: LogEntry;
+  selected: boolean;
+  removable: boolean;
+  onToggle: () => void;
+  onTime: (seconds: number) => void;
+  onValue: (side: "from" | "to", axis: "x" | "y", v: number) => void;
+  onRemove: () => void;
+}) {
+  const [editingTime, setEditingTime] = useState(false);
+  const axes: ("x" | "y")[] = typeof entry.to === "number" ? ["x"] : ["x", "y"];
+  const at = (v: LogValue, axis: "x" | "y") => (typeof v === "number" ? v : v[axis]);
+
+  return (
+    <li>
+      <div
+        className={`flex h-[24px] items-center gap-1.5 rounded px-1 ${
+          selected ? "bg-[#e8f4ff]" : "hover:bg-[#f5f5f5]"
+        }`}
+      >
+        <button
+          type="button"
+          aria-label={`select ${entry.property} keyframe at ${formatSeconds(entry.t)}`}
+          aria-pressed={selected}
+          className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded ${
+            selected ? PROP_TEXT[entry.property] : "text-[#c0c0c0] hover:text-[#555]"
+          }`}
+          onClick={onToggle}
+        >
+          <DiamondIcon filled={selected} />
+        </button>
+        <span className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-[#111]">
+          {formatValue(entry.property, entry.to)}
+        </span>
+        {editingTime ? (
+          <div className="w-[62px] shrink-0">
+            <NumberField
+              label="s"
+              title="time in seconds"
+              value={entry.t}
+              step={0.1}
+              min={0}
+              autoFocus
+              onChange={onTime}
+              onDone={() => setEditingTime(false)}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            title="edit time"
+            className="shrink-0 rounded px-1 text-[10px] tabular-nums text-[#b0b0b0] hover:bg-[#f0f0f0] hover:text-[#555]"
+            onClick={() => setEditingTime(true)}
+          >
+            {formatSeconds(entry.t)}
+          </button>
+        )}
+      </div>
+
+      {/* Fine-tuning belongs under the row it is tuning, not in a panel somewhere
+          else that has to say which keyframe it means. */}
+      {selected ? (
+        <div className="mb-1 flex flex-col gap-1 rounded bg-[#fbfbfb] px-1 py-1.5">
+          {axes.map((axis) => (
+            <div key={axis} className="flex items-center gap-1">
+              {axes.length > 1 ? (
+                <span className={`${SUBLABEL} w-[8px] shrink-0`}>{axis}</span>
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <NumberField
+                  label="from"
+                  title={`value before this keyframe${axes.length > 1 ? ` (${axis})` : ""}`}
+                  value={at(entry.from, axis)}
+                  step={PROP_STEP[entry.property]}
+                  // Nothing precedes the first keyframe — the curve holds this value
+                  // up to it, so there is no earlier one to edit.
+                  disabled={entry.index === 0}
+                  onChange={(v) => onValue("from", axis, v)}
+                />
+              </div>
+              <span className="shrink-0 text-[10px] text-[#b0b0b0]">→</span>
+              <div className="min-w-0 flex-1">
+                <NumberField
+                  label="to"
+                  title={`value at this keyframe${axes.length > 1 ? ` (${axis})` : ""}`}
+                  value={at(entry.to, axis)}
+                  step={PROP_STEP[entry.property]}
+                  onChange={(v) => onValue("to", axis, v)}
+                />
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            aria-label="remove keyframe"
+            title="remove keyframe"
+            disabled={!removable}
+            className="self-end rounded px-1 text-[10px] text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
+            onClick={onRemove}
+          >
+            remove
+          </button>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 /** Which side of a joined pair a field is, when two of them make one control. */
 type Join = "left" | "right";
 
@@ -747,6 +1108,9 @@ function NumberField({
   max,
   precision = 2,
   join,
+  disabled,
+  autoFocus,
+  onDone,
 }: {
   label: string;
   title?: string;
@@ -757,6 +1121,12 @@ function NumberField({
   max?: number;
   precision?: number;
   join?: Join;
+  disabled?: boolean;
+  /** Focus on mount — for a field that appeared because it was clicked. */
+  autoFocus?: boolean;
+  /** The edit is over: enter, or focus leaving. Lets a field that only exists while
+   *  it is being edited put itself away. */
+  onDone?: () => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? String(Number(value.toFixed(precision)));
@@ -780,22 +1150,32 @@ function NumberField({
 
   return (
     <label
-      className={`${BOX} ${joined} relative focus-within:z-10`}
+      className={`${BOX} ${joined} relative focus-within:z-10 ${
+        disabled ? "opacity-60" : ""
+      }`}
       title={title ?? label}
     >
       <span className={`${LABEL} shrink-0`}>{label}</span>
       <input
-        className={`${INPUT} w-full text-right`}
+        className={`${INPUT} w-full text-right disabled:text-[#b0b0b0]`}
         inputMode="decimal"
         value={shown}
+        disabled={disabled}
+        autoFocus={autoFocus}
         onChange={(e) => commit(e.target.value)}
         onBlur={() => {
           setDraft(null);
           // A run of keystrokes in one field is one undo step; leaving ends it.
           useStudio.getState().sealHistory();
+          onDone?.();
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
+            setDraft(null);
+            e.currentTarget.blur();
+            return;
+          }
+          if (e.key === "Escape") {
             setDraft(null);
             e.currentTarget.blur();
             return;
@@ -828,6 +1208,30 @@ function SeparatorVerticalIcon() {
       <path d="M12 3v18" />
       <path d="m16 16 4-4-4-4" />
       <path d="m8 8-4 4 4 4" />
+    </svg>
+  );
+}
+
+/** Lucide `list-collapse` — a list folding into itself, which is what the toggle
+ *  beside a group does to its rows. */
+function ListCollapseIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m3 10 2.5-2.5L3 5" />
+      <path d="m3 19 2.5-2.5L3 14" />
+      <path d="M10 6h11" />
+      <path d="M10 12h11" />
+      <path d="M10 18h11" />
     </svg>
   );
 }
