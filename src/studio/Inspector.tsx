@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Driver, ModuleData, Track, Transform } from "../core/types";
+import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
+import { renderState } from "../core/renderState";
 import { useStudio, type ImageAsset } from "./store";
 import {
   DRIVERS,
@@ -15,16 +17,22 @@ import {
   EASINGS,
   PROPS,
   PROP_COLOR,
+  PROP_DOT,
   PROP_STEP,
-  addStop,
+  PROP_TEXT,
   baseValue,
+  keyframesFor,
   layerName,
   moduleLabel,
   moduleProp,
   moduleStops,
   patchStop,
   removeStop,
+  secondsToT,
+  stopAtTime,
+  stopSeconds,
   type KeyProp,
+  type Range,
 } from "./modules";
 
 /** Muted chrome shared by every control in the panel, kept in one place so the
@@ -67,31 +75,32 @@ export function Inspector() {
         </span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {track ? (
-          <ElementPanel track={track} index={index} assets={assets} />
-        ) : (
-          <CompositionPanel />
-        )}
+        {/* The composition is always there to edit, so it stays put and the element's
+            own panel stacks under it rather than replacing it. */}
+        <CompositionPanel labelled={Boolean(track)} />
+        {track ? <ElementPanel track={track} index={index} assets={assets} /> : null}
       </div>
     </aside>
   );
 }
 
 /**
- * What the panel holds with nothing selected. The header already says "composition",
- * so the section does not repeat it.
+ * The composition's own settings, kept compact so an element's panel has room under
+ * them. Its heading only appears once the panel header is naming an element instead
+ * — with nothing selected the header already says "composition".
  *
  * No duration field: length is not a setting to fill in before you can animate. It
  * follows from the work, and the ruler's end handle is there when you want to say
  * otherwise.
  */
-function CompositionPanel() {
+function CompositionPanel({ labelled }: { labelled: boolean }) {
   const { fps, driver, background } = useStudio((s) => s.composition);
   const frame = useStudio((s) => s.frame);
 
   return (
     <section className={SECTION}>
-      <div className="flex flex-col gap-1.5">
+      {labelled ? <p className={`${LABEL} mb-2`}>composition</p> : null}
+      <div className="grid grid-cols-2 gap-1.5">
         <SelectField
           label="fps"
           value={String(fps)}
@@ -100,7 +109,8 @@ function CompositionPanel() {
         />
 
         <SelectField
-          label="resolution"
+          label="res"
+          title="resolution"
           value={resolutionKey(frame)}
           onChange={(v) => {
             const size = resolutionFor(v);
@@ -111,8 +121,7 @@ function CompositionPanel() {
 
         <BackgroundField value={background ?? "#ffffff"} />
 
-        <div className={`${BOX} justify-between`}>
-          <span className={LABEL}>driver</span>
+        <div className={`${BOX} justify-between px-1`} title="driver">
           <DriverToggle value={driver.kind} />
         </div>
       </div>
@@ -130,12 +139,11 @@ function BackgroundField({ value }: { value: string }) {
   const set = (hex: string) => useStudio.getState().setBackground(hex);
 
   return (
-    <div className={BOX}>
-      <span className={`${LABEL} shrink-0`}>background</span>
+    <div className={BOX} title="background">
       <input
         type="color"
         aria-label="background colour"
-        className="ml-auto h-[16px] w-[22px] shrink-0 cursor-pointer rounded-[3px] border border-[#e0e0e0] bg-transparent p-0"
+        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-[#e0e0e0] bg-transparent p-0"
         value={value}
         onChange={(e) => {
           setDraft(null);
@@ -143,7 +151,7 @@ function BackgroundField({ value }: { value: string }) {
         }}
       />
       <input
-        className={`${INPUT} w-[64px] shrink-0 text-right uppercase`}
+        className={`${INPUT} min-w-0 flex-1 text-right uppercase`}
         aria-label="background hex"
         spellCheck={false}
         value={draft ?? value}
@@ -161,13 +169,13 @@ function BackgroundField({ value }: { value: string }) {
 /** Two segments, one value. `input` is declared here before anything evaluates it. */
 function DriverToggle({ value }: { value: Driver["kind"] }) {
   return (
-    <div className="flex overflow-hidden rounded-md border border-[#e0e0e0]">
+    <div className="flex w-full overflow-hidden rounded-[5px]">
       {DRIVERS.map((kind) => (
         <button
           key={kind}
           type="button"
           aria-pressed={value === kind}
-          className={`px-2 py-0.5 text-[10px] ${
+          className={`flex-1 py-0.5 text-[10px] ${
             value === kind
               ? "bg-[#e8f4ff] text-[#0d99ff]"
               : "text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
@@ -183,17 +191,19 @@ function DriverToggle({ value }: { value: Driver["kind"] }) {
 
 function SelectField({
   label,
+  title,
   value,
   options,
   onChange,
 }: {
   label: string;
+  title?: string;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
 }) {
   return (
-    <label className={`${BOX} justify-between`}>
+    <label className={`${BOX} justify-between`} title={title ?? label}>
       <span className={LABEL}>{label}</span>
       <select
         className="bg-transparent text-[11px] text-[#111] outline-none"
@@ -219,14 +229,21 @@ function ElementPanel({
   index: number;
   assets: ImageAsset[];
 }) {
-  const selectedModule = useStudio((s) => s.selectedModule);
+  const selectedPart = useStudio((s) => s.selectedPart);
   const { layer, modules } = track;
   const asset =
     layer.source.kind === "image"
       ? assets.find((a) => a.id === layer.source.value)
       : undefined;
-  const active =
-    selectedModule !== null && selectedModule < modules.length ? selectedModule : null;
+  const activeModule =
+    selectedPart?.kind === "module" && selectedPart.index < modules.length
+      ? selectedPart.index
+      : null;
+  const activeKeyframes =
+    selectedPart?.kind === "keyframes" && keyframesFor(track, selectedPart.property)
+      ? selectedPart.property
+      : null;
+  const authored = PROPS.filter((p) => keyframesFor(track, p));
 
   return (
     <>
@@ -242,15 +259,22 @@ function ElementPanel({
         </div>
       </section>
 
-      <BaseTransform layerId={layer.id} base={layer.base} />
+      <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
-      <section className={SECTION}>
-        <p className={`${LABEL} mb-2`}>modules</p>
-        {modules.length === 0 ? (
-          <p className="text-[11px] leading-relaxed text-[#b0b0b0]">
-            No modules yet. Add one to animate this element.
-          </p>
-        ) : (
+      {activeKeyframes ? (
+        <StopEditor
+          layerId={layer.id}
+          prop={activeKeyframes}
+          stops={keyframesFor(track, activeKeyframes)!.stops}
+          range={keyframesFor(track, activeKeyframes)!.range}
+        />
+      ) : null}
+
+      {/* Only what an element actually carries — there is no way to add a module
+          until there are real module types to add. */}
+      {modules.length > 0 ? (
+        <section className={SECTION}>
+          <p className={`${LABEL} mb-2`}>modules</p>
           <ul className="flex flex-col gap-1">
             {modules.map((md, i) => (
               <ModuleRow
@@ -258,61 +282,151 @@ function ElementPanel({
                 module={md}
                 index={i}
                 layerId={layer.id}
-                selected={i === active}
+                selected={i === activeModule}
               />
             ))}
           </ul>
-        )}
-        <AddModule layerId={layer.id} />
-      </section>
-
-      {active !== null ? (
-        <KeyframeInspector layerId={layer.id} index={active} module={modules[active]} />
+        </section>
       ) : null}
+
+      {activeModule !== null ? (
+        <KeyframeInspector
+          layerId={layer.id}
+          index={activeModule}
+          module={modules[activeModule]}
+        />
+      ) : null}
+
+      {authored.length > 0 ? <SaveAsModule /> : null}
     </>
   );
 }
 
+/** Stub for the next increment: bundling authored keyframes into a named, reusable
+ *  module. Disabled rather than hidden, so the path is visible before it exists. */
+function SaveAsModule() {
+  return (
+    <section className={SECTION}>
+      <button
+        type="button"
+        disabled
+        title="coming soon — modules are reusable bundles"
+        className={`${GHOST_BTN} w-full cursor-not-allowed opacity-50`}
+      >
+        save as module
+      </button>
+    </section>
+  );
+}
+
 /** The element's own transform, before any module runs. */
-function BaseTransform({ layerId, base }: { layerId: string; base: Transform }) {
-  const set = (patch: Partial<Transform>) =>
-    useStudio.getState().setLayerBase(layerId, patch);
+/**
+ * The element's base transform, with each field's keyframe button beside it.
+ * Authoring motion belongs next to the value it animates rather than in a second
+ * list of the same five properties.
+ */
+function BaseTransform({
+  track,
+  activeKeyframes,
+}: {
+  track: Track;
+  activeKeyframes: KeyProp | null;
+}) {
+  const { id, base } = track.layer;
+  const set = (patch: Partial<Transform>) => useStudio.getState().setLayerBase(id, patch);
 
   // One scale field for two axes: it drives scaleX and carries scaleY along at the
   // ratio a non-uniform resize left behind.
   const ratio = base.scaleX === 0 ? 1 : base.scaleY / base.scaleX;
 
+  const cell = (prop: KeyProp, field: ReactNode) => (
+    <div className="flex min-w-0 items-center gap-1">
+      <div className="min-w-0 flex-1">{field}</div>
+      <KeyframeButton
+        layerId={id}
+        prop={prop}
+        keyframed={Boolean(keyframesFor(track, prop))}
+        selected={activeKeyframes === prop}
+      />
+    </div>
+  );
+
   return (
     <section className={SECTION}>
       <p className={`${LABEL} mb-2`}>transform</p>
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} />
-        <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} />
-        <NumberField
-          label="s"
-          title="scale"
-          value={base.scaleX}
-          step={0.05}
-          min={0}
-          onChange={(v) => set({ scaleX: v, scaleY: v * ratio })}
-        />
-        <NumberField
-          label="r"
-          title="rotation in degrees"
-          value={base.rotation}
-          onChange={(v) => set({ rotation: v })}
-        />
-        <NumberField
-          label="o"
-          title="opacity"
-          value={base.opacity}
-          step={0.05}
-          min={0}
-          max={1}
-          onChange={(v) => set({ opacity: v })}
-        />
+      <div className="grid grid-cols-2 gap-x-1.5 gap-y-1">
+        {cell("x", <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} />)}
+        {cell("y", <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} />)}
+        {cell(
+          "scale",
+          <NumberField
+            label="s"
+            title="scale"
+            value={base.scaleX}
+            step={0.05}
+            min={0}
+            onChange={(v) => set({ scaleX: v, scaleY: v * ratio })}
+          />,
+        )}
+        {cell(
+          "rotation",
+          <NumberField
+            label="r"
+            title="rotation in degrees"
+            value={base.rotation}
+            onChange={(v) => set({ rotation: v })}
+          />,
+        )}
+        {cell(
+          "opacity",
+          <NumberField
+            label="o"
+            title="opacity"
+            value={base.opacity}
+            step={0.05}
+            min={0}
+            max={1}
+            onChange={(v) => set({ opacity: v })}
+          />,
+        )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Hollow means this property has no motion yet and a click starts some; filled, in
+ * the property's own colour, means it does and a click opens its stops.
+ */
+function KeyframeButton({
+  layerId,
+  prop,
+  keyframed,
+  selected,
+}: {
+  layerId: string;
+  prop: KeyProp;
+  keyframed: boolean;
+  selected: boolean;
+}) {
+  const label = keyframed ? "edit keyframes" : "add keyframe";
+  return (
+    <button
+      type="button"
+      aria-label={`${label}: ${prop}`}
+      aria-pressed={selected}
+      title={label}
+      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
+        selected ? "bg-[#e8f4ff]" : "hover:bg-[#f5f5f5]"
+      } ${keyframed ? PROP_TEXT[prop] : "text-[#c0c0c0] hover:text-[#555]"}`}
+      onClick={() => {
+        const store = useStudio.getState();
+        if (!keyframed) return store.addKeyframes(layerId, prop);
+        store.selectPart(layerId, selected ? null : { kind: "keyframes", property: prop });
+      }}
+    >
+      <DiamondIcon filled={keyframed} />
+    </button>
   );
 }
 
@@ -339,7 +453,9 @@ function ModuleRow({
             : "border-[#e0e0e0] text-[#555] hover:bg-[#f5f5f5]"
         }`}
         onClick={() =>
-          useStudio.getState().selectModule(layerId, selected ? null : index)
+          useStudio
+            .getState()
+            .selectPart(layerId, selected ? null : { kind: "module", index })
         }
       >
         <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] border ${PROP_COLOR[prop]}`} />
@@ -358,57 +474,6 @@ function ModuleRow({
         ×
       </button>
     </li>
-  );
-}
-
-function AddModule({ layerId }: { layerId: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div className="relative mt-2" ref={ref}>
-      <button
-        type="button"
-        aria-expanded={open}
-        className={`${GHOST_BTN} w-full`}
-        onClick={() => setOpen((v) => !v)}
-      >
-        add module
-      </button>
-      {open ? (
-        // Opens upward: the button lives at the foot of a scrolling panel.
-        <div className="absolute bottom-full left-0 z-10 mb-1 w-full rounded-md border border-[#e0e0e0] bg-white p-1 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
-          <button
-            type="button"
-            className="w-full rounded px-2 py-1.5 text-left text-[11px] text-[#111] hover:bg-[#f5f5f5]"
-            onClick={() => {
-              // Seeded on the element's current x, so a fresh module animates nothing
-              // until a stop is edited.
-              useStudio.getState().addKeyframeModule(layerId, "x");
-              setOpen(false);
-            }}
-          >
-            keyframes
-          </button>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -456,12 +521,91 @@ function KeyframeInspector({
         </select>
       </label>
 
-      <div className="mt-3 flex items-center justify-between">
+      <StopList
+        layerId={layerId}
+        prop={prop}
+        stops={stops}
+        range={md.range}
+        onChange={(next) => params({ stops: next })}
+      />
+    </section>
+  );
+}
+
+/** The element's own authored motion for one property: the same stop list a module
+ *  gets, without a property picker — the property is what was clicked. */
+function StopEditor({
+  layerId,
+  prop,
+  stops,
+  range,
+}: {
+  layerId: string;
+  prop: KeyProp;
+  stops: Stop[];
+  range: Range;
+}) {
+  return (
+    <section className={`${SECTION} bg-[#fbfbfb]`}>
+      <div className="mb-2 flex items-center gap-1.5">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PROP_DOT[prop]}`} />
+        <p className={LABEL}>{prop} keyframes</p>
+        <button
+          type="button"
+          aria-label={`remove ${prop} keyframes`}
+          title="remove keyframes"
+          className="ml-auto grid h-[20px] w-[20px] place-items-center rounded text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"
+          onClick={() => useStudio.getState().removeKeyframes(layerId, prop)}
+        >
+          ×
+        </button>
+      </div>
+      <StopList
+        layerId={layerId}
+        prop={prop}
+        stops={stops}
+        range={range}
+        onChange={(next) => useStudio.getState().setKeyframeStops(layerId, prop, next)}
+      />
+    </section>
+  );
+}
+
+/**
+ * Time, value, easing, one row per stop. Time is read in the same seconds the ruler
+ * is labelled with, so a stop and the tick it sits under say the same number.
+ */
+function StopList({
+  layerId,
+  prop,
+  stops,
+  range,
+  onChange,
+}: {
+  layerId: string;
+  prop: KeyProp;
+  stops: Stop[];
+  range: Range;
+  onChange: (stops: Stop[]) => void;
+}) {
+  const duration = useStudio((s) => s.composition.duration);
+
+  /** At the playhead, holding whatever the property reads there right now. */
+  const addAtPlayhead = () => {
+    const { composition, t } = useStudio.getState();
+    const item = renderState(composition, t).find((it) => it.id === layerId);
+    const v = item ? baseValue(item.state, prop) : stops[stops.length - 1].v;
+    onChange(stopAtTime(stops, clamp(secondsToT(t * duration, range, duration), 0, 1), v));
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between">
         <p className={LABEL}>keyframes</p>
         <button
           type="button"
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
-          onClick={() => params({ stops: addStop(stops) })}
+          onClick={addAtPlayhead}
         >
           <DiamondPlusIcon />
           add keyframe
@@ -470,17 +614,15 @@ function KeyframeInspector({
       <ul className="mt-2 flex flex-col gap-1">
         {stops.map((stop, i) => (
           <li key={i} className="flex items-center gap-1">
-            <div className="w-[62px] shrink-0">
+            <div className="w-[68px] shrink-0">
               <NumberField
-                label="%"
-                title="position in the module's window"
-                value={stop.t * 100}
-                step={5}
+                label="s"
+                title="time in seconds"
+                value={stopSeconds(stop.t, range, duration)}
+                step={0.1}
                 min={0}
-                max={100}
-                precision={0}
                 onChange={(v) =>
-                  params({ stops: patchStop(stops, i, { t: clamp(v / 100, 0, 1) }) })
+                  onChange(patchStop(stops, i, { t: secondsToT(v, range, duration) }))
                 }
               />
             </div>
@@ -490,18 +632,14 @@ function KeyframeInspector({
                 title={`${prop} value`}
                 value={stop.v}
                 step={PROP_STEP[prop]}
-                onChange={(v) => params({ stops: patchStop(stops, i, { v }) })}
+                onChange={(v) => onChange(patchStop(stops, i, { v }))}
               />
             </div>
             <select
               className="h-[26px] w-[74px] shrink-0 rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none"
               aria-label="easing"
               value={stop.ease ?? "linear"}
-              onChange={(e) =>
-                params({
-                  stops: patchStop(stops, i, { ease: e.target.value as Easing }),
-                })
-              }
+              onChange={(e) => onChange(patchStop(stops, i, { ease: e.target.value as Easing }))}
             >
               {EASINGS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -515,14 +653,14 @@ function KeyframeInspector({
               title="remove keyframe"
               disabled={stops.length <= 2}
               className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
-              onClick={() => params({ stops: removeStop(stops, i) })}
+              onClick={() => onChange(removeStop(stops, i))}
             >
               <DiamondMinusIcon />
             </button>
           </li>
         ))}
       </ul>
-    </section>
+    </>
   );
 }
 
@@ -589,6 +727,24 @@ function NumberField({
 
 /** Lucide `diamond-plus` / `diamond-minus` — a keyframe is a diamond everywhere else
  *  in the studio, so the buttons that add and remove one carry the same shape. */
+function DiamondIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.7 10.3a2.41 2.41 0 0 0 0 3.4l7.6 7.6a2.41 2.41 0 0 0 3.4 0l7.6-7.6a2.41 2.41 0 0 0 0-3.4l-7.6-7.6a2.41 2.41 0 0 0-3.4 0Z" />
+    </svg>
+  );
+}
+
 function DiamondPlusIcon() {
   return (
     <svg

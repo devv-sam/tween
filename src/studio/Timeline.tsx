@@ -5,20 +5,20 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import type { ModuleData } from "../core/types";
 import { Preview } from "../render/preview";
 import { useStudio } from "./store";
 import {
   BLOCK_HEIGHT,
   PROP_COLOR,
+  PROP_OUTLINE,
   blockTop,
   layerName,
-  moduleLabel,
-  moduleProp,
-  moduleStops,
   rowHeight,
+  samePart,
   slideRange,
+  trackBlocks,
   trimRange,
+  type BlockView,
   type Range,
 } from "./modules";
 import {
@@ -179,11 +179,12 @@ export function Timeline() {
       track.layer.source.kind === "image"
         ? assets.find((a) => a.id === track.layer.source.value)
         : undefined;
+    const blocks = trackBlocks(track);
     return {
       id: track.layer.id,
       name: layerName(track.layer, asset?.name, i),
-      modules: track.modules,
-      height: rowHeight(track.modules.length, TRACK_HEIGHT),
+      blocks,
+      height: rowHeight(blocks.length, TRACK_HEIGHT),
     };
   });
 
@@ -284,13 +285,15 @@ export function Timeline() {
                 className="relative border-b border-[#f0f0f0] bg-[#fafafa]"
                 style={{ height: row.height }}
               >
-                {row.modules.map((md, i) => (
+                {row.blocks.map((block, i) => (
                   <TrackBlock
-                    key={i}
+                    key={`${block.part.kind}:${
+                      block.part.kind === "keyframes" ? block.part.property : block.part.index
+                    }`}
                     layerId={row.id}
                     index={i}
-                    count={row.modules.length}
-                    module={md}
+                    count={row.blocks.length}
+                    block={block}
                     width={width}
                   />
                 ))}
@@ -331,30 +334,39 @@ type BlockDrag = { pointerId: number; fromX: number; start: Range; edge: "start"
 const EDGE_GRAB = 6;
 
 /**
- * A module's window, drawn in its element's lane. Dragging it writes `module.range`
- * through the same store action the inspector's start / end fields use, so the two
- * surfaces can never drift apart.
+ * One block's window, drawn in its element's lane. The block is the only editor for
+ * that window: dragging its body slides it, dragging an edge trims it. Standalone
+ * keyframes and modules take the same drags and differ only in how they are drawn.
  */
 function TrackBlock({
   layerId,
   index,
   count,
-  module: md,
+  block,
   width,
 }: {
   layerId: string;
   index: number;
   count: number;
-  module: ModuleData;
+  block: BlockView;
   width: number;
 }) {
   const selected = useStudio(
-    (s) => s.selectedId === layerId && s.selectedModule === index,
+    (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
   );
   const dragRef = useRef<BlockDrag | null>(null);
-  const prop = moduleProp(md);
-  const left = timeToX(md.range[0], width);
-  const right = timeToX(md.range[1], width);
+  const prop = block.prop;
+  const left = timeToX(block.range[0], width);
+  const right = timeToX(block.range[1], width);
+
+  const writeRange = (range: Range) => {
+    const store = useStudio.getState();
+    if (block.part.kind === "keyframes") {
+      store.setKeyframeRange(layerId, block.part.property, range);
+    } else {
+      store.setModuleRange(layerId, block.part.index, range);
+    }
+  };
 
   const edgeAt = (e: ReactPointerEvent<HTMLElement>): "start" | "end" | null => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -367,7 +379,7 @@ function TrackBlock({
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    useStudio.getState().selectModule(layerId, index);
+    useStudio.getState().selectPart(layerId, block.part);
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -376,7 +388,7 @@ function TrackBlock({
     dragRef.current = {
       pointerId: e.pointerId,
       fromX: e.clientX,
-      start: md.range,
+      start: block.range,
       edge: edgeAt(e),
     };
   };
@@ -392,7 +404,7 @@ function TrackBlock({
     const next = drag.edge
       ? trimRange(drag.start, drag.edge, drag.start[drag.edge === "start" ? 0 : 1] + delta)
       : slideRange(drag.start, delta);
-    useStudio.getState().setModuleRange(layerId, index, next);
+    writeRange(next);
   };
 
   const onUp = (e: ReactPointerEvent<HTMLElement>) => {
@@ -408,12 +420,12 @@ function TrackBlock({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`${moduleLabel(md)} module`}
+      aria-label={`${block.label} ${block.standalone ? "keyframes" : "module"}`}
       aria-pressed={selected}
-      title={`${moduleLabel(md)} — drag to move, drag an edge to trim`}
-      className={`absolute cursor-grab touch-none overflow-hidden rounded-[4px] border ${PROP_COLOR[prop]} ${
-        selected ? "ring-1 ring-[#0d99ff]" : ""
-      }`}
+      title={`${block.label} — drag to move, drag an edge to trim`}
+      className={`absolute cursor-grab touch-none overflow-hidden rounded-[4px] border ${
+        block.standalone ? `border-dashed ${PROP_OUTLINE[prop]}` : PROP_COLOR[prop]
+      } ${selected ? "ring-1 ring-[#0d99ff]" : ""}`}
       style={{
         left,
         width: Math.max(2, right - left),
@@ -428,9 +440,9 @@ function TrackBlock({
       <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-current opacity-25" />
       <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] bg-current opacity-25" />
       <span className="pointer-events-none block truncate px-2 text-[10px] leading-4">
-        {moduleLabel(md)}
+        {block.label}
       </span>
-      {moduleStops(md).map((stop, i) => (
+      {block.stops.map((stop, i) => (
         // A stop's t is a share of this block, so its diamond rides the block as it is
         // trimmed. The nudge keeps the end diamonds off the rounded corners.
         <span

@@ -1,3 +1,5 @@
+import type { Stop } from "./curve";
+
 export interface Transform {
   x: number; y: number; scaleX: number; scaleY: number; rotation: number; opacity: number;
 }
@@ -52,7 +54,19 @@ export interface Layer {
   distributor?: Distributor;
 }
 
-export interface Track { layer: Layer; modules: ModuleData[]; }
+/**
+ * A property animated directly on one element — the raw material, before anyone
+ * decides it is worth bundling into a reusable module. Stops are normalized inside
+ * `range`, the same way a module's are.
+ */
+export interface KeyframeSet { stops: Stop[]; range: [number, number]; }
+
+export interface Track {
+  layer: Layer;
+  /** Standalone keyframed properties, keyed by the `Prop` they drive. */
+  keyframes?: Record<string, KeyframeSet>;
+  modules: ModuleData[];
+}
 
 /** `input` is declared but not yet evaluated — the module increment gives it meaning. */
 export interface Driver { kind: "time" | "input" | "scroll" | "cursor"; }
