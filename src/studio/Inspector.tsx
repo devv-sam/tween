@@ -705,6 +705,9 @@ function StopList({
  */
 function KeyframeLog({ track }: { track: Track }) {
   const duration = useStudio((s) => s.composition.duration);
+  // What the timeline has picked. A block there and a row here both mean "this is the
+  // property I am working on", so the log answers to either.
+  const selectedPart = useStudio((s) => s.selectedPart);
   const layerId = track.layer.id;
   const groups = keyframeLog(track, duration);
 
@@ -787,15 +790,26 @@ function KeyframeLog({ track }: { track: Track }) {
   };
 
   /**
-   * Which property a new keyframe lands on. A selected row says what is being worked
-   * on, so the button follows it; with nothing selected there is nothing to follow and
-   * position is what an element is usually animating.
+   * Which property a new keyframe lands on.
+   *
+   * Whatever the studio is pointed at says what is being worked on: a row selected in
+   * the log first, then a block picked on the timeline, and failing both the top of
+   * the log. Never a property the element does not already animate — this button adds
+   * a keyframe to motion that is already there. Starting a new kind of motion is what
+   * the diamonds beside the transform fields are for, and it should take saying so.
    */
-  const addTarget: KeyTarget =
-    selected.length === 1
-      ? (groups.find((g) => g.entries.some((e) => e.id === selected[0]))?.property ??
-        "position")
-      : "position";
+  const addTarget: KeyTarget | null = (() => {
+    if (selected.length === 1) {
+      const row = groups.find((g) => g.entries.some((e) => e.id === selected[0]));
+      if (row) return row.property;
+    }
+    if (
+      selectedPart?.kind === "keyframes" &&
+      groups.some((g) => g.property === selectedPart.property)
+    )
+      return selectedPart.property;
+    return groups[0]?.property ?? null;
+  })();
 
   /**
    * A keyframe where the playhead is, holding what the property reads there — so it
@@ -803,8 +817,7 @@ function KeyframeLog({ track }: { track: Track }) {
    * looking at.
    */
   const addAtPlayhead = () => {
-    if (!hasKeyframes(track, addTarget))
-      useStudio.getState().addKeyframes(layerId, addTarget);
+    if (!addTarget) return;
     const store = useStudio.getState();
     const { duration: span } = store.composition;
     const current = store.composition.tracks.find((tr) => tr.layer.id === layerId);
@@ -813,10 +826,10 @@ function KeyframeLog({ track }: { track: Track }) {
     const item = renderState(store.composition, store.t).find((it) => it.id === layerId);
     const last = (stops: Stop[]) => stops[stops.length - 1].v;
     /** Where the new row ends up once its set is back in time order. */
-    const focus = (stops: Stop[], at: number) => {
+    const focus = (target: KeyTarget, stops: Stop[], at: number) => {
       const index = stops.findIndex((st) => Math.abs(st.t - at) < SAME_STOP);
-      setCollapsed((ids) => ids.filter((id) => id !== addTarget));
-      setSelected(index < 0 ? [] : [entryId(addTarget, index)]);
+      setCollapsed((ids) => ids.filter((id) => id !== target));
+      setSelected(index < 0 ? [] : [entryId(target, index)]);
     };
 
     // Position writes both axes at one time, so its two stops stay one row.
@@ -826,7 +839,7 @@ function KeyframeLog({ track }: { track: Track }) {
       const x = stopAtTime(position.x.stops, at, item ? item.state.x : last(position.x.stops));
       const y = stopAtTime(position.y.stops, at, item ? item.state.y : last(position.y.stops));
       store.setPositionStops(layerId, { x, y });
-      focus(x, at);
+      focus(addTarget, x, at);
       return;
     }
 
@@ -836,7 +849,7 @@ function KeyframeLog({ track }: { track: Track }) {
     const v = item ? baseValue(item.state, addTarget as KeyProp) : last(set.stops);
     const stops = stopAtTime(set.stops, at, v);
     store.setKeyframeStops(layerId, addTarget as KeyProp, stops);
-    focus(stops, at);
+    focus(addTarget, stops, at);
   };
 
   const saveModule = (name: string) => {
@@ -873,11 +886,7 @@ function KeyframeLog({ track }: { track: Track }) {
               <button
                 type="button"
                 aria-label={`add ${addTarget} keyframe at playhead`}
-                title={
-                  addTarget === "position"
-                    ? "add keyframe at playhead"
-                    : `add ${addTarget} keyframe at playhead`
-                }
+                title={`add ${addTarget} keyframe at playhead`}
                 className="grid h-[20px] w-[20px] place-items-center rounded text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
                 onClick={addAtPlayhead}
               >
