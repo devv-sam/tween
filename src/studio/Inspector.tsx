@@ -160,7 +160,10 @@ function BackgroundField({ value }: { value: string }) {
           const hex = normalizeHex(e.target.value);
           if (hex) set(hex);
         }}
-        onBlur={() => setDraft(null)}
+        onBlur={() => {
+          setDraft(null);
+          useStudio.getState().sealHistory();
+        }}
       />
     </div>
   );
@@ -255,6 +258,7 @@ function ElementPanel({
             placeholder={layerName({ ...layer, name: undefined }, asset?.name, index)}
             aria-label="element name"
             onChange={(e) => useStudio.getState().renameLayer(layer.id, e.target.value)}
+            onBlur={() => useStudio.getState().sealHistory()}
           />
         </div>
       </section>
@@ -707,7 +711,11 @@ function NumberField({
         inputMode="decimal"
         value={shown}
         onChange={(e) => commit(e.target.value)}
-        onBlur={() => setDraft(null)}
+        onBlur={() => {
+          setDraft(null);
+          // A run of keystrokes in one field is one undo step; leaving ends it.
+          useStudio.getState().sealHistory();
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             setDraft(null);

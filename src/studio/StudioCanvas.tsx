@@ -195,11 +195,26 @@ export function StudioCanvas() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (
+      const editing =
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      )
+        e.target instanceof HTMLTextAreaElement;
+
+      // ⌘Z / ⌘⇧Z, with ctrl+y for the Windows hand. It works from a field too: every
+      // keystroke there is already in the composition, so the studio's own undo is
+      // the one that can take the edit back — the field just has to let go first.
+      const key = e.key.toLowerCase();
+      const undoing = (e.metaKey || e.ctrlKey) && key === "z";
+      const redoing = (e.ctrlKey && !e.metaKey && key === "y") || (undoing && e.shiftKey);
+      if (undoing || redoing) {
+        e.preventDefault();
+        if (editing) (e.target as HTMLElement).blur();
+        const { undo, redo } = useStudio.getState();
+        if (redoing) redo();
+        else undo();
         return;
+      }
+      if (editing) return;
+
       const {
         viewport: vp,
         view: v,
@@ -247,8 +262,17 @@ export function StudioCanvas() {
         zoomAroundPoint(center, v.zoom / 1.15);
       }
     };
+    // A held arrow key is one nudge; releasing it ends that nudge, so the next run
+    // starts its own undo step.
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key.startsWith("Arrow")) useStudio.getState().sealHistory();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 
   useEffect(() => {
@@ -521,6 +545,8 @@ export function StudioCanvas() {
     if (!drag) return;
     dragRef.current = null;
     setRotating(false);
+    // The whole drag was one edit; releasing closes it.
+    useStudio.getState().sealHistory();
     if (e.currentTarget.hasPointerCapture(drag.pointerId)) {
       e.currentTarget.releasePointerCapture(drag.pointerId);
     }
