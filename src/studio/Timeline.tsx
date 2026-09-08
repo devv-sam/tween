@@ -169,6 +169,8 @@ export function Timeline() {
     const drag = durationRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     durationRef.current = null;
+    // The trim was one edit, however many frames it took.
+    useStudio.getState().sealHistory();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -411,6 +413,8 @@ function TrackBlock({
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     dragRef.current = null;
+    // One drag, one undo step — closed here so the next drag starts a new one.
+    useStudio.getState().sealHistory();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }

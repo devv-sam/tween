@@ -22,6 +22,14 @@ import {
   type SelectedPart,
 } from "./modules";
 import { clampFps } from "./composition";
+import {
+  emptyHistory,
+  record,
+  redo as redoHistory,
+  seal,
+  undo as undoHistory,
+  type History,
+} from "./history";
 import { clampDuration } from "./ruler";
 import {
   DEFAULT_FRAME,
@@ -111,6 +119,35 @@ const patchModule = (
   fn: (md: ModuleData) => ModuleData,
 ): ModuleData[] => modules.map((md, i) => (i === index ? fn(md) : md));
 
+/**
+ * Everything undo puts back: the document, and the selection that was pointing into
+ * it. The playhead, the zoom, and what is playing are not edits — Figma leaves them
+ * alone across an undo, and so does this.
+ */
+type Snapshot = {
+  composition: Composition;
+  assets: ImageAsset[];
+  frame: Size;
+  selectedId: string | null;
+  selectedPart: SelectedPart | null;
+};
+
+const snapshot = (s: StudioState): Snapshot => ({
+  composition: s.composition,
+  assets: s.assets,
+  frame: s.frame,
+  selectedId: s.selectedId,
+  selectedPart: s.selectedPart,
+});
+
+/** The frame refitted to the room the viewport has — a reframe, wherever one comes
+ *  from: a resolution change, a resize, or an undo of either. */
+const refit = (viewport: Size, frame: Size, view: View): View => {
+  const next = { ...view, scale: fitScale(viewport, frame) };
+  const pan = clampPan({ x: next.panX, y: next.panY }, next, frame);
+  return { ...next, panX: pan.x, panY: pan.y };
+};
+
 type StudioState = {
   composition: Composition;
   assets: ImageAsset[];
@@ -125,6 +162,7 @@ type StudioState = {
   selectedPart: SelectedPart | null;
   viewport: Size;
   view: View;
+  history: History<Snapshot>;
   setT: (t: number) => void;
   setPlaying: (playing: boolean) => void;
   toggleLoop: () => void;
@@ -156,347 +194,395 @@ type StudioState = {
   nudgeSelected: (dx: number, dy: number) => void;
   deleteSelected: () => void;
   toggleLayerLock: (layerId: string) => void;
+  undo: () => void;
+  redo: () => void;
+  /** End the interaction the last edits belonged to, so the next one is its own step. */
+  sealHistory: () => void;
 };
 
-export const useStudio = create<StudioState>((set, get) => ({
-  composition: emptyComposition(),
-  assets: [],
-  importError: null,
-  frame: DEFAULT_FRAME,
-  t: 0,
-  playing: false,
-  loop: true,
-  selectedId: null,
-  selectedPart: null,
-  viewport: { width: 0, height: 0 },
-  view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
-
-  // `t` is normalized over the composition — the playhead and the rAF loop both
-  // land here, so the renderer has one clock to read.
-  setT: (t) => set({ t: clamp(t, 0, 1) }),
-
-  setPlaying: (playing) => set({ playing }),
-
-  toggleLoop: () => set((s) => ({ loop: !s.loop })),
-
-  setDuration: (seconds) => {
-    set((s) => ({
-      composition: { ...s.composition, duration: clampDuration(seconds) },
-    }));
-  },
-
-  setFps: (fps) => {
-    set((s) => ({ composition: { ...s.composition, fps: clampFps(fps) } }));
-  },
-
+export const useStudio = create<StudioState>((set, get) => {
   /**
-   * A resolution change is a reframe: the new frame has to be refitted to the room
-   * the viewport has, the same way a resize does it.
+   * The one door every document edit goes through: it records the state being
+   * replaced before applying the change. `key` names the interaction the edit belongs
+   * to — edits sharing an open key are one undo step — and null means "its own step".
    */
-  setResolution: (size) => {
-    const { viewport, view } = get();
-    const next = { ...view, scale: fitScale(viewport, size) };
-    const pan = clampPan({ x: next.panX, y: next.panY }, next, size);
-    set({ frame: size, view: { ...next, panX: pan.x, panY: pan.y } });
-  },
-
-  setBackground: (hex) => {
-    set((s) => ({ composition: { ...s.composition, background: hex } }));
-  },
-
-  setDriver: (kind) => {
-    set((s) => ({ composition: { ...s.composition, driver: { kind } } }));
-  },
-
-  setViewport: (viewport) => {
-    const { frame, view } = get();
-    // Refit on every resize: the frame's screen size follows the room it has.
-    const next = { ...view, scale: fitScale(viewport, frame) };
-    const pan = clampPan({ x: next.panX, y: next.panY }, next, frame);
-    set({ viewport, view: { ...next, panX: pan.x, panY: pan.y } });
-  },
-
-  zoomAroundPoint: (screen, nextZoom) => {
-    const { viewport, frame, view } = get();
-    if (viewport.width < 1 || viewport.height < 1) return;
-    set({ view: zoomAround(screen, nextZoom, viewport, frame, view) });
-  },
-
-  panBy: (dx, dy) => {
-    const { frame, view } = get();
-    if (!isPannable(view, frame)) return;
-    const pan = clampPan({ x: view.panX + dx, y: view.panY + dy }, view, frame);
-    set({ view: { ...view, panX: pan.x, panY: pan.y } });
-  },
-
-  resetZoom: () => {
-    const { view } = get();
-    set({ view: { ...view, zoom: 1, panX: 0, panY: 0 } });
-  },
-
-  importImages: async (files) => {
-    let importError: string | null = null;
-    const added: ImageAsset[] = [];
-    for (const file of files) {
-      const err = imageError(file);
-      if (err) {
-        importError = err;
-        continue;
-      }
-      try {
-        added.push(await readImageAsset(file));
-      } catch {
-        importError = imageError(file) ?? "tween takes png, jpg, or webp.";
-      }
-    }
-    if (added.length === 0) {
-      set({ importError });
-      return;
-    }
+  const edit = (
+    key: string | null,
+    fn: (s: StudioState) => Partial<StudioState>,
+  ): void =>
     set((s) => ({
-      assets: [...s.assets, ...added],
-      importError,
+      ...fn(s),
+      history: record(s.history, snapshot(s), key, Date.now()),
     }));
-  },
 
-  placeElement: (assetId, at) => {
-    const { assets, frame } = get();
-    const asset = assets.find((a) => a.id === assetId);
-    if (!asset) return;
-    // A drop near an edge lands the whole element inside, not straddling it.
-    const place = clampToFrame(
-      at ?? centerOf(frame),
-      { x: asset.naturalW / 2, y: asset.naturalH / 2 },
-      frame,
-    );
-    const layerId = crypto.randomUUID();
-    set((s) => ({
-      selectedId: layerId,
-      selectedPart: null,
-      composition: {
-        ...s.composition,
-        tracks: [...s.composition.tracks, imageTrack(layerId, assetId, place)],
-      },
-    }));
-  },
+  /** Put a snapshot back. A different frame is a reframe, so the view refits to it. */
+  const restore = (s: StudioState, snap: Snapshot): Partial<StudioState> => ({
+    ...snap,
+    view: snap.frame === s.frame ? s.view : refit(s.viewport, snap.frame, s.view),
+  });
 
-  removeAsset: (id) => {
-    const asset = get().assets.find((a) => a.id === id);
-    if (!asset) return;
-    URL.revokeObjectURL(asset.src);
-    forgetImage(id);
-    set((s) => {
-      const tracks = s.composition.tracks.filter(
-        (tr) => !(tr.layer.source.kind === "image" && tr.layer.source.value === id),
-      );
-      const kept = tracks.some((tr) => tr.layer.id === s.selectedId);
-      return {
-        assets: s.assets.filter((a) => a.id !== id),
-        composition: { ...s.composition, tracks },
-        selectedId: kept ? s.selectedId : null,
-        selectedPart: kept ? s.selectedPart : null,
-      };
-    });
-  },
+  return {
+    composition: emptyComposition(),
+    assets: [],
+    importError: null,
+    frame: DEFAULT_FRAME,
+    t: 0,
+    playing: false,
+    loop: true,
+    selectedId: null,
+    selectedPart: null,
+    viewport: { width: 0, height: 0 },
+    view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
+    history: emptyHistory<Snapshot>(),
 
-  select: (layerId) => set({ selectedId: layerId, selectedPart: null }),
+    // `t` is normalized over the composition — the playhead and the rAF loop both
+    // land here, so the renderer has one clock to read.
+    setT: (t) => set({ t: clamp(t, 0, 1) }),
 
-  selectPart: (layerId, part) => set({ selectedId: layerId, selectedPart: part }),
+    setPlaying: (playing) => set({ playing }),
 
-  renameLayer: (layerId, name) => {
-    set((s) => patchTrack(s.composition, layerId, (tr) => ({
-      ...tr,
-      layer: { ...tr.layer, name },
-    })));
-  },
+    toggleLoop: () => set((s) => ({ loop: !s.loop })),
 
-  /** Author motion directly on the element: two flat stops on its current value, so
-   *  nothing moves until a value is edited. One set per property — asking again just
-   *  opens the one that is already there. */
-  addKeyframes: (layerId, prop) => {
-    const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
-    if (!track) return;
-    const part: SelectedPart = { kind: "keyframes", property: prop };
-    if (track.keyframes?.[prop]) {
-      set({ selectedId: layerId, selectedPart: part });
-      return;
-    }
-    const set_ = newKeyframes(prop, track.layer.base);
-    set((s) => ({
-      selectedId: layerId,
-      selectedPart: part,
-      ...patchTrack(s.composition, layerId, (tr) => ({
-        ...tr,
-        keyframes: { ...tr.keyframes, [prop]: set_ },
-      })),
-    }));
-  },
+    setDuration: (seconds) => {
+      edit("duration", (s) => ({
+        composition: { ...s.composition, duration: clampDuration(seconds) },
+      }));
+    },
 
-  removeKeyframes: (layerId, prop) => {
-    set((s) => ({
-      selectedPart:
-        s.selectedPart?.kind === "keyframes" && s.selectedPart.property === prop
-          ? null
-          : s.selectedPart,
-      ...patchTrack(s.composition, layerId, (tr) => {
-        const { [prop]: gone, ...rest } = tr.keyframes ?? {};
-        void gone;
-        return { ...tr, keyframes: rest };
-      }),
-    }));
-  },
+    setFps: (fps) => {
+      edit(null, (s) => ({ composition: { ...s.composition, fps: clampFps(fps) } }));
+    },
 
-  setKeyframeStops: (layerId, prop, stops) => {
-    set((s) => patchTrack(s.composition, layerId, (tr) => patchKeyframes(tr, prop, { stops })));
-  },
+    /**
+     * A resolution change is a reframe: the new frame has to be refitted to the room
+     * the viewport has, the same way a resize does it.
+     */
+    setResolution: (size) => {
+      edit(null, (s) => ({
+        frame: size,
+        view: refit(s.viewport, size, s.view),
+      }));
+    },
 
-  /** The one writer for a standalone set's window — the block's edges are its only
-   *  editor, the same way a module's range works. */
-  setKeyframeRange: (layerId, prop, range) => {
-    set((s) => patchTrack(s.composition, layerId, (tr) => patchKeyframes(tr, prop, { range })));
-  },
+    setBackground: (hex) => {
+      edit("background", (s) => ({
+        composition: { ...s.composition, background: hex },
+      }));
+    },
 
-  removeModule: (layerId, index) => {
-    set((s) => ({
-      // The stack shifts under the selection, so drop it rather than point it elsewhere.
-      selectedPart:
-        s.selectedPart?.kind === "module" && s.selectedPart.index === index
-          ? null
-          : s.selectedPart,
-      ...patchTrack(s.composition, layerId, (tr) => ({
-        ...tr,
-        modules: tr.modules.filter((_, i) => i !== index),
-      })),
-    }));
-  },
+    setDriver: (kind) => {
+      edit(null, (s) => ({ composition: { ...s.composition, driver: { kind } } }));
+    },
 
-  setModuleParams: (layerId, index, patch) => {
-    set((s) => patchTrack(s.composition, layerId, (tr) => ({
-      ...tr,
-      modules: patchModule(tr.modules, index, (md) => ({
-        ...md,
-        params: { ...md.params, ...patch },
-      })),
-    })));
-  },
+    setViewport: (viewport) => {
+      const { frame, view } = get();
+      // Refit on every resize: the frame's screen size follows the room it has.
+      set({ viewport, view: refit(viewport, frame, view) });
+    },
 
-  /** The one writer for a module's window. Both the inspector's start / end fields
-   *  and the timeline block's drags land here. */
-  setModuleRange: (layerId, index, range) => {
-    set((s) => patchTrack(s.composition, layerId, (tr) => ({
-      ...tr,
-      modules: patchModule(tr.modules, index, (md) => ({ ...md, range })),
-    })));
-  },
+    zoomAroundPoint: (screen, nextZoom) => {
+      const { viewport, frame, view } = get();
+      if (viewport.width < 1 || viewport.height < 1) return;
+      set({ view: zoomAround(screen, nextZoom, viewport, frame, view) });
+    },
 
-  setLayerBase: (layerId, patch) => {
-    set((s) => ({
-      composition: {
-        ...s.composition,
-        tracks: s.composition.tracks.map((tr) =>
-          tr.layer.id === layerId
-            ? { ...tr, layer: { ...tr.layer, base: { ...tr.layer.base, ...patch } } }
-            : tr,
-        ),
-      },
-    }));
-  },
+    panBy: (dx, dy) => {
+      const { frame, view } = get();
+      if (!isPannable(view, frame)) return;
+      const pan = clampPan({ x: view.panX + dx, y: view.panY + dy }, view, frame);
+      set({ view: { ...view, panX: pan.x, panY: pan.y } });
+    },
 
-  /** Where an element's position is held right now — the snapshot a move is measured
-   *  from, so applying the same drag twice lands in the same place. */
-  moveAnchor: (layerId) => {
-    const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
-    if (!track) return null;
-    return {
-      base: { x: track.layer.base.x, y: track.layer.base.y },
-      driven: positionDrivers(track),
-    };
-  },
+    resetZoom: () => {
+      const { view } = get();
+      set({ view: { ...view, zoom: 1, panX: 0, panY: 0 } });
+    },
 
-  /**
-   * Move an element by (dx, dy) from `anchor`, writing to whichever holder owns each
-   * axis: a driving module's stops when there is one, `base` otherwise. One `set`, so
-   * a drag that moves both axes still costs a single render.
-   */
-  moveLayer: (layerId, anchor, dx, dy) => {
-    const by = { x: dx, y: dy };
-    const driven = new Set(anchor.driven.map((d) => d.axis));
-    set((s) =>
-      patchTrack(s.composition, layerId, (tr) => {
-        const base = { ...tr.layer.base };
-        if (!driven.has("x")) base.x = anchor.base.x + dx;
-        if (!driven.has("y")) base.y = anchor.base.y + dy;
-        const modules = tr.modules.map((md, i) => {
-          const drive = anchor.driven.find(
-            (d) => d.part.kind === "module" && d.part.index === i,
-          );
-          if (!drive) return md;
-          return {
-            ...md,
-            params: { ...md.params, stops: shiftStops(drive.stops, by[drive.axis]) },
-          };
-        });
-        const keyframes = { ...tr.keyframes };
-        for (const drive of anchor.driven) {
-          if (drive.part.kind !== "keyframes") continue;
-          const current = keyframes[drive.part.property];
-          if (!current) continue;
-          keyframes[drive.part.property] = {
-            ...current,
-            stops: shiftStops(drive.stops, by[drive.axis]),
-          };
+    importImages: async (files) => {
+      let importError: string | null = null;
+      const added: ImageAsset[] = [];
+      for (const file of files) {
+        const err = imageError(file);
+        if (err) {
+          importError = err;
+          continue;
         }
-        return { ...tr, layer: { ...tr.layer, base }, keyframes, modules };
-      }),
-    );
-  },
+        try {
+          added.push(await readImageAsset(file));
+        } catch {
+          importError = imageError(file) ?? "tween takes png, jpg, or webp.";
+        }
+      }
+      if (added.length === 0) {
+        set({ importError });
+        return;
+      }
+      edit(null, (s) => ({
+        assets: [...s.assets, ...added],
+        importError,
+      }));
+    },
 
-  nudgeSelected: (dx, dy) => {
-    const { selectedId, composition, assets, frame, moveAnchor, moveLayer } = get();
-    const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
-    if (!track || !selectedId) return;
-    const anchor = moveAnchor(selectedId);
-    if (!anchor) return;
-    const { base, source } = track.layer;
-    const asset = source.kind === "image" ? assets.find((a) => a.id === source.value) : undefined;
-    // Clamp the element's rendered box, then move by whatever the clamp allowed —
-    // a driven axis still has to stay inside the frame.
-    const rendered = renderState(composition, get().t).find((it) => it.id === selectedId);
-    const at = rendered ?? { state: base };
-    const wanted = { x: at.state.x + dx, y: at.state.y + dy };
-    const bounded = asset
-      ? clampToFrame(
-          wanted,
-          boundsHalf(at.state, { width: asset.naturalW, height: asset.naturalH }),
-          frame,
-        )
-      : wanted;
-    moveLayer(selectedId, anchor, bounded.x - at.state.x, bounded.y - at.state.y);
-  },
+    placeElement: (assetId, at) => {
+      const { assets, frame } = get();
+      const asset = assets.find((a) => a.id === assetId);
+      if (!asset) return;
+      // A drop near an edge lands the whole element inside, not straddling it.
+      const place = clampToFrame(
+        at ?? centerOf(frame),
+        { x: asset.naturalW / 2, y: asset.naturalH / 2 },
+        frame,
+      );
+      const layerId = crypto.randomUUID();
+      edit(null, (s) => ({
+        selectedId: layerId,
+        selectedPart: null,
+        composition: {
+          ...s.composition,
+          tracks: [...s.composition.tracks, imageTrack(layerId, assetId, place)],
+        },
+      }));
+    },
 
-  toggleLayerLock: (layerId) => {
-    set((s) => ({
-      composition: {
-        ...s.composition,
-        tracks: s.composition.tracks.map((tr) =>
-          tr.layer.id === layerId
-            ? { ...tr, layer: { ...tr.layer, lockAspect: !tr.layer.lockAspect } }
-            : tr,
-        ),
-      },
-    }));
-  },
+    removeAsset: (id) => {
+      const asset = get().assets.find((a) => a.id === id);
+      if (!asset) return;
+      // The object URL outlives the removal on purpose: undo puts the asset back, and a
+      // revoked URL would come back as a broken image. It is released with the tab.
+      forgetImage(id);
+      edit(null, (s) => {
+        const tracks = s.composition.tracks.filter(
+          (tr) => !(tr.layer.source.kind === "image" && tr.layer.source.value === id),
+        );
+        const kept = tracks.some((tr) => tr.layer.id === s.selectedId);
+        return {
+          assets: s.assets.filter((a) => a.id !== id),
+          composition: { ...s.composition, tracks },
+          selectedId: kept ? s.selectedId : null,
+          selectedPart: kept ? s.selectedPart : null,
+        };
+      });
+    },
 
-  deleteSelected: () => {
-    const { selectedId } = get();
-    if (!selectedId) return;
-    set((s) => ({
-      selectedId: null,
-      selectedPart: null,
-      composition: {
-        ...s.composition,
-        tracks: s.composition.tracks.filter((tr) => tr.layer.id !== selectedId),
-      },
-    }));
-  },
-}));
+    select: (layerId) => set({ selectedId: layerId, selectedPart: null }),
+
+    selectPart: (layerId, part) => set({ selectedId: layerId, selectedPart: part }),
+
+    renameLayer: (layerId, name) => {
+      edit(`rename:${layerId}`, (s) => patchTrack(s.composition, layerId, (tr) => ({
+        ...tr,
+        layer: { ...tr.layer, name },
+      })));
+    },
+
+    /** Author motion directly on the element: two flat stops on its current value, so
+     *  nothing moves until a value is edited. One set per property — asking again just
+     *  opens the one that is already there. */
+    addKeyframes: (layerId, prop) => {
+      const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (!track) return;
+      const part: SelectedPart = { kind: "keyframes", property: prop };
+      if (track.keyframes?.[prop]) {
+        set({ selectedId: layerId, selectedPart: part });
+        return;
+      }
+      const set_ = newKeyframes(prop, track.layer.base);
+      edit(null, (s) => ({
+        selectedId: layerId,
+        selectedPart: part,
+        ...patchTrack(s.composition, layerId, (tr) => ({
+          ...tr,
+          keyframes: { ...tr.keyframes, [prop]: set_ },
+        })),
+      }));
+    },
+
+    removeKeyframes: (layerId, prop) => {
+      edit(null, (s) => ({
+        selectedPart:
+          s.selectedPart?.kind === "keyframes" && s.selectedPart.property === prop
+            ? null
+            : s.selectedPart,
+        ...patchTrack(s.composition, layerId, (tr) => {
+          const { [prop]: gone, ...rest } = tr.keyframes ?? {};
+          void gone;
+          return { ...tr, keyframes: rest };
+        }),
+      }));
+    },
+
+    setKeyframeStops: (layerId, prop, stops) => {
+      edit(`stops:${layerId}:${prop}`, (s) =>
+        patchTrack(s.composition, layerId, (tr) => patchKeyframes(tr, prop, { stops })));
+    },
+
+    /** The one writer for a standalone set's window — the block's edges are its only
+     *  editor, the same way a module's range works. */
+    setKeyframeRange: (layerId, prop, range) => {
+      edit(`range:${layerId}:${prop}`, (s) =>
+        patchTrack(s.composition, layerId, (tr) => patchKeyframes(tr, prop, { range })));
+    },
+
+    removeModule: (layerId, index) => {
+      edit(null, (s) => ({
+        // The stack shifts under the selection, so drop it rather than point it elsewhere.
+        selectedPart:
+          s.selectedPart?.kind === "module" && s.selectedPart.index === index
+            ? null
+            : s.selectedPart,
+        ...patchTrack(s.composition, layerId, (tr) => ({
+          ...tr,
+          modules: tr.modules.filter((_, i) => i !== index),
+        })),
+      }));
+    },
+
+    setModuleParams: (layerId, index, patch) => {
+      edit(`params:${layerId}:${index}`, (s) => patchTrack(s.composition, layerId, (tr) => ({
+        ...tr,
+        modules: patchModule(tr.modules, index, (md) => ({
+          ...md,
+          params: { ...md.params, ...patch },
+        })),
+      })));
+    },
+
+    /** The one writer for a module's window. Both the inspector's start / end fields
+     *  and the timeline block's drags land here. */
+    setModuleRange: (layerId, index, range) => {
+      edit(`range:${layerId}:${index}`, (s) => patchTrack(s.composition, layerId, (tr) => ({
+        ...tr,
+        modules: patchModule(tr.modules, index, (md) => ({ ...md, range })),
+      })));
+    },
+
+    setLayerBase: (layerId, patch) => {
+      edit(`base:${layerId}`, (s) => ({
+        composition: {
+          ...s.composition,
+          tracks: s.composition.tracks.map((tr) =>
+            tr.layer.id === layerId
+              ? { ...tr, layer: { ...tr.layer, base: { ...tr.layer.base, ...patch } } }
+              : tr,
+          ),
+        },
+      }));
+    },
+
+    /** Where an element's position is held right now — the snapshot a move is measured
+     *  from, so applying the same drag twice lands in the same place. */
+    moveAnchor: (layerId) => {
+      const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (!track) return null;
+      return {
+        base: { x: track.layer.base.x, y: track.layer.base.y },
+        driven: positionDrivers(track),
+      };
+    },
+
+    /**
+     * Move an element by (dx, dy) from `anchor`, writing to whichever holder owns each
+     * axis: a driving module's stops when there is one, `base` otherwise. One `set`, so
+     * a drag that moves both axes still costs a single render.
+     */
+    moveLayer: (layerId, anchor, dx, dy) => {
+      const by = { x: dx, y: dy };
+      const driven = new Set(anchor.driven.map((d) => d.axis));
+      edit(`move:${layerId}`, (s) =>
+        patchTrack(s.composition, layerId, (tr) => {
+          const base = { ...tr.layer.base };
+          if (!driven.has("x")) base.x = anchor.base.x + dx;
+          if (!driven.has("y")) base.y = anchor.base.y + dy;
+          const modules = tr.modules.map((md, i) => {
+            const drive = anchor.driven.find(
+              (d) => d.part.kind === "module" && d.part.index === i,
+            );
+            if (!drive) return md;
+            return {
+              ...md,
+              params: { ...md.params, stops: shiftStops(drive.stops, by[drive.axis]) },
+            };
+          });
+          const keyframes = { ...tr.keyframes };
+          for (const drive of anchor.driven) {
+            if (drive.part.kind !== "keyframes") continue;
+            const current = keyframes[drive.part.property];
+            if (!current) continue;
+            keyframes[drive.part.property] = {
+              ...current,
+              stops: shiftStops(drive.stops, by[drive.axis]),
+            };
+          }
+          return { ...tr, layer: { ...tr.layer, base }, keyframes, modules };
+        }),
+      );
+    },
+
+    nudgeSelected: (dx, dy) => {
+      const { selectedId, composition, assets, frame, moveAnchor, moveLayer } = get();
+      const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
+      if (!track || !selectedId) return;
+      const anchor = moveAnchor(selectedId);
+      if (!anchor) return;
+      const { base, source } = track.layer;
+      const asset = source.kind === "image" ? assets.find((a) => a.id === source.value) : undefined;
+      // Clamp the element's rendered box, then move by whatever the clamp allowed —
+      // a driven axis still has to stay inside the frame.
+      const rendered = renderState(composition, get().t).find((it) => it.id === selectedId);
+      const at = rendered ?? { state: base };
+      const wanted = { x: at.state.x + dx, y: at.state.y + dy };
+      const bounded = asset
+        ? clampToFrame(
+            wanted,
+            boundsHalf(at.state, { width: asset.naturalW, height: asset.naturalH }),
+            frame,
+          )
+        : wanted;
+      moveLayer(selectedId, anchor, bounded.x - at.state.x, bounded.y - at.state.y);
+    },
+
+    toggleLayerLock: (layerId) => {
+      edit(null, (s) => ({
+        composition: {
+          ...s.composition,
+          tracks: s.composition.tracks.map((tr) =>
+            tr.layer.id === layerId
+              ? { ...tr, layer: { ...tr.layer, lockAspect: !tr.layer.lockAspect } }
+              : tr,
+          ),
+        },
+      }));
+    },
+
+    deleteSelected: () => {
+      const { selectedId } = get();
+      if (!selectedId) return;
+      edit(null, (s) => ({
+        selectedId: null,
+        selectedPart: null,
+        composition: {
+          ...s.composition,
+          tracks: s.composition.tracks.filter((tr) => tr.layer.id !== selectedId),
+        },
+      }));
+    },
+
+    undo: () => {
+      set((s) => {
+        const step = undoHistory(s.history, snapshot(s));
+        if (!step) return {};
+        return { ...restore(s, step.state), history: step.history };
+      });
+    },
+
+    redo: () => {
+      set((s) => {
+        const step = redoHistory(s.history, snapshot(s));
+        if (!step) return {};
+        return { ...restore(s, step.state), history: step.history };
+      });
+    },
+
+    sealHistory: () => set((s) => ({ history: seal(s.history) })),
+  };
+});
