@@ -21,6 +21,8 @@ const seed = () => {
     viewport: { width: 800, height: 600 },
     selectedId: null,
     selectedPart: null,
+    expandedTracks: [],
+    selectedKeys: [],
   });
   useStudio.getState().placeElement(asset.id, { x: 200, y: 200 });
   useStudio.setState({ history: { past: [], future: [], key: null, at: 0 } });
@@ -270,5 +272,62 @@ describe("moving a keyframed element", () => {
     const id = layer().id;
     drag(id, 50, 50);
     expect(layer().base).toMatchObject({ x: 250, y: 250 });
+  });
+});
+
+describe("what the timeline has open and picked", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+
+  it("opens an element's property rows and closes them again", () => {
+    const id = layer().id;
+    expect(state().expandedTracks).toEqual([]);
+    state().toggleTrackExpanded(id);
+    expect(state().expandedTracks).toEqual([id]);
+    state().toggleTrackExpanded(id);
+    expect(state().expandedTracks).toEqual([]);
+  });
+
+  it("picks one keyframe, and unpicks it when it is picked again", () => {
+    const id = layer().id;
+    state().selectKey(id, "scale:0");
+    expect(state().selectedKeys).toEqual(["scale:0"]);
+    state().selectKey(id, "scale:1");
+    expect(state().selectedKeys).toEqual(["scale:1"]);
+    state().selectKey(id, "scale:1");
+    expect(state().selectedKeys).toEqual([]);
+  });
+
+  it("gathers a bundle when the picks are additive", () => {
+    const id = layer().id;
+    state().selectKey(id, "scale:0");
+    state().selectKey(id, "scale:2", true);
+    expect(state().selectedKeys).toEqual(["scale:0", "scale:2"]);
+    // Additive on one already in the bundle takes it back out.
+    state().selectKey(id, "scale:0", true);
+    expect(state().selectedKeys).toEqual(["scale:2"]);
+  });
+
+  it("drops the picks when a different element is selected", () => {
+    const id = layer().id;
+    state().selectKey(id, "scale:0");
+    // Selecting the same element again leaves them where they are.
+    state().select(id);
+    expect(state().selectedKeys).toEqual(["scale:0"]);
+    state().select(null);
+    expect(state().selectedKeys).toEqual([]);
+  });
+
+  // The picks name rows on screen, not anything the document holds.
+  it("keeps what is open and picked out of the undo history", () => {
+    const id = layer().id;
+    state().toggleTrackExpanded(id);
+    state().selectKey(id, "scale:0");
+    state().setLayerBase(id, { rotation: 45 });
+    state().sealHistory();
+    state().undo();
+    expect(state().expandedTracks).toEqual([id]);
+    expect(state().selectedKeys).toEqual(["scale:0"]);
   });
 });

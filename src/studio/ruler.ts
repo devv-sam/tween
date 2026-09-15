@@ -7,9 +7,22 @@ export const MAX_DURATION = 30;
 /** Lane geometry, shared by the gutter labels so the two columns stay in step. */
 export const TRACK_HEIGHT = 32;
 export const RULER_HEIGHT = 28;
+/** A property's own row, opened under the element it belongs to. Shorter than the
+ *  element's: it carries one block, not a stack of them. */
+export const PROPERTY_HEIGHT = 24;
 
 /** Within this many pixels of the left edge the playhead reads as "the start". */
 export const SNAP_PX = 6;
+
+/**
+ * Room kept to the left of time zero. The playhead's grab triangle is centred on the
+ * time it points at, so at 0 its left half hangs off the strip and is clipped away.
+ * The composition is drawn from here rather than from the strip's own edge.
+ */
+export const GUTTER_PX = 8;
+
+/** The pixels the composition itself is drawn across — the strip less its gutter. */
+export const spanPx = (width: number): number => Math.max(0, width - GUTTER_PX);
 
 /** Seconds a labelled tick can step by. Decimals read fine, so halves are allowed. */
 const MAJOR_STEPS = [0.5, 1, 2, 5, 10];
@@ -25,12 +38,16 @@ export const clampDuration = (seconds: number) =>
  * inverse, so a drag and the playhead it moves always agree.
  */
 export function timeToX(t: number, width: number): number {
-  return clamp(t, 0, 1) * width;
+  return GUTTER_PX + clamp(t, 0, 1) * spanPx(width);
 }
 
 export function xToTime(x: number, width: number): number {
-  if (width < 1) return 0;
-  return clamp(x <= SNAP_PX ? 0 : x / width, 0, 1);
+  const span = spanPx(width);
+  if (span < 1) return 0;
+  // Anywhere in the gutter is the start, which is what the snap already said about
+  // the pixels just past it.
+  const local = x - GUTTER_PX;
+  return clamp(local <= SNAP_PX ? 0 : local / span, 0, 1);
 }
 
 /** Which unit the transport and the ruler both read in. */
@@ -59,8 +76,9 @@ export type Tick = { t: number; x: number; label: string | null };
  * is room.
  */
 export function ticks(duration: number, width: number, unit: Unit = "s"): Tick[] {
-  if (width < 1 || duration <= 0) return [];
-  const perSecond = width / duration;
+  const span = spanPx(width);
+  if (span < 1 || duration <= 0) return [];
+  const perSecond = span / duration;
   const major =
     MAJOR_STEPS.find((s) => s * perSecond >= MIN_LABEL_GAP) ??
     MAJOR_STEPS[MAJOR_STEPS.length - 1];
