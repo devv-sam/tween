@@ -61,19 +61,6 @@ export const PROP_COLOR: Record<KeyTarget, string> = {
   opacity: "border-rose-300 bg-rose-100 text-rose-900",
 };
 
-/**
- * The same hues, unfilled. A standalone set is raw material — it reads as an outline
- * until it is bundled into a module, which reads as a solid.
- */
-export const PROP_OUTLINE: Record<KeyTarget, string> = {
-  position: "border-indigo-400 bg-white text-indigo-700",
-  x: "border-sky-400 bg-white text-sky-700",
-  y: "border-teal-400 bg-white text-teal-700",
-  scale: "border-violet-400 bg-white text-violet-700",
-  rotation: "border-amber-400 bg-white text-amber-700",
-  opacity: "border-rose-400 bg-white text-rose-700",
-};
-
 /** The same hues as the blocks, as text — a filled diamond means this property
  *  carries motion. */
 export const PROP_TEXT: Record<KeyTarget, string> = {
@@ -83,16 +70,6 @@ export const PROP_TEXT: Record<KeyTarget, string> = {
   scale: "text-violet-500",
   rotation: "text-amber-500",
   opacity: "text-rose-500",
-};
-
-/** The same hues as the blocks, solid — a filled dot means this property carries motion. */
-export const PROP_DOT: Record<KeyTarget, string> = {
-  position: "bg-indigo-500",
-  x: "bg-sky-500",
-  y: "bg-teal-500",
-  scale: "bg-violet-500",
-  rotation: "bg-amber-500",
-  opacity: "bg-rose-500",
 };
 
 /** Sensible input steps per property — degrees move faster than opacity. */
@@ -289,31 +266,6 @@ export function layerName(
 }
 
 /**
- * Lane geometry. Each module gets its own band inside its element's row, so two
- * modules covering the same span are read apart at a glance — they overlap in time
- * without overlapping on screen. The row grows to fit them and the gutter label
- * follows, which is why this is one function both columns call.
- */
-export const BLOCK_HEIGHT = 18;
-export const BLOCK_GAP = 4;
-const ROW_PAD = 4;
-
-export function rowHeight(moduleCount: number, min: number): number {
-  const stack =
-    moduleCount < 1
-      ? 0
-      : moduleCount * BLOCK_HEIGHT + (moduleCount - 1) * BLOCK_GAP + ROW_PAD * 2;
-  return Math.max(min, stack);
-}
-
-/** Top of a module's band, centred in whatever height the row settled on. */
-export function blockTop(index: number, moduleCount: number, min: number): number {
-  const stack = moduleCount * BLOCK_HEIGHT + (moduleCount - 1) * BLOCK_GAP;
-  const top = (rowHeight(moduleCount, min) - stack) / 2;
-  return top + index * (BLOCK_HEIGHT + BLOCK_GAP);
-}
-
-/**
  * Which axes a track's modules own outright.
  *
  * A `set` blend replaces the property rather than adding to it, so while such a
@@ -386,6 +338,43 @@ export function secondsToT(seconds: number, range: Range, duration: number): num
 
 /** Close enough on the ruler to be the same keyframe rather than a second one. */
 export const SAME_STOP = 1e-4;
+
+/**
+ * The whole set moved in time, keeping its shape — `shiftStops` is the same idea one
+ * axis over, on the values. Clamped as one piece rather than stop by stop: a curve
+ * pushed against the start of the composition should stop moving, not pile its
+ * keyframes up on the edge.
+ */
+export function slideStops(stops: Stop[], by: number): Stop[] {
+  if (stops.length === 0) return stops;
+  const first = stops[0].t;
+  const last = stops[stops.length - 1].t;
+  const moved = clamp(by, -first, 1 - last);
+  return stops.map((s) => ({ ...s, t: s.t + moved }));
+}
+
+/**
+ * The set stretched from one end, the other held still. Every keyframe's time scales
+ * with the drag, so the motion keeps its shape and only plays faster or slower —
+ * dragging the end of a curve asks for the same animation over a different span, not
+ * for the last leg of it to grow while the rest stands where it was.
+ *
+ * The moved end cannot cross the anchor: a curve turned inside out is not a shorter
+ * curve, and there is nothing sensible on the other side.
+ */
+export function stretchStops(
+  stops: Stop[],
+  anchor: number,
+  from: number,
+  to: number,
+): Stop[] {
+  const span = from - anchor;
+  if (Math.abs(span) < SAME_STOP) return stops;
+  // Toward the anchor stops at a hair's width; away stops at the composition's edge.
+  const limit = span > 0 ? [anchor + SAME_STOP, 1] : [0, anchor - SAME_STOP];
+  const k = (clamp(to, limit[0], limit[1]) - anchor) / span;
+  return stops.map((s) => ({ ...s, t: anchor + (s.t - anchor) * k }));
+}
 
 /**
  * A stop at the playhead, holding whatever the property evaluates to right there —

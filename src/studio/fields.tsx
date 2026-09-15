@@ -187,28 +187,6 @@ export function DiamondMinusIcon() {
   );
 }
 
-export function ListCollapseIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m3 10 2.5-2.5L3 5" />
-      <path d="m3 19 2.5-2.5L3 14" />
-      <path d="M10 6h11" />
-      <path d="M10 12h11" />
-      <path d="M10 18h11" />
-    </svg>
-  );
-}
-
 /** Lucide `chevron-right`, turned by the caller when what it opens is open. */
 export function ChevronIcon() {
   return (

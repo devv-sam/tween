@@ -224,6 +224,8 @@ export function StudioCanvas() {
         select,
         nudgeSelected,
         deleteSelected,
+        selectedKeys,
+        removeSelectedKeys,
       } = useStudio.getState();
       const center = { x: vp.width / 2, y: vp.height / 2 };
 
@@ -231,10 +233,19 @@ export function StudioCanvas() {
         if (sel) select(null);
         return;
       }
-      if (sel && (e.key === "Delete" || e.key === "Backspace")) {
-        e.preventDefault();
-        deleteSelected();
-        return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // The narrower selection answers first: picked keyframes are inside the
+        // element, so deleting them is what was asked for, not the element around them.
+        if (selectedKeys.length > 0) {
+          e.preventDefault();
+          removeSelectedKeys();
+          return;
+        }
+        if (sel) {
+          e.preventDefault();
+          deleteSelected();
+          return;
+        }
       }
       if (sel && e.key.startsWith("Arrow")) {
         const step = e.shiftKey ? NUDGE_COARSE : NUDGE;
@@ -468,7 +479,10 @@ export function StudioCanvas() {
     }
 
     const point = screenToComposition(screen, viewport, frame, view);
-    const { setLayerBase } = useStudio.getState();
+    // A gesture on a keyframed property writes the keyframe under the playhead rather
+    // than the base it cannot reach — turning or scaling an element at a moment is
+    // how that moment gets a keyframe, the same way moving one already works.
+    const { captureTransform } = useStudio.getState();
 
     if (drag.mode === "rotate") {
       const nextRotation = rotateFrom(
@@ -483,7 +497,7 @@ export function StudioCanvas() {
           drag.cursorAngle + (nextRotation - drag.startRendered.rotation),
         ),
       );
-      setLayerBase(drag.id, {
+      captureTransform(drag.id, {
         rotation:
           drag.startBase.rotation + (nextRotation - drag.startRendered.rotation),
       });
@@ -532,7 +546,7 @@ export function StudioCanvas() {
       drag.startRendered.scaleY > 0
         ? next.scaleY / drag.startRendered.scaleY
         : 1;
-    setLayerBase(drag.id, {
+    captureTransform(drag.id, {
       x: drag.startBase.x + (next.x - drag.startRendered.x),
       y: drag.startBase.y + (next.y - drag.startRendered.y),
       scaleX: drag.startBase.scaleX * rx,

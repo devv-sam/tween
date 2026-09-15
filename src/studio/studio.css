@@ -365,8 +365,8 @@ body {
 .timeline-property-label {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 6px 0 22px;
+  gap: 8px;
+  padding: 0 8px 0 22px;
   border-bottom: 1px solid #f5f5f5;
   background: #fff;
   white-space: nowrap;
@@ -375,6 +375,32 @@ body {
 
 .timeline-property-label.is-selected {
   background: #f2f9ff;
+}
+
+/* Which element is being worked on, said quietly. The property row's own blue is
+   stronger, so the two read apart: one is the element, one is the property. */
+.timeline-track-label.is-selected {
+  background: #eef4fb;
+}
+
+.timeline-track-label.is-selected .timeline-track-name {
+  color: #111;
+  font-weight: 500;
+}
+
+.timeline-track-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  color: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .timeline-property-name {
@@ -396,27 +422,7 @@ body {
   color: #111;
 }
 
-.timeline-property-key {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  cursor: pointer;
-}
 
-.timeline-property-key:hover:not(:disabled) {
-  background: #f0f0f0;
-}
-
-.timeline-property-key:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
 
 /* Strip-local coordinate space: the playhead and every tick are placed against
    this box, and it has nothing to do with the canvas transform. */

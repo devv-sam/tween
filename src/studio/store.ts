@@ -234,10 +234,16 @@ type StudioState = {
   setModuleParams: (layerId: string, index: number, patch: Record<string, unknown>) => void;
   setModuleRange: (layerId: string, index: number, range: Range) => void;
   setLayerBase: (layerId: string, patch: Partial<Transform>) => void;
+  /** The same patch, but landing in the keyframe under the playhead wherever the
+   *  property carries its own motion. What a canvas gesture writes through. */
+  captureTransform: (layerId: string, patch: Partial<Transform>) => void;
   moveAnchor: (layerId: string) => MoveAnchor | null;
   moveLayer: (layerId: string, anchor: MoveAnchor, dx: number, dy: number) => void;
   nudgeSelected: (dx: number, dy: number) => void;
   deleteSelected: () => void;
+  /** The picked keyframes, gone. A property whose last keyframe goes stops carrying
+   *  motion — there is no curve left to be the one keyframe of. */
+  removeSelectedKeys: () => void;
   toggleLayerLock: (layerId: string) => void;
   undo: () => void;
   redo: () => void;
@@ -482,6 +488,12 @@ export const useStudio = create<StudioState>((set, get) => {
       edit(null, (s) => ({
         selectedId: layerId,
         selectedPart: part,
+        // The property arrives with a row of its own, so the element opens to show
+        // it. Adding motion and then having to go find where it went is a step that
+        // exists for no reason.
+        expandedTracks: s.expandedTracks.includes(layerId)
+          ? s.expandedTracks
+          : [...s.expandedTracks, layerId],
         ...patchTrack(s.composition, layerId, (tr) => ({
           ...tr,
           keyframes: { ...tr.keyframes, ...added },
@@ -600,6 +612,52 @@ export const useStudio = create<StudioState>((set, get) => {
       }));
     },
 
+    /**
+     * A transform edit that respects the motion already authored.
+     *
+     * On a property with keyframes there is no base value to change — the curve sets
+     * it outright, so writing to `base` would move nothing on screen. The edit lands
+     * in the keyframe under the playhead instead, making one if there is none there:
+     * scaling an element at a moment is how that moment gets a keyframe, the same way
+     * moving one already works. Properties with no motion of their own still write
+     * straight to the base transform.
+     */
+    captureTransform: (layerId, patch) => {
+      edit(`capture:${layerId}`, (s) => {
+        const span = s.composition.duration;
+        const seconds = s.t * span;
+        return patchTrack(s.composition, layerId, (tr) => {
+          const base = { ...tr.layer.base };
+          const keyframes = { ...(tr.keyframes ?? {}) };
+          /** True once the value is in a keyframe, so the caller knows to leave the
+           *  base alone. */
+          const capture = (prop: KeyProp, v: number): boolean => {
+            const set = keyframes[prop];
+            if (!set) return false;
+            const at = clamp(secondsToT(seconds, set.range, span), 0, 1);
+            keyframes[prop] = { ...set, stops: stopAtTime(set.stops, at, v) };
+            return true;
+          };
+          for (const [prop, v] of Object.entries(patch) as [
+            keyof Transform,
+            number,
+          ][]) {
+            if (typeof v !== "number") continue;
+            // `scale` is one keyframed property driving both axes, so scaleX speaks
+            // for the pair and scaleY has nowhere of its own to land.
+            if (prop === "scaleX") {
+              if (!capture("scale", v)) base.scaleX = v;
+            } else if (prop === "scaleY") {
+              if (!keyframes.scale) base.scaleY = v;
+            } else if (!capture(prop, v)) {
+              base[prop] = v;
+            }
+          }
+          return { ...tr, layer: { ...tr.layer, base }, keyframes };
+        });
+      });
+    },
+
     /** Where an element's position is held right now — the snapshot a move is measured
      *  from, so applying the same drag twice lands in the same place. */
     moveAnchor: (layerId) => {
@@ -699,6 +757,56 @@ export const useStudio = create<StudioState>((set, get) => {
           ),
         },
       }));
+    },
+
+    removeSelectedKeys: () => {
+      const { selectedId, selectedKeys } = get();
+      if (!selectedId || selectedKeys.length === 0) return;
+
+      // Ids are `property:index`. Gathered by property first, so a set loses all of
+      // its picked keyframes in one pass and the indices stay the ones that were
+      // picked rather than shifting under each other.
+      const gone = new Map<string, Set<number>>();
+      for (const id of selectedKeys) {
+        const at = id.lastIndexOf(":");
+        if (at < 0) continue;
+        const index = Number(id.slice(at + 1));
+        if (!Number.isInteger(index)) continue;
+        const property = id.slice(0, at);
+        const held = gone.get(property) ?? new Set<number>();
+        held.add(index);
+        gone.set(property, held);
+      }
+
+      edit(null, (s) => {
+        let emptied = false;
+        const patched = patchTrack(s.composition, selectedId, (tr) => {
+          const keyframes = { ...(tr.keyframes ?? {}) };
+          for (const [property, indices] of gone) {
+            // Position is two sets sharing every stop time, so they lose the same
+            // keyframes and stay in lockstep.
+            const axes = property === "position" ? ["x", "y"] : [property];
+            for (const axis of axes) {
+              const set = keyframes[axis];
+              if (!set) continue;
+              const kept = set.stops.filter((_, i) => !indices.has(i));
+              if (kept.length === 0) {
+                delete keyframes[axis];
+                emptied = true;
+              } else {
+                keyframes[axis] = { ...set, stops: kept };
+              }
+            }
+          }
+          return { ...tr, keyframes };
+        });
+        return {
+          ...patched,
+          selectedKeys: [],
+          // A part pointing at a property that no longer animates points at nothing.
+          selectedPart: emptied ? null : s.selectedPart,
+        };
+      });
     },
 
     deleteSelected: () => {
