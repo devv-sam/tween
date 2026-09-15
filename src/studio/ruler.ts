@@ -7,9 +7,9 @@ export const MAX_DURATION = 30;
 /** Lane geometry, shared by the gutter labels so the two columns stay in step. */
 export const TRACK_HEIGHT = 32;
 export const RULER_HEIGHT = 28;
-/** A property's own row, opened under the element it belongs to. Shorter than the
- *  element's: it carries one block, not a stack of them. */
-export const PROPERTY_HEIGHT = 24;
+/** A property's own row, opened under the element it belongs to. Room enough that a
+ *  keyframe has air above and below it rather than filling its lane. */
+export const PROPERTY_HEIGHT = 30;
 
 /** Within this many pixels of the left edge the playhead reads as "the start". */
 export const SNAP_PX = 6;

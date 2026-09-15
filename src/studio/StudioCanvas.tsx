@@ -468,7 +468,10 @@ export function StudioCanvas() {
     }
 
     const point = screenToComposition(screen, viewport, frame, view);
-    const { setLayerBase } = useStudio.getState();
+    // A gesture on a keyframed property writes the keyframe under the playhead rather
+    // than the base it cannot reach — turning or scaling an element at a moment is
+    // how that moment gets a keyframe, the same way moving one already works.
+    const { captureTransform } = useStudio.getState();
 
     if (drag.mode === "rotate") {
       const nextRotation = rotateFrom(
@@ -483,7 +486,7 @@ export function StudioCanvas() {
           drag.cursorAngle + (nextRotation - drag.startRendered.rotation),
         ),
       );
-      setLayerBase(drag.id, {
+      captureTransform(drag.id, {
         rotation:
           drag.startBase.rotation + (nextRotation - drag.startRendered.rotation),
       });
@@ -532,7 +535,7 @@ export function StudioCanvas() {
       drag.startRendered.scaleY > 0
         ? next.scaleY / drag.startRendered.scaleY
         : 1;
-    setLayerBase(drag.id, {
+    captureTransform(drag.id, {
       x: drag.startBase.x + (next.x - drag.startRendered.x),
       y: drag.startBase.y + (next.y - drag.startRendered.y),
       scaleX: drag.startBase.scaleX * rx,

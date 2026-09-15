@@ -3,11 +3,7 @@ import { sampleStops } from "../core/curve";
 import { remap } from "../core/math";
 import type { Track } from "../core/types";
 import {
-  BLOCK_HEIGHT,
-  BLOCK_GAP,
   MIN_RANGE,
-  blockTop,
-  rowHeight,
   secondsToT,
   stopAtTime,
   stopSeconds,
@@ -21,6 +17,9 @@ import {
   newPosition,
   patchStop,
   removeStop,
+  SAME_STOP,
+  slideStops,
+  stretchStops,
   positionSets,
   slideRange,
   trimRange,
@@ -153,27 +152,62 @@ describe("shiftStops", () => {
   });
 });
 
-describe("lane geometry", () => {
-  it("keeps a short stack at the row's minimum height", () => {
-    expect(rowHeight(0, 32)).toBe(32);
-    expect(rowHeight(1, 32)).toBe(32);
+describe("slideStops", () => {
+  const stops = [
+    { t: 0.2, v: 1, ease: "linear" as const },
+    { t: 0.6, v: 2, ease: "linear" as const },
+  ];
+
+  it("moves the whole set and keeps its shape", () => {
+    expect(slideStops(stops, 0.1).map((s) => s.t)).toEqual([
+      expect.closeTo(0.3),
+      expect.closeTo(0.7),
+    ]);
   });
 
-  it("grows the row so every module gets its own band", () => {
-    expect(rowHeight(2, 32)).toBe(BLOCK_HEIGHT * 2 + BLOCK_GAP + 8);
-    expect(rowHeight(3, 32)).toBe(BLOCK_HEIGHT * 3 + BLOCK_GAP * 2 + 8);
+  it("stops at the composition's edges rather than piling up on them", () => {
+    expect(slideStops(stops, -1).map((s) => s.t)).toEqual([0, expect.closeTo(0.4)]);
+    expect(slideStops(stops, 1).map((s) => s.t)).toEqual([expect.closeTo(0.6), 1]);
   });
 
-  it("centres a lone block and stacks the rest without overlapping", () => {
-    expect(blockTop(0, 1, 32)).toBe(7);
-    for (const count of [2, 3, 4]) {
-      const tops = Array.from({ length: count }, (_, i) => blockTop(i, count, 32));
-      tops.forEach((top, i) => {
-        if (i > 0) expect(top - tops[i - 1]).toBeGreaterThanOrEqual(BLOCK_HEIGHT);
-      });
-      expect(tops[0]).toBeGreaterThanOrEqual(0);
-      expect(tops[count - 1] + BLOCK_HEIGHT).toBeLessThanOrEqual(rowHeight(count, 32));
-    }
+  it("has nothing to move in an empty set", () => {
+    expect(slideStops([], 0.5)).toEqual([]);
+  });
+});
+
+describe("stretchStops", () => {
+  const stops = [
+    { t: 0, v: 1, ease: "linear" as const },
+    { t: 0.25, v: 3, ease: "linear" as const },
+    { t: 0.5, v: 2, ease: "linear" as const },
+  ];
+
+  it("scales every keyframe, so the curve keeps its shape", () => {
+    const out = stretchStops(stops, 0, 0.5, 1);
+    expect(out.map((s) => s.t)).toEqual([0, expect.closeTo(0.5), 1]);
+    // Values are the shape; only the times were asked about.
+    expect(out.map((s) => s.v)).toEqual([1, 3, 2]);
+  });
+
+  it("holds the far end still, whichever end is dragged", () => {
+    const out = stretchStops(stops, 0.5, 0, 0.25);
+    expect(out.map((s) => s.t)).toEqual([
+      expect.closeTo(0.25),
+      expect.closeTo(0.375),
+      0.5,
+    ]);
+  });
+
+  it("will not turn the set inside out", () => {
+    // Dragged past the anchor, the set collapses to a hair rather than inverting.
+    const out = stretchStops(stops, 0, 0.5, -1);
+    expect(out.every((s) => s.t >= 0)).toBe(true);
+    expect(out[out.length - 1].t).toBeCloseTo(SAME_STOP);
+  });
+
+  it("leaves a set with nothing to stretch alone", () => {
+    const one = [{ t: 0.4, v: 1, ease: "linear" as const }];
+    expect(stretchStops(one, 0.4, 0.4, 0.9)).toEqual(one);
   });
 });
 
