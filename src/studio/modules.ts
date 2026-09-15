@@ -110,13 +110,11 @@ export function baseValue(base: Transform, prop: KeyProp): number {
   return prop === "scale" ? base.scaleX : base[prop];
 }
 
-/** Two stops, both sitting on the element's current value — a module that changes
- *  nothing until the user says what should change. */
+/** One stop, on the element's current value. Only the keyframe the author asked for:
+ *  a second one at the end would be motion nobody wrote, and a cap on where the
+ *  motion they do write is allowed to go. */
 export function defaultStops(v: number): Stop[] {
-  return [
-    { t: 0, v, ease: "linear" },
-    { t: 1, v, ease: "linear" },
-  ];
+  return [{ t: 0, v, ease: "linear" }];
 }
 
 /** A fresh standalone set: flat on the element's current value, spanning the whole
@@ -401,7 +399,8 @@ export function stopAtTime(stops: Stop[], t: number, v: number): Stop[] {
   return sortStops([...stops, { t, v, ease: before?.ease ?? "linear" }]);
 }
 
-/** Remove a stop, never below the two a curve needs. */
+/** Remove a stop, never below the one a curve needs to hold a value at all. Emptying
+ *  a set is removing the property's keyframes, which is its own command. */
 export function removeStop(stops: Stop[], i: number): Stop[] {
-  return stops.length <= 2 ? stops : stops.filter((_, k) => k !== i);
+  return stops.length <= 1 ? stops : stops.filter((_, k) => k !== i);
 }

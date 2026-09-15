@@ -30,7 +30,7 @@ export function Studio() {
             {/* Collapsed, the rail is the only thing left — so the toggle comes with
                 it, keeping its own divided slot above the panel tabs. */}
             {collapsed ? (
-              <div className="mb-1 w-full border-b border-[#e0e0e0] pb-2">
+              <div className="mb-1 flex w-full justify-center border-b border-[#e0e0e0] pb-2">
                 <PanelToggle collapsed onToggle={() => setCollapsed(false)} />
               </div>
             ) : null}
@@ -130,7 +130,7 @@ function PanelToggle({
   return (
     <button
       type="button"
-      className="mx-auto grid h-7 w-7 place-items-center rounded-[7px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+      className="grid h-7 w-7 place-items-center rounded-[7px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
       aria-label={label}
       aria-expanded={!collapsed}
       aria-controls="assets-drawer"

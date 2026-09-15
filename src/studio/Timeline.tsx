@@ -500,7 +500,9 @@ function TrackBlock({
     >
       <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-current opacity-25" />
       <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] bg-current opacity-25" />
-      <span className="pointer-events-none block truncate px-2 text-[10px] leading-4">
+      {/* Clear of the diamond that sits on the block's own start, so a keyframe at 0
+          never lands on the first letter. */}
+      <span className="pointer-events-none block truncate pl-4 pr-2 text-[10px] capitalize leading-4">
         {block.label}
       </span>
       {block.stops.map((stop, i) => (

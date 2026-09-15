@@ -678,7 +678,7 @@ function StopList({
                 type="button"
                 aria-label="remove keyframe"
                 title="remove keyframe"
-                disabled={stops.length <= 2}
+                disabled={stops.length <= 1}
                 className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
                 onClick={() => all((axis) => removeStop(axis.stops, i))}
               >
@@ -945,7 +945,7 @@ function KeyframeLog({ track }: { track: Track }) {
                         key={entry.id}
                         entry={entry}
                         selected={selected.includes(entry.id)}
-                        removable={stopsOf(entry.property).length > 2}
+                        removable={stopsOf(entry.property).length > 1}
                         onToggle={() => {
                           // Changing what is selected changes what a bundle would
                           // hold, so a half-typed name for the old one goes away.

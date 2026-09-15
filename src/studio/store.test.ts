@@ -135,8 +135,9 @@ describe("position keyframes", () => {
       kind: "keyframes",
       property: "position",
     });
-    // Flat on where the element already is, so nothing moves until a value changes.
-    expect(keyframes().x.stops.map((s) => s.v)).toEqual([200, 200]);
+    // One stop, on where the element already is: nothing moves, and no end frame
+    // was invented to move towards.
+    expect(keyframes().x.stops.map((s) => s.v)).toEqual([200]);
   });
 
   it("removes both axes together", () => {
@@ -195,8 +196,8 @@ describe("position keyframes", () => {
     });
     useStudio.getState().sealHistory();
     useStudio.getState().undo();
-    expect(keyframes().x.stops.map((s) => s.v)).toEqual([200, 200]);
-    expect(keyframes().y.stops.map((s) => s.v)).toEqual([200, 200]);
+    expect(keyframes().x.stops.map((s) => s.v)).toEqual([200]);
+    expect(keyframes().y.stops.map((s) => s.v)).toEqual([200]);
   });
 });
 
