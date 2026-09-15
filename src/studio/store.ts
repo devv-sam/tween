@@ -241,6 +241,9 @@ type StudioState = {
   moveLayer: (layerId: string, anchor: MoveAnchor, dx: number, dy: number) => void;
   nudgeSelected: (dx: number, dy: number) => void;
   deleteSelected: () => void;
+  /** The picked keyframes, gone. A property whose last keyframe goes stops carrying
+   *  motion — there is no curve left to be the one keyframe of. */
+  removeSelectedKeys: () => void;
   toggleLayerLock: (layerId: string) => void;
   undo: () => void;
   redo: () => void;
@@ -748,6 +751,56 @@ export const useStudio = create<StudioState>((set, get) => {
           ),
         },
       }));
+    },
+
+    removeSelectedKeys: () => {
+      const { selectedId, selectedKeys } = get();
+      if (!selectedId || selectedKeys.length === 0) return;
+
+      // Ids are `property:index`. Gathered by property first, so a set loses all of
+      // its picked keyframes in one pass and the indices stay the ones that were
+      // picked rather than shifting under each other.
+      const gone = new Map<string, Set<number>>();
+      for (const id of selectedKeys) {
+        const at = id.lastIndexOf(":");
+        if (at < 0) continue;
+        const index = Number(id.slice(at + 1));
+        if (!Number.isInteger(index)) continue;
+        const property = id.slice(0, at);
+        const held = gone.get(property) ?? new Set<number>();
+        held.add(index);
+        gone.set(property, held);
+      }
+
+      edit(null, (s) => {
+        let emptied = false;
+        const patched = patchTrack(s.composition, selectedId, (tr) => {
+          const keyframes = { ...(tr.keyframes ?? {}) };
+          for (const [property, indices] of gone) {
+            // Position is two sets sharing every stop time, so they lose the same
+            // keyframes and stay in lockstep.
+            const axes = property === "position" ? ["x", "y"] : [property];
+            for (const axis of axes) {
+              const set = keyframes[axis];
+              if (!set) continue;
+              const kept = set.stops.filter((_, i) => !indices.has(i));
+              if (kept.length === 0) {
+                delete keyframes[axis];
+                emptied = true;
+              } else {
+                keyframes[axis] = { ...set, stops: kept };
+              }
+            }
+          }
+          return { ...tr, keyframes };
+        });
+        return {
+          ...patched,
+          selectedKeys: [],
+          // A part pointing at a property that no longer animates points at nothing.
+          selectedPart: emptied ? null : s.selectedPart,
+        };
+      });
     },
 
     deleteSelected: () => {

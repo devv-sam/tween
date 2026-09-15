@@ -755,11 +755,9 @@ function KeyframeEditor({ track }: { track: Track }) {
     );
   };
 
-  const removeEntry = (entry: LogEntry) => {
-    writeStops(entry.property, (stops) => removeStop(stops, entry.index));
-    const store = useStudio.getState();
-    store.setSelectedKeys(store.selectedKeys.filter((id) => id !== entry.id));
-  };
+  /** The same removal backspace performs, so the button and the key cannot disagree
+   *  about what taking a keyframe out means. */
+  const removePicked = () => useStudio.getState().removeSelectedKeys();
 
   const saveModule = (name: string) => {
     // The library that would hold this does not exist yet, so the bundle is named and
@@ -795,11 +793,11 @@ function KeyframeEditor({ track }: { track: Track }) {
       ) : one ? (
         <KeyframeFields
           entry={one}
-          removable={stopsOf(one.property).length > 1}
+          last={stopsOf(one.property).length <= 1}
           onTime={(seconds) => setEntryTime(one, seconds)}
           onEase={(ease) => setEntryEase(one, ease)}
           onValue={(side, axis, v) => setEntryValue(one, side, axis, v)}
-          onRemove={() => removeEntry(one)}
+          onRemove={removePicked}
         />
       ) : (
         <>
@@ -865,14 +863,15 @@ function ModuleNameField({
  */
 function KeyframeFields({
   entry,
-  removable,
+  last,
   onTime,
   onEase,
   onValue,
   onRemove,
 }: {
   entry: LogEntry;
-  removable: boolean;
+  /** The property's only keyframe, so removing it is removing the motion. */
+  last: boolean;
   onTime: (seconds: number) => void;
   onEase: (ease: Easing) => void;
   onValue: (side: "from" | "to", axis: "x" | "y", v: number) => void;
@@ -952,10 +951,11 @@ function KeyframeFields({
         type="button"
         aria-label="remove keyframe"
         title={
-          removable ? "remove keyframe" : "the only keyframe — a curve needs one"
+          last
+            ? `remove the only ${entry.property} keyframe — the property stops animating`
+            : "remove keyframe — backspace does the same"
         }
-        disabled={!removable}
-        className="self-end rounded px-1 text-[10px] text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
+        className="self-end rounded px-1 text-[10px] text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"
         onClick={onRemove}
       >
         remove

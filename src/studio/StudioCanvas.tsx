@@ -224,6 +224,8 @@ export function StudioCanvas() {
         select,
         nudgeSelected,
         deleteSelected,
+        selectedKeys,
+        removeSelectedKeys,
       } = useStudio.getState();
       const center = { x: vp.width / 2, y: vp.height / 2 };
 
@@ -231,10 +233,19 @@ export function StudioCanvas() {
         if (sel) select(null);
         return;
       }
-      if (sel && (e.key === "Delete" || e.key === "Backspace")) {
-        e.preventDefault();
-        deleteSelected();
-        return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // The narrower selection answers first: picked keyframes are inside the
+        // element, so deleting them is what was asked for, not the element around them.
+        if (selectedKeys.length > 0) {
+          e.preventDefault();
+          removeSelectedKeys();
+          return;
+        }
+        if (sel) {
+          e.preventDefault();
+          deleteSelected();
+          return;
+        }
       }
       if (sel && e.key.startsWith("Arrow")) {
         const step = e.shiftKey ? NUDGE_COARSE : NUDGE;

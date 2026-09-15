@@ -382,3 +382,76 @@ describe("a canvas gesture on a keyframed property", () => {
     expect(keyframes().y.stops[1].v).toBe(400);
   });
 });
+
+describe("removing the picked keyframes", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const keyframes = () => state().composition.tracks[0].keyframes ?? {};
+
+  /** Scale keyframed at 0, 0.5 and 1 — three to pick from. */
+  const keyed = (): string => {
+    const id = layer().id;
+    state().addKeyframes(id, "scale");
+    state().setKeyframeStops(id, "scale", [
+      { t: 0, v: 1 },
+      { t: 0.5, v: 2 },
+      { t: 1, v: 3 },
+    ]);
+    state().sealHistory();
+    return id;
+  };
+
+  it("takes out the one that is picked, and nothing else", () => {
+    const id = keyed();
+    state().selectKey(id, "scale:1");
+    state().removeSelectedKeys();
+    expect(keyframes().scale.stops.map((st) => st.v)).toEqual([1, 3]);
+    expect(state().selectedKeys).toEqual([]);
+  });
+
+  it("takes out a whole bundle in one step", () => {
+    const id = keyed();
+    state().selectKey(id, "scale:0");
+    state().selectKey(id, "scale:2", true);
+    state().removeSelectedKeys();
+    expect(keyframes().scale.stops.map((st) => st.v)).toEqual([2]);
+    // One step, whatever it removed: undo puts all three back.
+    state().undo();
+    expect(keyframes().scale.stops.map((st) => st.v)).toEqual([1, 2, 3]);
+  });
+
+  it("stops the property animating when its last keyframe goes", () => {
+    const id = keyed();
+    state().selectKey(id, "scale:0");
+    state().selectKey(id, "scale:1", true);
+    state().selectKey(id, "scale:2", true);
+    state().selectPart(id, { kind: "keyframes", property: "scale" });
+    // Selecting the part kept the picks, since it is the same element.
+    expect(state().selectedKeys).toHaveLength(3);
+    state().removeSelectedKeys();
+    expect(keyframes().scale).toBeUndefined();
+    // Nothing left to be focused on.
+    expect(state().selectedPart).toBeNull();
+  });
+
+  it("takes both axes of a position together", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    state().setPositionStops(id, {
+      x: [{ t: 0, v: 1 }, { t: 1, v: 2 }],
+      y: [{ t: 0, v: 3 }, { t: 1, v: 4 }],
+    });
+    state().selectKey(id, "position:1");
+    state().removeSelectedKeys();
+    expect(keyframes().x.stops.map((st) => st.v)).toEqual([1]);
+    expect(keyframes().y.stops.map((st) => st.v)).toEqual([3]);
+  });
+
+  it("has nothing to do with nothing picked", () => {
+    const id = keyed();
+    state().select(id);
+    state().removeSelectedKeys();
+    expect(keyframes().scale.stops).toHaveLength(3);
+  });
+});
