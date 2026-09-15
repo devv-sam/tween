@@ -1,5 +1,6 @@
 import type { KeyframeSet, Track } from "../core/types";
 import type { Stop } from "../core/curve";
+import type { Easing } from "../core/easing";
 import { PROPS, positionSets, stopSeconds, type KeyTarget } from "./modules";
 
 /**
@@ -20,6 +21,9 @@ export type LogEntry = {
    *  head of a curve, where nothing precedes it. */
   from: LogValue;
   to: LogValue;
+  /** The easing carrying the property into this keyframe. A combined position shares
+   *  one across both axes, so there is only ever one to read. */
+  ease?: Easing;
 };
 
 export type LogGroup = { property: KeyTarget; entries: LogEntry[] };
@@ -49,6 +53,7 @@ export function keyframeLog(track: Track, duration: number): LogGroup[] {
         t: seconds(x, stop),
         from: { x: x.stops[Math.max(0, i - 1)].v, y: y.stops[Math.max(0, i - 1)].v },
         to: { x: stop.v, y: y.stops[i].v },
+        ease: stop.ease,
       })),
     });
   }
@@ -67,6 +72,7 @@ export function keyframeLog(track: Track, duration: number): LogGroup[] {
         t: seconds(set, stop),
         from: set.stops[Math.max(0, i - 1)].v,
         to: stop.v,
+        ease: stop.ease,
       })),
     });
   }

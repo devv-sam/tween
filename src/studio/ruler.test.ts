@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  GUTTER_PX,
   MAX_DURATION,
   MIN_DURATION,
   SNAP_PX,
@@ -24,24 +25,31 @@ describe("clampDuration", () => {
 
 describe("timeToX / xToTime", () => {
   it("round-trips through the middle of the ruler", () => {
-    expect(timeToX(0.25, WIDTH)).toBe(200);
-    expect(xToTime(200, WIDTH)).toBeCloseTo(0.25);
+    const middle = timeToX(0.25, WIDTH);
+    expect(middle).toBe(GUTTER_PX + 0.25 * (WIDTH - GUTTER_PX));
+    expect(xToTime(middle, WIDTH)).toBeCloseTo(0.25);
+  });
+
+  it("keeps the gutter clear, so the playhead at zero is not clipped", () => {
+    expect(timeToX(0, WIDTH)).toBe(GUTTER_PX);
+    expect(xToTime(0, WIDTH)).toBe(0);
   });
 
   it("clamps to the ruler at both ends", () => {
-    expect(timeToX(-1, WIDTH)).toBe(0);
+    expect(timeToX(-1, WIDTH)).toBe(GUTTER_PX);
     expect(timeToX(2, WIDTH)).toBe(WIDTH);
     expect(xToTime(-40, WIDTH)).toBe(0);
     expect(xToTime(WIDTH + 40, WIDTH)).toBe(1);
   });
 
   it("snaps to zero near the left edge", () => {
-    expect(xToTime(SNAP_PX, WIDTH)).toBe(0);
-    expect(xToTime(SNAP_PX + 1, WIDTH)).toBeGreaterThan(0);
+    expect(xToTime(GUTTER_PX + SNAP_PX, WIDTH)).toBe(0);
+    expect(xToTime(GUTTER_PX + SNAP_PX + 1, WIDTH)).toBeGreaterThan(0);
   });
 
   it("reads zero from a ruler with no width, rather than dividing by it", () => {
     expect(xToTime(10, 0)).toBe(0);
+    expect(xToTime(10, GUTTER_PX)).toBe(0);
   });
 });
 
@@ -67,7 +75,7 @@ describe("formatSeconds / formatMillis / formatTime", () => {
 describe("ticks", () => {
   it("starts at zero and ends on the duration", () => {
     const out = ticks(5, WIDTH);
-    expect(out[0]).toMatchObject({ t: 0, x: 0 });
+    expect(out[0]).toMatchObject({ t: 0, x: GUTTER_PX });
     expect(out[out.length - 1].x).toBeCloseTo(WIDTH);
   });
 
@@ -96,6 +104,7 @@ describe("ticks", () => {
 
   it("has nothing to draw without a ruler", () => {
     expect(ticks(5, 0)).toEqual([]);
+    expect(ticks(5, GUTTER_PX)).toEqual([]);
     expect(ticks(0, WIDTH)).toEqual([]);
   });
 });

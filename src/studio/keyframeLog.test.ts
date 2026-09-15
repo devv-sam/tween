@@ -26,6 +26,22 @@ describe("keyframeLog", () => {
     expect(keyframeLog(track(undefined), 4)).toEqual([]);
   });
 
+  it("carries the easing a keyframe is reached by, which the editor reads back", () => {
+    const groups = keyframeLog(
+      track({
+        scale: {
+          stops: [
+            { t: 0, v: 1, ease: "linear" },
+            { t: 1, v: 2, ease: "easeOutCubic" },
+          ],
+          range: [0, 1],
+        },
+      }),
+      4,
+    );
+    expect(groups[0].entries.map((e) => e.ease)).toEqual(["linear", "easeOutCubic"]);
+  });
+
   it("reads x and y as one position entry per stop", () => {
     const groups = keyframeLog(
       track({

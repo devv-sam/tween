@@ -37,13 +37,12 @@ describe("baseValue", () => {
 });
 
 describe("newKeyframes", () => {
-  it("spans the composition and starts flat on the element's current value", () => {
+  it("spans the composition and starts on the element's current value", () => {
     const set = newKeyframes("scale", base);
     expect(set.range).toEqual([0, 1]);
-    expect(set.stops).toEqual([
-      { t: 0, v: 2, ease: "linear" },
-      { t: 1, v: 2, ease: "linear" },
-    ]);
+    // One stop, not a pair: nothing is invented at the end to animate towards, and
+    // nothing caps where the author's own keyframes can go.
+    expect(set.stops).toEqual([{ t: 0, v: 2, ease: "linear" }]);
   });
 });
 
@@ -221,9 +220,10 @@ describe("stops", () => {
     expect(patchStop(stops, 1, { t: 0.1 }).map((s) => s.v)).toEqual([1, 0.5]);
   });
 
-  it("keeps the two a curve needs", () => {
-    expect(removeStop(stops, 0)).toHaveLength(2);
+  it("keeps the last stop a curve needs", () => {
+    expect(removeStop(stops, 0)).toHaveLength(1);
     expect(removeStop(stopAtTime(stops, 0.5, 7), 1)).toHaveLength(2);
+    expect(removeStop([stops[0]], 0)).toHaveLength(1);
   });
 });
 
@@ -388,7 +388,7 @@ describe("position", () => {
 
   it("starts both axes flat on the element when there is nothing to merge", () => {
     const fresh = newPosition(track(undefined));
-    expect(fresh.x.stops.map((s) => s.v)).toEqual([base.x, base.x]);
-    expect(fresh.y.stops.map((s) => s.v)).toEqual([base.y, base.y]);
+    expect(fresh.x.stops.map((s) => s.v)).toEqual([base.x]);
+    expect(fresh.y.stops.map((s) => s.v)).toEqual([base.y]);
   });
 });
