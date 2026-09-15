@@ -1,31 +1,48 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import type { Transform } from "../core/types";
+import { clamp } from "../core/math";
+import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
 import { useStudio } from "./store";
+import { ChevronIcon, DiamondIcon, NumberField } from "./fields";
+import { entryId } from "./keyframeLog";
 import {
   BLOCK_HEIGHT,
   PROP_COLOR,
   PROP_OUTLINE,
+  PROP_STEP,
+  PROP_TEXT,
+  SAME_STOP,
+  baseValue,
   blockTop,
   layerName,
+  positionSets,
+  removeStop,
   rowHeight,
   samePart,
+  secondsToT,
   slideRange,
+  stopAtTime,
   trackBlocks,
   trimRange,
   type BlockView,
+  type KeyProp,
   type Range,
 } from "./modules";
 import {
+  PROPERTY_HEIGHT,
   RULER_HEIGHT,
   TRACK_HEIGHT,
   clampDuration,
   formatTime,
+  spanPx,
   ticks,
   timeToX,
   xToTime,
@@ -38,6 +55,7 @@ export function Timeline() {
   const t = useStudio((s) => s.t);
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);
+  const expanded = useStudio((s) => s.expandedTracks);
   const driver = composition.driver.kind;
 
   const areaRef = useRef<HTMLDivElement>(null);
@@ -153,7 +171,7 @@ export function Timeline() {
       pointerId: e.pointerId,
       fromX: e.clientX,
       startDuration: duration,
-      perPx: width > 0 ? duration / width : 0,
+      perPx: spanPx(width) > 0 ? duration / spanPx(width) : 0,
     };
   };
 
@@ -176,18 +194,31 @@ export function Timeline() {
     }
   };
 
+  // What every element reads at the playhead right now, evaluated once for the whole
+  // strip rather than per property row.
+  const states = useMemo(() => {
+    const out = new Map<string, Transform>();
+    for (const item of renderState(composition, t)) out.set(item.id, item.state);
+    return out;
+  }, [composition, t]);
+
   const rows = composition.tracks.map((track, i) => {
     const asset =
       track.layer.source.kind === "image"
         ? assets.find((a) => a.id === track.layer.source.value)
         : undefined;
     const blocks = trackBlocks(track);
+    // Open, the element's own lane is left empty: its blocks are the rows below it,
+    // and drawing them twice would say the same thing in two places.
+    const open = expanded.includes(track.layer.id) && blocks.length > 0;
     return {
+      track,
       id: track.layer.id,
       name: layerName(track.layer, asset?.name, i),
       given: track.layer.name ?? "",
       blocks,
-      height: rowHeight(blocks.length, TRACK_HEIGHT),
+      open,
+      height: open ? TRACK_HEIGHT : rowHeight(blocks.length, TRACK_HEIGHT),
     };
   });
 
@@ -237,13 +268,27 @@ export function Timeline() {
         <div className="timeline-gutter">
           <div className="timeline-gutter-head" style={{ height: RULER_HEIGHT }} />
           {rows.map((row) => (
-            <TrackLabel
-              key={row.id}
-              layerId={row.id}
-              name={row.name}
-              given={row.given}
-              height={row.height}
-            />
+            <Fragment key={row.id}>
+              <TrackLabel
+                layerId={row.id}
+                name={row.name}
+                given={row.given}
+                height={row.height}
+                blocks={row.blocks.length}
+                open={row.open}
+              />
+              {row.open
+                ? row.blocks.map((block) => (
+                    <PropertyLabel
+                      key={blockKey(block)}
+                      layerId={row.id}
+                      block={block}
+                      state={states.get(row.id)}
+                      duration={duration}
+                    />
+                  ))
+                : null}
+            </Fragment>
           ))}
         </div>
 
@@ -282,24 +327,44 @@ export function Timeline() {
 
           <div className="timeline-lanes">
             {rows.map((row) => (
-              <div
-                key={row.id}
-                className="relative border-b border-[#f0f0f0] bg-[#fafafa]"
-                style={{ height: row.height }}
-              >
-                {row.blocks.map((block, i) => (
-                  <TrackBlock
-                    key={`${block.part.kind}:${
-                      block.part.kind === "keyframes" ? block.part.property : block.part.index
-                    }`}
-                    layerId={row.id}
-                    index={i}
-                    count={row.blocks.length}
-                    block={block}
-                    width={width}
-                  />
-                ))}
-              </div>
+              <Fragment key={row.id}>
+                <div
+                  className="relative border-b border-[#f0f0f0] bg-[#fafafa]"
+                  style={{ height: row.height }}
+                >
+                  {row.open
+                    ? null
+                    : row.blocks.map((block, i) => (
+                        <TrackBlock
+                          key={blockKey(block)}
+                          layerId={row.id}
+                          index={i}
+                          count={row.blocks.length}
+                          min={TRACK_HEIGHT}
+                          block={block}
+                          width={width}
+                        />
+                      ))}
+                </div>
+                {row.open
+                  ? row.blocks.map((block) => (
+                      <div
+                        key={blockKey(block)}
+                        className="relative border-b border-[#f0f0f0] bg-white"
+                        style={{ height: rowHeight(1, PROPERTY_HEIGHT) }}
+                      >
+                        <TrackBlock
+                          layerId={row.id}
+                          index={0}
+                          count={1}
+                          min={PROPERTY_HEIGHT}
+                          block={block}
+                          width={width}
+                        />
+                      </div>
+                    ))
+                  : null}
+              </Fragment>
             ))}
           </div>
 
@@ -329,6 +394,13 @@ export function Timeline() {
   );
 }
 
+/** A block's identity inside its element: the property it animates, or the module's
+ *  place on the stack. The gutter row and the lane beside it share it. */
+const blockKey = (block: BlockView): string =>
+  block.part.kind === "keyframes"
+    ? `keyframes:${block.part.property}`
+    : `module:${block.part.index}`;
+
 /**
  * An element's name, in the gutter beside its lane. This is the only place a name is
  * edited: the track already says what the element is called, so double-clicking it is
@@ -340,11 +412,15 @@ function TrackLabel({
   name,
   given,
   height,
+  blocks,
+  open,
 }: {
   layerId: string;
   name: string;
   given: string;
   height: number;
+  blocks: number;
+  open: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
@@ -363,8 +439,24 @@ function TrackLabel({
       title={draft === null ? `${name} — double-click to rename` : undefined}
       onDoubleClick={() => setDraft(given)}
     >
+      {/* The twisty keeps its slot whether or not there is anything under it, so the
+          names stay in one column down the gutter. */}
+      {blocks > 0 ? (
+        <button
+          type="button"
+          className={`timeline-twisty${open ? " is-open" : ""}`}
+          aria-expanded={open}
+          aria-label={open ? `collapse ${name}` : `expand ${name}`}
+          title={open ? "collapse" : "expand"}
+          onClick={() => useStudio.getState().toggleTrackExpanded(layerId)}
+        >
+          <ChevronIcon />
+        </button>
+      ) : (
+        <span className="timeline-twisty is-empty" aria-hidden="true" />
+      )}
       {draft === null ? (
-        name
+        <span className="min-w-0 flex-1 truncate">{name}</span>
       ) : (
         <input
           autoFocus
@@ -386,11 +478,170 @@ function TrackLabel({
   );
 }
 
+/**
+ * One property of an element, in the gutter beside the row its block is drawn on.
+ *
+ * Everything on the row answers to the playhead: the diamond says whether there is a
+ * keyframe under it and puts one there or takes it away, and the value says what the
+ * property reads there and writes a keyframe when it is changed. A keyframed property
+ * has no value apart from its curve, so editing one here is authoring a keyframe —
+ * there is nothing else the number could mean.
+ */
+function PropertyLabel({
+  layerId,
+  block,
+  state,
+  duration,
+}: {
+  layerId: string;
+  block: BlockView;
+  state: Transform | undefined;
+  duration: number;
+}) {
+  const t = useStudio((s) => s.t);
+  const selected = useStudio(
+    (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
+  );
+  const target = block.prop;
+  const axes: ("x" | "y")[] = target === "position" ? ["x", "y"] : ["x"];
+
+  /** What the property reads at the playhead — the curve's own answer, so the row
+   *  agrees with the frame on the canvas. */
+  const read = (axis: "x" | "y"): number => {
+    if (!state) return 0;
+    if (target === "position") return axis === "x" ? state.x : state.y;
+    return baseValue(state, target as KeyProp);
+  };
+
+  // Where the playhead falls inside this block's own window, and whether it is in
+  // there at all — a block trimmed away from the playhead has nothing to key.
+  const inside = t >= block.range[0] - SAME_STOP && t <= block.range[1] + SAME_STOP;
+  const at = secondsToT(t * duration, block.range, duration);
+  const index = block.stops.findIndex((st) => Math.abs(st.t - at) < SAME_STOP);
+  const onKey = inside && index >= 0;
+  /** A set needs one stop to hold a value at all, so the last one does not come out
+   *  here. Removing the property's motion altogether is the inspector's diamond. */
+  const stuck = onKey && block.stops.length <= 1;
+
+  /** One write for both jobs: the edited axis takes the new value and every other
+   *  axis takes what it already reads, which is what keeps a position in lockstep. */
+  const write = (axis: "x" | "y", v: number) => {
+    const store = useStudio.getState();
+    const track = store.composition.tracks.find((tr) => tr.layer.id === layerId);
+    if (!track) return;
+    const span = store.composition.duration;
+    const position = target === "position" ? positionSets(track) : null;
+    if (position) {
+      const local = clamp(secondsToT(store.t * span, position.x.range, span), 0, 1);
+      store.setPositionStops(layerId, {
+        x: stopAtTime(position.x.stops, local, axis === "x" ? v : read("x")),
+        y: stopAtTime(position.y.stops, local, axis === "y" ? v : read("y")),
+      });
+      return;
+    }
+    const set = track.keyframes?.[target as KeyProp];
+    if (!set) return;
+    const local = clamp(secondsToT(store.t * span, set.range, span), 0, 1);
+    store.setKeyframeStops(layerId, target as KeyProp, stopAtTime(set.stops, local, v));
+  };
+
+  const toggleKey = () => {
+    const store = useStudio.getState();
+    const track = store.composition.tracks.find((tr) => tr.layer.id === layerId);
+    if (!track) return;
+    if (!onKey) {
+      // Holding what the property already reads, so the keyframe changes nothing
+      // until it is edited.
+      write("x", read("x"));
+      store.sealHistory();
+      return;
+    }
+    const position = target === "position" ? positionSets(track) : null;
+    if (position) {
+      store.setPositionStops(layerId, {
+        x: removeStop(position.x.stops, index),
+        y: removeStop(position.y.stops, index),
+      });
+    } else {
+      const set = track.keyframes?.[target as KeyProp];
+      if (set) {
+        store.setKeyframeStops(layerId, target as KeyProp, removeStop(set.stops, index));
+      }
+    }
+    store.sealHistory();
+  };
+
+  const keyLabel = !inside
+    ? "the playhead is outside this block"
+    : stuck
+      ? "the only keyframe — a curve needs one"
+      : onKey
+        ? `remove ${block.label} keyframe`
+        : `add ${block.label} keyframe`;
+
+  return (
+    <div
+      className={`timeline-property-label${selected ? " is-selected" : ""}`}
+      style={{ height: rowHeight(1, PROPERTY_HEIGHT) }}
+    >
+      <button
+        type="button"
+        className="timeline-property-name"
+        aria-pressed={selected}
+        title={`${block.label} — click to select`}
+        onClick={() =>
+          useStudio.getState().selectPart(layerId, selected ? null : block.part)
+        }
+      >
+        {block.label}
+      </button>
+      {/* A module is a packaged curve, not a property with a value to key here. */}
+      {block.standalone ? (
+        <>
+          <button
+            type="button"
+            className={`timeline-property-key ${
+              onKey ? PROP_TEXT[target] : "text-[#c0c0c0] hover:text-[#555]"
+            }`}
+            aria-label={keyLabel}
+            aria-pressed={onKey}
+            title={keyLabel}
+            disabled={!inside || stuck}
+            onClick={toggleKey}
+          >
+            <DiamondIcon filled={onKey} size={11} />
+          </button>
+          <div className="flex min-w-0 shrink-0 items-center gap-0.5">
+            {axes.map((axis) => (
+              <div key={axis} className={axes.length > 1 ? "w-[42px]" : "w-[58px]"}>
+                <NumberField
+                  label=""
+                  title={`${block.label}${axes.length > 1 ? ` ${axis}` : ""} at the playhead — editing it writes a keyframe there`}
+                  value={read(axis)}
+                  step={PROP_STEP[target]}
+                  compact
+                  onChange={(v) => write(axis, v)}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <span className="ml-auto pr-1 text-[10px] text-[#b0b0b0]">module</span>
+      )}
+    </div>
+  );
+}
+
 /** Which part of a block a drag grabbed. The body slides the window; an edge trims it. */
 type BlockDrag = { pointerId: number; fromX: number; start: Range; edge: "start" | "end" | null };
 
 /** Edge grab width, in px. Wide enough to hit, narrow enough to leave a body. */
 const EDGE_GRAB = 6;
+
+/** One frozen empty selection, so a block with nothing picked reads the same array
+ *  every render rather than a new one the store would call a change. */
+const EMPTY_KEYS: string[] = [];
 
 /**
  * One block's window, drawn in its element's lane. The block is the only editor for
@@ -401,17 +652,26 @@ function TrackBlock({
   layerId,
   index,
   count,
+  min,
   block,
   width,
 }: {
   layerId: string;
   index: number;
   count: number;
+  /** The height of the row this block is drawn in — an element's lane when its
+   *  blocks are stacked, a property's own row when they are opened out. */
+  min: number;
   block: BlockView;
   width: number;
 }) {
   const selected = useStudio(
     (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
+  );
+  // Which of this block's keyframes are picked out. Only an element's own keyframes
+  // are in the log the inspector edits; a module's stops are its parameters.
+  const picked = useStudio((s) =>
+    s.selectedId === layerId && block.standalone ? s.selectedKeys : EMPTY_KEYS,
   );
   const dragRef = useRef<BlockDrag | null>(null);
   const prop = block.prop;
@@ -458,8 +718,8 @@ function TrackBlock({
       e.currentTarget.style.cursor = edgeAt(e) ? "ew-resize" : "grab";
       return;
     }
-    if (drag.pointerId !== e.pointerId || width < 1) return;
-    const delta = (e.clientX - drag.fromX) / width;
+    if (drag.pointerId !== e.pointerId || spanPx(width) < 1) return;
+    const delta = (e.clientX - drag.fromX) / spanPx(width);
     const next = drag.edge
       ? trimRange(drag.start, drag.edge, drag.start[drag.edge === "start" ? 0 : 1] + delta)
       : slideRange(drag.start, delta);
@@ -490,7 +750,7 @@ function TrackBlock({
       style={{
         left,
         width: Math.max(2, right - left),
-        top: blockTop(index, count, TRACK_HEIGHT),
+        top: blockTop(index, count, min),
         height: BLOCK_HEIGHT,
       }}
       onPointerDown={onDown}
@@ -505,15 +765,46 @@ function TrackBlock({
       <span className="pointer-events-none block truncate pl-4 pr-2 text-[10px] capitalize leading-4">
         {block.label}
       </span>
-      {block.stops.map((stop, i) => (
+      {block.stops.map((stop, i) => {
         // A stop's t is a share of this block, so its diamond rides the block as it is
         // trimmed. The nudge keeps the end diamonds off the rounded corners.
-        <span
-          key={i}
-          className="pointer-events-none absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-current bg-white"
-          style={{ left: `calc(${stop.t * 100}% + ${(0.5 - stop.t) * 9}px)` }}
-        />
-      ))}
+        const at = { left: `calc(${stop.t * 100}% + ${(0.5 - stop.t) * 9}px)` };
+        if (!block.standalone) {
+          return (
+            <span
+              key={i}
+              className="pointer-events-none absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-current bg-white"
+              style={at}
+            />
+          );
+        }
+        // The diamond is the keyframe: picking one here is what the inspector's
+        // editor is pointed at, so the list and its editor are one surface.
+        const id = entryId(block.prop, i);
+        const on = picked.includes(id);
+        return (
+          <button
+            key={i}
+            type="button"
+            aria-label={`${block.label} keyframe ${i + 1} of ${block.stops.length}`}
+            aria-pressed={on}
+            title="click to select — shift-click to add to the selection"
+            className={`absolute top-1/2 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rotate-45 border p-0 ${
+              on ? "border-[#0d99ff] bg-[#0d99ff]" : "border-current bg-white hover:bg-[#e8f4ff]"
+            }`}
+            style={at}
+            onPointerDown={(e) => {
+              // The block underneath takes a pointer-down as the start of a drag, and
+              // this one is a click on a keyframe, not a grab of the window.
+              e.stopPropagation();
+              e.preventDefault();
+              const store = useStudio.getState();
+              store.selectPart(layerId, block.part);
+              store.selectKey(layerId, id, e.shiftKey || e.metaKey);
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

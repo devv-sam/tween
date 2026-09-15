@@ -183,6 +183,17 @@ type StudioState = {
   /** Which part of the selected element the inspector is focused on: one of its
    *  standalone keyframed properties, or one of its modules. */
   selectedPart: SelectedPart | null;
+  /**
+   * Which elements have their property rows open on the timeline, and which of that
+   * element's keyframes are picked out on them.
+   *
+   * Both describe what is on screen rather than what the document holds, so neither
+   * is snapshotted, undone, or saved. The picked keyframes are `property:index` ids,
+   * read against whichever element `selectedId` names — the timeline puts them there
+   * and the inspector edits whatever they point at.
+   */
+  expandedTracks: string[];
+  selectedKeys: string[];
   viewport: Size;
   view: View;
   history: History<Snapshot>;
@@ -203,6 +214,11 @@ type StudioState = {
   removeAsset: (id: string) => void;
   select: (layerId: string | null) => void;
   selectPart: (layerId: string, part: SelectedPart | null) => void;
+  toggleTrackExpanded: (layerId: string) => void;
+  /** Pick a keyframe out on the timeline. `additive` adds to the picked set rather
+   *  than replacing it, which is how a bundle is gathered. */
+  selectKey: (layerId: string, id: string, additive?: boolean) => void;
+  setSelectedKeys: (ids: string[]) => void;
   renameLayer: (layerId: string, name: string) => void;
   addKeyframes: (layerId: string, target: KeyTarget) => void;
   removeKeyframes: (layerId: string, target: KeyTarget) => void;
@@ -260,6 +276,8 @@ export const useStudio = create<StudioState>((set, get) => {
     loop: true,
     selectedId: null,
     selectedPart: null,
+    expandedTracks: [],
+    selectedKeys: [],
     viewport: { width: 0, height: 0 },
     view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
     history: emptyHistory<Snapshot>(),
@@ -393,9 +411,46 @@ export const useStudio = create<StudioState>((set, get) => {
       });
     },
 
-    select: (layerId) => set({ selectedId: layerId, selectedPart: null }),
+    select: (layerId) =>
+      set((s) => ({
+        selectedId: layerId,
+        selectedPart: null,
+        // The picked keyframes are read against the selected element, so they mean
+        // nothing once a different one is selected.
+        selectedKeys: layerId === s.selectedId ? s.selectedKeys : [],
+      })),
 
-    selectPart: (layerId, part) => set({ selectedId: layerId, selectedPart: part }),
+    selectPart: (layerId, part) =>
+      set((s) => ({
+        selectedId: layerId,
+        selectedPart: part,
+        selectedKeys: layerId === s.selectedId ? s.selectedKeys : [],
+      })),
+
+    toggleTrackExpanded: (layerId) =>
+      set((s) => ({
+        expandedTracks: s.expandedTracks.includes(layerId)
+          ? s.expandedTracks.filter((id) => id !== layerId)
+          : [...s.expandedTracks, layerId],
+      })),
+
+    selectKey: (layerId, id, additive = false) =>
+      set((s) => {
+        const same = layerId === s.selectedId;
+        const held = same ? s.selectedKeys : [];
+        return {
+          selectedId: layerId,
+          selectedKeys: additive
+            ? held.includes(id)
+              ? held.filter((k) => k !== id)
+              : [...held, id]
+            : held.length === 1 && held[0] === id
+              ? []
+              : [id],
+        };
+      }),
+
+    setSelectedKeys: (ids) => set({ selectedKeys: ids }),
 
     renameLayer: (layerId, name) => {
       edit(`rename:${layerId}`, (s) => patchTrack(s.composition, layerId, (tr) => ({
