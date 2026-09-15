@@ -690,6 +690,7 @@ function KeyframeEditor({ track }: { track: Track }) {
   const entries = keyframeLog(track, duration).flatMap((g) => g.entries);
   const picked = entries.filter((e) => selectedKeys.includes(e.id));
   const one = picked.length === 1 ? picked[0] : null;
+  const empty = picked.length === 0;
 
   const stopsOf = (property: KeyTarget): Stop[] => {
     const position = property === "position" ? positionSets(track) : null;
@@ -768,29 +769,23 @@ function KeyframeEditor({ track }: { track: Track }) {
     useStudio.getState().setSelectedKeys([]);
   };
 
+  if (empty) return null;
+
   return (
     <section className={SECTION}>
       <div className="flex items-center gap-1">
         <p className={LABEL}>keyframe</p>
-        {picked.length > 0 ? (
-          <button
-            type="button"
-            className="ml-auto rounded px-1 text-[10px] text-[#b0b0b0] hover:bg-[#f0f0f0] hover:text-[#555]"
-            title="clear the selection"
-            onClick={() => useStudio.getState().setSelectedKeys([])}
-          >
-            clear
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="ml-auto rounded px-1 text-[10px] text-[#b0b0b0] hover:bg-[#f0f0f0] hover:text-[#555]"
+          title="clear the selection"
+          onClick={() => useStudio.getState().setSelectedKeys([])}
+        >
+          clear
+        </button>
       </div>
 
-      {picked.length === 0 ? (
-        <p className="mt-2 text-[11px] leading-normal text-[#b0b0b0]">
-          {entries.length === 0
-            ? "no keyframes yet — the diamonds above start a property off"
-            : "pick a keyframe on the timeline to edit it"}
-        </p>
-      ) : one ? (
+      {one ? (
         <KeyframeFields
           entry={one}
           last={stopsOf(one.property).length <= 1}

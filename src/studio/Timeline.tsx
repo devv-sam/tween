@@ -55,6 +55,7 @@ export function Timeline() {
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);
   const expanded = useStudio((s) => s.expandedTracks);
+  const selectedId = useStudio((s) => s.selectedId);
   const driver = composition.driver.kind;
 
   const areaRef = useRef<HTMLDivElement>(null);
@@ -270,6 +271,7 @@ export function Timeline() {
                 given={row.given}
                 blocks={row.blocks.length}
                 open={row.open}
+                selected={row.id === selectedId}
               />
               {row.open
                 ? row.blocks.map((block) => (
@@ -325,7 +327,9 @@ export function Timeline() {
                     element is not a property and has no motion of its own to draw;
                     what it has is the rows underneath. */}
                 <div
-                  className="relative border-b border-[#f0f0f0] bg-[#fafafa]"
+                  className={`relative border-b border-[#f0f0f0] ${
+                    row.id === selectedId ? "bg-[#eef4fb]" : "bg-[#fafafa]"
+                  }`}
                   style={{ height: TRACK_HEIGHT }}
                 />
                 {row.open
@@ -392,12 +396,14 @@ function TrackLabel({
   given,
   blocks,
   open,
+  selected,
 }: {
   layerId: string;
   name: string;
   given: string;
   blocks: number;
   open: boolean;
+  selected: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
@@ -411,7 +417,7 @@ function TrackLabel({
 
   return (
     <div
-      className="timeline-track-label"
+      className={`timeline-track-label${selected ? " is-selected" : ""}`}
       style={{ height: TRACK_HEIGHT }}
       title={draft === null ? `${name} — double-click to rename` : undefined}
       onDoubleClick={() => setDraft(given)}
@@ -433,7 +439,14 @@ function TrackLabel({
         <span className="timeline-twisty is-empty" aria-hidden="true" />
       )}
       {draft === null ? (
-        <span className="min-w-0 flex-1 truncate">{name}</span>
+        <button
+          type="button"
+          className="timeline-track-name"
+          aria-pressed={selected}
+          onClick={() => useStudio.getState().select(layerId)}
+        >
+          {name}
+        </button>
       ) : (
         <input
           autoFocus
@@ -715,8 +728,7 @@ function KeyframeTrack({
           tabIndex={0}
           aria-label={`${block.label} keyframes`}
           aria-pressed={selected}
-          title={`${block.label} — drag to move, drag an end to stretch`}
-          className={`absolute top-1/2 -translate-y-1/2 cursor-grab touch-none rounded-full border ${
+          className={`absolute top-1/2 -translate-y-1/2 touch-none rounded-full border ${
             PROP_TEXT[prop]
           } ${selected ? "border-current bg-current" : "border-current bg-transparent"}`}
           style={{
@@ -740,11 +752,6 @@ function KeyframeTrack({
             type="button"
             aria-label={`${block.label} keyframe ${i + 1} of ${stops.length}`}
             aria-pressed={on}
-            title={
-              end
-                ? "drag to stretch the whole set — click to select"
-                : "drag to retime — click to select"
-            }
             // Picked reads on both grounds: filled, it stands out against the white
             // lane, and the halo keeps it visible on a selected bar of its own colour.
             className={`absolute top-1/2 touch-none border p-0 ${PROP_TEXT[prop]} ${
@@ -756,7 +763,6 @@ function KeyframeTrack({
               height: DIAMOND,
               // Rotated, so the translate has to happen before the turn does.
               transform: "translate(-50%, -50%) rotate(45deg)",
-              cursor: end ? "ew-resize" : "grab",
             }}
             onPointerDown={(e) =>
               beginDrag(e, { kind: end ? "end" : "middle", index: i })
@@ -842,7 +848,7 @@ function ModuleBlock({
   const onMove = (e: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (!drag) {
-      e.currentTarget.style.cursor = edgeAt(e) ? "ew-resize" : "grab";
+      e.currentTarget.style.cursor = edgeAt(e) ? "ew-resize" : "default";
       return;
     }
     if (drag.pointerId !== e.pointerId || spanPx(width) < 1) return;
@@ -869,8 +875,7 @@ function ModuleBlock({
       tabIndex={0}
       aria-label={`${block.label} module`}
       aria-pressed={selected}
-      title={`${block.label} — drag to move, drag an edge to trim`}
-      className={`absolute top-1/2 -translate-y-1/2 cursor-grab touch-none overflow-hidden rounded-[4px] border ${
+      className={`absolute top-1/2 -translate-y-1/2 touch-none overflow-hidden rounded-[4px] border ${
         PROP_COLOR[prop]
       } ${selected ? "ring-2 ring-current" : ""}`}
       style={{

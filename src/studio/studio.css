@@ -377,6 +377,32 @@ body {
   background: #f2f9ff;
 }
 
+/* Which element is being worked on, said quietly. The property row's own blue is
+   stronger, so the two read apart: one is the element, one is the property. */
+.timeline-track-label.is-selected {
+  background: #eef4fb;
+}
+
+.timeline-track-label.is-selected .timeline-track-name {
+  color: #111;
+  font-weight: 500;
+}
+
+.timeline-track-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  color: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .timeline-property-name {
   flex: 1;
   min-width: 0;

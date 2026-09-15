@@ -488,6 +488,12 @@ export const useStudio = create<StudioState>((set, get) => {
       edit(null, (s) => ({
         selectedId: layerId,
         selectedPart: part,
+        // The property arrives with a row of its own, so the element opens to show
+        // it. Adding motion and then having to go find where it went is a step that
+        // exists for no reason.
+        expandedTracks: s.expandedTracks.includes(layerId)
+          ? s.expandedTracks
+          : [...s.expandedTracks, layerId],
         ...patchTrack(s.composition, layerId, (tr) => ({
           ...tr,
           keyframes: { ...tr.keyframes, ...added },
