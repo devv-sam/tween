@@ -13,7 +13,7 @@ import { IMAGE_ACCEPT } from "./files";
 import { LockIcon, LockOpenIcon } from "./fields";
 import { alignmentFor, type Alignment, type Box } from "./guides";
 import { paintComposition } from "../render/paint";
-import { isSvgNode, useStudio, type MoveAnchor } from "./store";
+import { useStudio, type MoveAnchor } from "./store";
 import {
   CORNERS,
   HANDLES,
@@ -124,21 +124,6 @@ export function StudioCanvas() {
       assets.map((a) => [a.id, { width: a.naturalW, height: a.naturalH }]),
     );
     return (item: SceneItem): Size | undefined =>
-      item.source.kind === "image" ? byId.get(item.source.value) : undefined;
-  }, [assets]);
-
-  /**
-   * Where each element's picture actually is, for hit testing.
-   *
-   * Only SVG nodes have an answer: every node of one file is wrapped at the whole
-   * drawing's size, so without this a click would always land on whichever node paints
-   * last, however far its ink is from the pointer.
-   */
-  const inkOf = useMemo(() => {
-    const byId = new Map(
-      assets.flatMap((a) => (isSvgNode(a) && a.content ? [[a.id, a.content] as const] : [])),
-    );
-    return (item: SceneItem) =>
       item.source.kind === "image" ? byId.get(item.source.value) : undefined;
   }, [assets]);
 
@@ -483,7 +468,7 @@ export function StudioCanvas() {
       }
     }
 
-    const id = hitTest(scene, sizeOf, point, inkOf);
+    const id = hitTest(scene, sizeOf, point);
     if (!id) {
       if (sel) select(null);
       return;
@@ -624,6 +609,27 @@ export function StudioCanvas() {
     });
   };
 
+  /**
+   * Reach into a drawing.
+   *
+   * A double-click on an SVG takes the part under the pointer off it, as its own
+   * element — which is the whole of "going in": there is no mode to be in and nothing
+   * to come back out of, because what you get is an ordinary element that everything
+   * already knows how to move, key and export. Undo puts it back.
+   *
+   * Anywhere else the gesture still means what it always did, so double-clicking the
+   * empty canvas resets the zoom.
+   */
+  const onDoubleClick = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const point = screenToComposition(screenAt(e), viewport, frame, view);
+    const id = hitTest(scene, sizeOf, point);
+    if (!id) {
+      useStudio.getState().resetZoom();
+      return;
+    }
+    void useStudio.getState().detachPart(id, point);
+  };
+
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
@@ -697,7 +703,7 @@ export function StudioCanvas() {
         setCursor(null);
         setHovering(false);
       }}
-      onDoubleClick={() => useStudio.getState().resetZoom()}
+      onDoubleClick={onDoubleClick}
     >
       {viewport.width > 0 ? (
         <div

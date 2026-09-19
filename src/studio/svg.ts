@@ -1,13 +1,16 @@
+import type { Transform } from "../core/types";
+import type { Point } from "./view";
+
 /**
- * Taking an SVG apart.
+ * An SVG, and the parts it is made of.
  *
- * A raster image is one thing you can move. An SVG is a document: its top-level
- * children are separately addressable, so a logo's letterform and its full stop are
- * two elements that happen to have arrived in one file. This turns the file into
- * those elements, and knows nothing about the studio beyond that.
+ * A file arrives whole and is treated as one picture, the same as a PNG — because
+ * that is what it is until someone says otherwise. What it also is, underneath, is a
+ * document with separately addressable children, and this is what lets the studio
+ * reach one of them when it is asked to.
  */
 
-/** Children worth making an element of. Everything else — `defs`, `title`, comments,
+/** Children worth reaching for. Everything else — `defs`, `title`, comments,
  *  `metadata` — is machinery for the drawing rather than part of it. */
 const MEANINGFUL = new Set([
   "path",
@@ -23,74 +26,47 @@ const MEANINGFUL = new Set([
  *  its own. The spec's default, spelled out rather than left implied. */
 export const DEFAULT_ASPECT = "xMidYMid meet";
 
-/** Where a node's ink actually is, in the document's own user units. */
 export type Rect = { x: number; y: number; width: number; height: number };
 
 export type SvgNode = {
   /** What the node calls itself: its `id`, or its tag and place in the file. */
   label: string;
-  /** This node alone, wrapped in an `<svg>` carrying the *original* document's
-   *  viewBox — so every node from one file shares one canvas and they line up
-   *  where the artist put them. */
-  svgSource: string;
-  preserveAspectRatio: string;
-  /** A pure translation lifted out of the node's own `transform`, in user units.
-   *  Everything else stays in the markup — see `liftTranslation`. */
-  offset: { x: number; y: number };
+  /** The node exactly as authored, transform and all. */
+  markup: string;
   /**
-   * The part of the canvas this node actually draws on.
-   *
-   * Every node is wrapped at the whole document's size so they keep their
-   * arrangement, which leaves each of them nominally the size of the drawing. That is
-   * right for placing them and wrong for pointing at them: without this, a click
-   * anywhere would land on whichever node paints last. Undefined when the browser
-   * would not measure it, and then the whole canvas stands in, as before.
+   * Where this node's ink falls, in the document's own units — the browser's answer,
+   * not one worked out from path data. Undefined when nothing would measure it, and
+   * then the node has no bounds of its own to be cropped or pointed at by.
    */
-  content?: Rect;
+  ink?: Rect;
 };
 
-export type Dissection = {
-  /** The filename without its extension: what the group of nodes is called. */
+export type SvgDoc = {
+  /** The filename without its extension. */
   label: string;
-  viewBox: string;
-  /** The document's own size in user units — every node is wrapped at this size. */
-  width: number;
-  height: number;
+  /** The document's own frame, in user units: what it says its size is. */
+  box: Rect;
+  /**
+   * Gradients, clip paths, filters — anything a node might point at by id. Carried
+   * into every wrapping, because a node cut loose from the `<defs>` it references
+   * paints as nothing at all.
+   */
+  defs: string;
   nodes: SvgNode[];
 };
 
-/** `translate(12 -4)`, `translate(12,-4)`, `translate(12)` — and nothing else. */
-const TRANSLATE_ONLY = /^\s*translate\(\s*(-?[\d.]+)(?:[\s,]+(-?[\d.]+))?\s*\)\s*$/;
-
-/**
- * A node's `transform`, when it is only a move.
- *
- * A move is the one transform that means the same thing here as it does there: shift
- * the node, shift the element, same picture. A rotation or a scale in an SVG turns
- * about the document's origin, while an element's own rotation turns about its
- * centre — so those are left in the markup, where they already work, rather than
- * being copied into a base transform that would put the node somewhere else.
- */
-export function liftTranslation(transform: string | null): { x: number; y: number } | null {
-  if (!transform) return null;
-  const m = TRANSLATE_ONLY.exec(transform);
-  if (!m) return null;
-  const x = Number(m[1]);
-  const y = m[2] === undefined ? 0 : Number(m[2]);
-  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
-}
-
-/** The document's size in user units: its viewBox if it has one, its width and
- *  height otherwise, and a square if it has neither to say. */
-function documentSize(root: SVGSVGElement, viewBox: string): { width: number; height: number } {
-  const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+/** The document's frame: its viewBox, or its width and height, or a square when it
+ *  declares neither. */
+function documentBox(root: Element): Rect {
+  const parts = (root.getAttribute("viewBox") ?? "").trim().split(/[\s,]+/).map(Number);
   if (parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0) {
-    return { width: parts[2], height: parts[3] };
+    return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
   }
   const w = Number.parseFloat(root.getAttribute("width") ?? "");
   const h = Number.parseFloat(root.getAttribute("height") ?? "");
-  if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return { width: w, height: h };
-  return { width: 300, height: 300 };
+  const width = Number.isFinite(w) && w > 0 ? w : 300;
+  const height = Number.isFinite(h) && h > 0 ? h : 300;
+  return { x: 0, y: 0, width, height };
 }
 
 /** Strip the file's extension, however many dots the name has before it. */
@@ -100,107 +76,120 @@ export function labelFor(filename: string): string {
 
 const escapeAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
+export const viewBoxOf = (box: Rect): string =>
+  `${box.x} ${box.y} ${box.width} ${box.height}`;
+
 /**
- * One node on the whole document's canvas.
+ * Some nodes, on a canvas of their own.
  *
- * The viewBox is the original's on purpose. Cropping each node to its own bounds
- * would leave every one of them thinking it owns the frame, and they would stack up
- * at the same place instead of holding the arrangement they were drawn in.
+ * `box` is the window onto the document — the whole of it when the element is the
+ * whole file, and just far enough to hold what is left once parts have been taken
+ * off it. That window is what makes an extracted piece its own real drawing rather
+ * than a small shape adrift in a document-sized field of nothing.
  */
-export function wrapNode(
-  markup: string,
-  viewBox: string,
-  width: number,
-  height: number,
-  preserveAspectRatio: string,
-): string {
-  const box = viewBox ? ` viewBox="${escapeAttr(viewBox)}"` : "";
+export function wrapNodes(nodes: SvgNode[], box: Rect, defs: string): string {
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg"${box} width="${width}" height="${height}"` +
-    ` preserveAspectRatio="${escapeAttr(preserveAspectRatio)}">${markup}</svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${escapeAttr(viewBoxOf(box))}"` +
+    ` width="${box.width}" height="${box.height}"` +
+    ` preserveAspectRatio="${DEFAULT_ASPECT}">` +
+    `${defs}${nodes.map((n) => n.markup).join("")}</svg>`
   );
 }
 
+/** The smallest rect holding all of them. */
+export function unionRect(rects: Rect[]): Rect | undefined {
+  if (rects.length === 0) return undefined;
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const y0 = Math.min(...rects.map((r) => r.y));
+  const x1 = Math.max(...rects.map((r) => r.x + r.width));
+  const y1 = Math.max(...rects.map((r) => r.y + r.height));
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
 /**
- * The file, as the elements it is made of.
+ * The window a set of nodes should be drawn through.
  *
- * `null` means there was nothing to take apart — the text did not parse, there is no
- * root, or nothing inside it draws. The caller falls back to treating the file as one
- * flat image, which is what it was before any of this.
- *
- * Groups are taken whole. A `<g>` with five children is one element here; going
- * inside it is a different job, and doing it now would turn one import into a tree
- * nobody asked for.
+ * A node whose ink nobody could measure has no bounds to crop to, so the whole
+ * document stands in and the picture is at least right even if it is roomy.
  */
-export function dissect(text: string, filename: string): Dissection | null {
-  let root: SVGSVGElement | null = null;
+export function cropFor(nodes: SvgNode[], doc: Rect): Rect {
+  const inks = nodes.map((n) => n.ink);
+  if (inks.length === 0 || inks.some((i) => !i)) return doc;
+  const box = unionRect(inks as Rect[]);
+  return box && box.width > 0 && box.height > 0 ? box : doc;
+}
+
+/**
+ * The file, and what it is made of. `null` when there was nothing to read — the text
+ * did not parse, or there is no root — and the caller falls back to one flat image.
+ *
+ * Groups are taken whole. A `<g>` of five children is one part here; going inside it
+ * is a different job.
+ */
+export function readSvg(text: string, filename: string): SvgDoc | null {
+  let root: Element | null = null;
   try {
     const doc = new DOMParser().parseFromString(text, "image/svg+xml");
     // A parse failure is reported in-band, as a document containing an error report.
     if (doc.querySelector("parsererror")) return null;
-    root = doc.documentElement as unknown as SVGSVGElement;
+    root = doc.documentElement;
   } catch {
     return null;
   }
   if (!root || root.tagName.toLowerCase() !== "svg") return null;
 
-  const viewBox = root.getAttribute("viewBox") ?? "";
-  const { width, height } = documentSize(root, viewBox);
+  const box = documentBox(root);
+  const defs = Array.from(root.children)
+    .filter((c) => c.tagName.toLowerCase() === "defs")
+    .map((c) => c.outerHTML)
+    .join("");
 
   const nodes: SvgNode[] = [];
   for (const child of Array.from(root.children)) {
     const tag = child.tagName.toLowerCase();
     if (!MEANINGFUL.has(tag)) continue;
-
-    const index = nodes.length;
     const id = child.getAttribute("id")?.trim();
-    const preserveAspectRatio = child.getAttribute("preserveAspectRatio") ?? DEFAULT_ASPECT;
-
-    // The lifted move comes out of the markup, or it would be applied twice: once by
-    // the node drawing itself offset, once by the element sitting offset.
-    const offset = liftTranslation(child.getAttribute("transform"));
-    const copy = child.cloneNode(true) as Element;
-    if (offset) copy.removeAttribute("transform");
-
     nodes.push({
-      content: measureInk(copy, viewBox, width, height),
-      label: id && id.length > 0 ? id : `${tag}-${index}`,
-      svgSource: wrapNode(copy.outerHTML, viewBox, width, height, preserveAspectRatio),
-      preserveAspectRatio,
-      offset: offset ?? { x: 0, y: 0 },
+      label: id && id.length > 0 ? id : `${tag}-${nodes.length}`,
+      markup: child.outerHTML,
+      ink: measureInk(child.outerHTML, box, defs),
     });
   }
 
-  if (nodes.length === 0) return null;
-  return { label: labelFor(filename), viewBox, width, height, nodes };
+  return { label: labelFor(filename), box, defs, nodes };
 }
 
 /**
  * Where a node's ink falls, measured by the browser rather than worked out from path
- * data. The node is mounted out of sight on its own canvas, asked, and taken down.
+ * data. The node is mounted out of sight and asked.
  *
- * `getBBox` only answers for something laid out, and nothing outside a browser lays
- * SVG out — so `undefined` here is a normal answer, not a failure, and the caller
- * falls back to the whole canvas.
+ * It is asked through a `<g>`, because a node's own `getBBox` answers in its own
+ * coordinates and so leaves out the `transform` that put it where it is — while the
+ * group around it has no transform, and answers in the document's.
+ *
+ * `undefined` is a normal answer, not a failure: nothing outside a browser lays SVG
+ * out, and the caller falls back to the whole document.
  */
-function measureInk(
-  node: Element,
-  viewBox: string,
-  width: number,
-  height: number,
-): Rect | undefined {
+function measureInk(markup: string, box: Rect, defs: string): Rect | undefined {
   if (typeof document === "undefined") return undefined;
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
   host.style.cssText =
     "position:fixed;left:-10000px;top:0;width:0;height:0;overflow:hidden";
-  host.innerHTML = wrapNode(node.outerHTML, viewBox, width, height, DEFAULT_ASPECT);
+  host.innerHTML =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBoxOf(box)}"` +
+    ` width="${box.width}" height="${box.height}">${defs}<g>${markup}</g></svg>`;
   document.body.appendChild(host);
   try {
-    const drawn = host.querySelector("svg")?.firstElementChild as SVGGraphicsElement | null;
-    const box = drawn?.getBBox?.();
-    if (!box || !(box.width > 0) || !(box.height > 0)) return undefined;
-    return { x: box.x, y: box.y, width: box.width, height: box.height };
+    const g = host.querySelector("g") as SVGGraphicsElement | null;
+    const measured = g?.getBBox?.();
+    if (!measured || !(measured.width > 0) || !(measured.height > 0)) return undefined;
+    return {
+      x: measured.x,
+      y: measured.y,
+      width: measured.width,
+      height: measured.height,
+    };
   } catch {
     return undefined;
   } finally {
@@ -211,7 +200,53 @@ function measureInk(
 /** SVG by extension or by declared type — a file picker gives one, a drop may give
  *  the other, and either is enough to know not to treat it as a raster. */
 export function isSvgFile(file: { name: string; type: string }): boolean {
-  return (
-    file.type.toLowerCase() === "image/svg+xml" || /\.svg$/i.test(file.name)
-  );
+  return file.type.toLowerCase() === "image/svg+xml" || /\.svg$/i.test(file.name);
+}
+
+const axes = (rotation: number) => {
+  const rad = (rotation * Math.PI) / 180;
+  return { cos: Math.cos(rad), sin: Math.sin(rad) };
+};
+
+/**
+ * A point in the document's own units, as a place on the frame.
+ *
+ * An element shows a window (`crop`) onto a drawing, centred on its own position and
+ * turned and scaled by its own transform. This is that chain, and `worldToDoc` is it
+ * run backwards — between them they are what lets a part come off a drawing and stay
+ * exactly where it was sitting.
+ */
+export function docToWorld(p: Point, crop: Rect, state: Transform): Point {
+  const lx = (p.x - crop.x - crop.width / 2) * state.scaleX;
+  const ly = (p.y - crop.y - crop.height / 2) * state.scaleY;
+  const { cos, sin } = axes(state.rotation);
+  return { x: state.x + lx * cos - ly * sin, y: state.y + lx * sin + ly * cos };
+}
+
+export function worldToDoc(p: Point, crop: Rect, state: Transform): Point {
+  const { cos, sin } = axes(state.rotation);
+  const dx = p.x - state.x;
+  const dy = p.y - state.y;
+  const lx = dx * cos + dy * sin;
+  const ly = -dx * sin + dy * cos;
+  return {
+    x: (state.scaleX === 0 ? 0 : lx / state.scaleX) + crop.x + crop.width / 2,
+    y: (state.scaleY === 0 ? 0 : ly / state.scaleY) + crop.y + crop.height / 2,
+  };
+}
+
+const withinRect = (r: Rect, p: Point): boolean =>
+  p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
+
+/**
+ * Which part of a drawing a point in document units falls on, latest first — so a
+ * point where two overlap picks the one painted on top, the same rule the canvas
+ * uses between elements.
+ */
+export function nodeAt(nodes: SvgNode[], p: Point): SvgNode | null {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const ink = nodes[i].ink;
+    if (ink && withinRect(ink, p)) return nodes[i];
+  }
+  return null;
 }

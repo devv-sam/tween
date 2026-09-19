@@ -10,7 +10,6 @@ import {
   angleTo,
   boundsHalf,
   boxSize,
-  containsInk,
   clampToFrame,
   containsPoint,
   cornerPoints,
@@ -517,47 +516,3 @@ describe("frame bounds", () => {
   });
 });
 
-describe("pointing at a node lifted out of an svg", () => {
-  // Every node of one file is wrapped at the whole drawing's size, so two nodes whose
-  // ink is nowhere near each other still have boxes that lie exactly on top of one
-  // another. What tells them apart is where each one draws.
-  const flat = { x: 112, y: 130, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
-  const size = { width: 224, height: 260 };
-  const letter = { x: 28, y: 30, width: 132, height: 185 };
-  const period = { x: 160, y: 180, width: 36, height: 36 };
-
-  it("is on the node when the point is on its ink", () => {
-    // The element is centred at (112,130), so composition space and the source's own
-    // pixels line up one to one here.
-    expect(containsInk(flat, size, period, { x: 178, y: 198 })).toBe(true);
-  });
-
-  it("is not on the node when the point is only inside its box", () => {
-    expect(containsPoint(flat, size, { x: 178, y: 198 })).toBe(true);
-    expect(containsInk(flat, size, letter, { x: 178, y: 198 })).toBe(false);
-  });
-
-  it("still covers its whole box when nothing measured the ink", () => {
-    expect(containsInk(flat, size, undefined, { x: 178, y: 198 })).toBe(true);
-  });
-
-  it("follows the element's scale, because the ink scales with it", () => {
-    const big = { ...flat, scaleX: 2, scaleY: 2 };
-    // Twice the size about the same centre: the period's ink now reaches further out.
-    expect(containsInk(big, size, period, { x: 244, y: 266 })).toBe(true);
-    expect(containsInk(big, size, period, { x: 178, y: 198 })).toBe(false);
-  });
-
-  it("picks the node under the pointer, not the one that paints last", () => {
-    const scene = [
-      { id: "letterform", source: { kind: "image" as const, value: "a" }, state: flat },
-      { id: "period", source: { kind: "image" as const, value: "b" }, state: flat },
-    ];
-    const sizeOf = () => size;
-    const inkOf = (it: { id: string }) => (it.id === "period" ? period : letter);
-    // Without the ink, the last item wins everywhere. With it, each keeps its own.
-    expect(hitTest(scene, sizeOf, { x: 178, y: 198 })).toBe("period");
-    expect(hitTest(scene, sizeOf, { x: 60, y: 60 }, inkOf)).toBe("letterform");
-    expect(hitTest(scene, sizeOf, { x: 178, y: 198 }, inkOf)).toBe("period");
-  });
-});

@@ -10,9 +10,6 @@ export const RULER_HEIGHT = 28;
 /** A property's own row, opened under the element it belongs to. Room enough that a
  *  keyframe has air above and below it rather than filling its lane. */
 export const PROPERTY_HEIGHT = 30;
-/** An SVG file's own header row, above the nodes it came apart into. Thin on purpose:
- *  it names a group and opens it, and has no motion of its own to hold. */
-export const GROUP_HEIGHT = 22;
 
 /** Within this many pixels of the left edge the playhead reads as "the start". */
 export const SNAP_PX = 6;

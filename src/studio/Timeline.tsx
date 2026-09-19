@@ -12,7 +12,7 @@ import { sampleStops } from "../core/curve";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
-import { designSizeOf, isSvgNode, useStudio } from "./store";
+import { designSizeOf, useStudio } from "./store";
 import { ChevronIcon, NumberField } from "./fields";
 import { entryId } from "./keyframeLog";
 import {
@@ -40,7 +40,6 @@ import {
   type Range,
 } from "./modules";
 import {
-  GROUP_HEIGHT,
   PROPERTY_HEIGHT,
   RULER_HEIGHT,
   TRACK_HEIGHT,
@@ -60,7 +59,6 @@ export function Timeline() {
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);
   const expanded = useStudio((s) => s.expandedTracks);
-  const expandedGroups = useStudio((s) => s.expandedGroups);
   const selectedId = useStudio((s) => s.selectedId);
   const driver = composition.driver.kind;
 
@@ -208,65 +206,21 @@ export function Timeline() {
     return out;
   }, [composition, t]);
 
-  /**
-   * The strip's rows, in order: an element's lane, and above a run of nodes that came
-   * out of one SVG, that file's own header.
-   *
-   * One list for both columns. The gutter and the lanes read it in step, so a header
-   * on the left always has a header beside it and the two never drift apart.
-   */
-  type Row =
-    | { kind: "group"; key: string; id: string; label: string; open: boolean }
-    | {
-        kind: "track";
-        key: string;
-        id: string;
-        name: string;
-        size: ReturnType<typeof designSizeOf>;
-        given: string;
-        blocks: BlockView[];
-        open: boolean;
-      };
-
-  const rows: Row[] = [];
-  /** The header standing open above the rows being emitted, so a run of nodes from
-   *  one file gets one header rather than one each. */
-  let heading: string | null = null;
-  composition.tracks.forEach((track, i) => {
+  const rows = composition.tracks.map((track, i) => {
     const asset =
       track.layer.source.kind === "image"
         ? assets.find((a) => a.id === track.layer.source.value)
         : undefined;
-    const node = asset && isSvgNode(asset) ? asset : null;
-    // A node stands on its own unless its file produced more than one.
-    const group = node && node.group.id !== node.id ? node.group : null;
-
-    if (group?.id !== heading) {
-      heading = group?.id ?? null;
-      if (group) {
-        rows.push({
-          kind: "group",
-          key: `group:${group.id}:${i}`,
-          id: group.id,
-          label: group.label,
-          open: expandedGroups.includes(group.id),
-        });
-      }
-    }
-    if (group && !expandedGroups.includes(group.id)) return;
-
     const blocks = trackBlocks(track);
-    rows.push({
-      kind: "track",
-      key: track.layer.id,
+    return {
+      track,
       id: track.layer.id,
-      // A node is known by what it calls itself inside the file, not by the file.
-      name: layerName(track.layer, node ? node.label : asset?.name, i),
+      name: layerName(track.layer, asset?.name, i),
       size: designSizeOf(assets, track.layer),
       given: track.layer.name ?? "",
       blocks,
       open: expanded.includes(track.layer.id) && blocks.length > 0,
-    });
+    };
   });
 
   return (
@@ -314,11 +268,8 @@ export function Timeline() {
       <div className="timeline-body">
         <div className="timeline-gutter">
           <div className="timeline-gutter-head" style={{ height: RULER_HEIGHT }} />
-          {rows.map((row) =>
-            row.kind === "group" ? (
-              <GroupLabel key={row.key} id={row.id} label={row.label} open={row.open} />
-            ) : (
-            <Fragment key={row.key}>
+          {rows.map((row) => (
+            <Fragment key={row.id}>
               <TrackLabel
                 layerId={row.id}
                 name={row.name}
@@ -339,8 +290,7 @@ export function Timeline() {
                   ))
                 : null}
             </Fragment>
-            ),
-          )}
+          ))}
         </div>
 
         <div className="timeline-area" ref={areaRef}>
@@ -377,17 +327,8 @@ export function Timeline() {
           </div>
 
           <div className="timeline-lanes">
-            {rows.map((row) =>
-              row.kind === "group" ? (
-                // A file's header has no lane of its own: it names a group and opens
-                // it, and a group is not something you put keyframes on.
-                <div
-                  key={row.key}
-                  className="relative border-b border-[#f0f0f0] bg-[#f4f4f6]"
-                  style={{ height: GROUP_HEIGHT }}
-                />
-              ) : (
-              <Fragment key={row.key}>
+            {rows.map((row) => (
+              <Fragment key={row.id}>
                 {/* The element's own lane stays clear whether or not it is open. An
                     element is not a property and has no motion of its own to draw;
                     what it has is the rows underneath. */}
@@ -413,8 +354,7 @@ export function Timeline() {
                     ))
                   : null}
               </Fragment>
-              ),
-            )}
+            ))}
           </div>
 
           <div
@@ -439,43 +379,6 @@ export function Timeline() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/**
- * An SVG file's own row, above the nodes it came apart into.
- *
- * It opens and closes the group and nothing else. There is no selection here and no
- * keyframes: a file is not an element, and the parts of it that can be animated are
- * the rows underneath.
- */
-function GroupLabel({ id, label, open }: { id: string; label: string; open: boolean }) {
-  return (
-    <div
-      className="flex items-center border-b border-[#f0f0f0] bg-[#f4f4f6] pl-1.5 pr-2"
-      style={{ height: GROUP_HEIGHT }}
-    >
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-1 rounded-[3px] py-0.5 text-left text-[#888] hover:text-[#111]"
-        aria-expanded={open}
-        aria-label={open ? `collapse ${label}` : `expand ${label}`}
-        onClick={() => useStudio.getState().toggleGroup(id)}
-      >
-        {/* `grid`, not the default inline: a transform does not apply to an inline
-            box, so an inline caret would never turn. */}
-        <span
-          className={`grid h-4 w-4 shrink-0 place-items-center transition-transform ${
-            open ? "rotate-90" : ""
-          }`}
-        >
-          <ChevronIcon />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[10px] uppercase tracking-[0.04em]">
-          {label}
-        </span>
-      </button>
     </div>
   );
 }

@@ -2,9 +2,8 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Inspector } from "./Inspector";
 import { StudioCanvas } from "./StudioCanvas";
 import { Timeline } from "./Timeline";
-import { isSvgNode, useStudio, type StudioAsset } from "./store";
+import { shelfAssets, useStudio, type StudioAsset } from "./store";
 import { IMAGE_ACCEPT, baseName, extensionOf } from "./files";
-import { ChevronIcon } from "./fields";
 import { contentScale } from "./view";
 import { readAssetsCollapsed, writeAssetsCollapsed } from "./prefs";
 
@@ -99,7 +98,11 @@ export function Studio() {
                   Nothing here yet. Import png, jpg, webp, or svg.
                 </p>
               ) : (
-                <AssetGrid assets={assets} />
+                <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 px-3 pt-1 pb-3.5">
+                  {shelfAssets(assets).map((asset) => (
+                    <AssetCard key={asset.id} asset={asset} />
+                  ))}
+                </div>
               )}
               </div>
             </div>
@@ -139,94 +142,7 @@ function PanelToggle({
   );
 }
 
-/**
- * The shelf.
- *
- * An SVG that came apart is shown as what it is — one file, several nodes — so the
- * drawer says the same thing the stack and the timeline do. Everything else is one
- * card, exactly as before.
- */
-function AssetGrid({ assets }: { assets: StudioAsset[] }) {
-  /** Nodes from one file, kept next to each other in the order they arrived. */
-  const rows: (
-    | { kind: "one"; asset: StudioAsset }
-    | { kind: "group"; id: string; label: string; assets: StudioAsset[] }
-  )[] = [];
-  for (const asset of assets) {
-    const group = isSvgNode(asset) && asset.group.id !== asset.id ? asset.group : null;
-    if (!group) {
-      rows.push({ kind: "one", asset });
-      continue;
-    }
-    const open = rows[rows.length - 1];
-    if (open?.kind === "group" && open.id === group.id) open.assets.push(asset);
-    else rows.push({ kind: "group", id: group.id, label: group.label, assets: [asset] });
-  }
-
-  return (
-    <div className="flex flex-col gap-3 px-3 pt-1 pb-3.5">
-      {rows.map((row) =>
-        row.kind === "one" ? (
-          <div key={row.asset.id} className="grid grid-cols-2 gap-x-2.5">
-            <AssetCard asset={row.asset} />
-          </div>
-        ) : (
-          <AssetGroup key={row.id} id={row.id} label={row.label} assets={row.assets} />
-        ),
-      )}
-    </div>
-  );
-}
-
-/** One file's nodes, under the name of the file. Closed until there is a reason to
- *  look inside: the nodes arrived as a drawing, not as a list. */
-function AssetGroup({
-  id,
-  label,
-  assets,
-}: {
-  id: string;
-  label: string;
-  assets: StudioAsset[];
-}) {
-  const open = useStudio((s) => s.expandedGroups.includes(id));
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <button
-        type="button"
-        className="flex min-w-0 items-center gap-1 rounded-[5px] py-0.5 text-left text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]"
-        aria-expanded={open}
-        onClick={() => useStudio.getState().toggleGroup(id)}
-      >
-        {/* `grid`, not the default inline: a transform does not apply to an inline
-            box, so an inline caret would never turn. */}
-        <span
-          className={`grid h-4 w-4 shrink-0 place-items-center transition-transform ${
-            open ? "rotate-90" : ""
-          }`}
-        >
-          <ChevronIcon />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[10px] leading-[1.3]" title={label}>
-          {label}
-        </span>
-        <span className="shrink-0 rounded-[3px] bg-[#e8f7ef] px-1 py-px text-[8px] font-semibold uppercase leading-[1.3] tracking-[0.04em] text-[#1a8a5a]">
-          svg
-        </span>
-      </button>
-      {open ? (
-        <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 pl-3">
-          {assets.map((asset) => (
-            <AssetCard key={asset.id} asset={asset} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** Per-extension chip colours. A node lifted out of an SVG carries no extension of
- *  its own — its file's name is on the group above it. */
+/** Per-extension chip colours. */
 const CHIP: Record<string, string> = {
   png: "bg-[#f1ebfd] text-[#7c4ddb]",
   jpg: "bg-[#fdeedd] text-[#c4711a]",
@@ -236,9 +152,8 @@ const CHIP: Record<string, string> = {
 
 function AssetCard({ asset }: { asset: StudioAsset }) {
   const ghostRef = useRef<HTMLImageElement | null>(null);
-  const node = isSvgNode(asset);
-  const ext = node ? null : extensionOf(asset.name);
-  const label = node ? asset.label : baseName(asset.name);
+  const ext = extensionOf(asset.name);
+  const label = baseName(asset.name);
 
   const onDragStart = (e: DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData("application/x-tween-asset", asset.id);
@@ -295,10 +210,7 @@ function AssetCard({ asset }: { asset: StudioAsset }) {
         </button>
       </div>
       <div className="flex min-w-0 items-center justify-between gap-1.5">
-        <span
-          className="truncate text-[10px] leading-[1.3] text-[#111]"
-          title={node ? asset.label : asset.name}
-        >
+        <span className="truncate text-[10px] leading-[1.3] text-[#111]" title={asset.name}>
           {label}
         </span>
         {ext ? (
@@ -311,7 +223,7 @@ function AssetCard({ asset }: { asset: StudioAsset }) {
       </div>
       {/* Quiet, and on the card rather than in the import error: the file did come
           in, it just came in whole. */}
-      {!node && asset.notice ? (
+      {asset.kind === "svg" && asset.notice ? (
         <p className="m-0 text-[9px] leading-[1.35] text-[#b0b0b0]">{asset.notice}</p>
       ) : null}
     </div>
