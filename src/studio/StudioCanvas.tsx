@@ -398,7 +398,11 @@ export function StudioCanvas() {
       const {
         viewport: vp,
         view: v,
-        selectedId: sel,
+        // Commands act on the whole selection, so they ask what is picked rather
+        // than asking for *the* picked element — which is null on purpose the moment
+        // there is more than one, and would switch these off just when they are
+        // wanted most.
+        selectedIds: picked,
         resetZoom,
         zoomAroundPoint,
         select,
@@ -410,7 +414,7 @@ export function StudioCanvas() {
       const center = { x: vp.width / 2, y: vp.height / 2 };
 
       if (e.key === "Escape") {
-        if (sel) select(null);
+        if (picked.length > 0) select(null);
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -421,13 +425,13 @@ export function StudioCanvas() {
           removeSelectedKeys();
           return;
         }
-        if (sel) {
+        if (picked.length > 0) {
           e.preventDefault();
           deleteSelected();
           return;
         }
       }
-      if (sel && e.key.startsWith("Arrow")) {
+      if (picked.length > 0 && e.key.startsWith("Arrow")) {
         const step = e.shiftKey ? NUDGE_COARSE : NUDGE;
         const by =
           e.key === "ArrowLeft"
