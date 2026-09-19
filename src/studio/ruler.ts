@@ -7,7 +7,8 @@ export const MAX_DURATION = 30;
 
 /** Lane geometry, shared by the gutter labels so the two columns stay in step. */
 export const TRACK_HEIGHT = 32;
-export const RULER_HEIGHT = 28;
+/** Deep enough for the transport to sit in beside the ruler, not just for ticks. */
+export const RULER_HEIGHT = 40;
 /** A property's own row, opened under the element it belongs to. Room enough that a
  *  keyframe has air above and below it rather than filling its lane. */
 export const PROPERTY_HEIGHT = 30;
@@ -25,8 +26,13 @@ export const GUTTER_PX = 8;
 /** The pixels the composition itself is drawn across — the strip less its gutter. */
 export const spanPx = (width: number): number => Math.max(0, width - GUTTER_PX);
 
-/** Seconds a labelled tick can step by. Decimals read fine, so halves are allowed. */
-const MAJOR_STEPS = [0.5, 1, 2, 5, 10];
+/** Seconds a labelled tick can step by. Decimals read fine, so fractions are
+ *  allowed. The smallest is what a fully zoomed-in ruler lands on: five minors to a
+ *  major puts 0.05 at a 10ms finest tick, and nothing finer is ever drawn. */
+const MAJOR_STEPS = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10];
+/** The finest tick the ruler will draw, in seconds. `MAJOR_STEPS[0]` divided by
+ *  `MINOR_DIVISIONS` — kept here so a test can hold the two to it. */
+export const FINEST_STEP = 0.01;
 const MINOR_DIVISIONS = 5;
 const MIN_LABEL_GAP = 56;
 const MIN_MINOR_GAP = 10;

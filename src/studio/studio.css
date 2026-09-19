@@ -68,6 +68,8 @@ body {
 /* Docked under the frame. It runs the width of the main column, so the left rail
    and drawer stay clear of it. */
 .timeline {
+  /* Head and rows must agree exactly, or ticks stop lining up with keyframes. */
+  --gutter-w: 248px;
   height: 200px;
   flex-shrink: 0;
   display: flex;
@@ -82,9 +84,10 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 36px;
+  width: var(--gutter-w);
   flex-shrink: 0;
   padding: 0 10px;
+  border-right: 1px solid #e0e0e0;
   border-bottom: 1px solid #e0e0e0;
 }
 
@@ -92,6 +95,7 @@ body {
   appearance: none;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   width: 26px;
   height: 26px;
   border: 0;
@@ -112,101 +116,48 @@ body {
 
 /* Current time, composition length, and the unit — one control. The unit sits in
    its own box: it changes what the two numbers mean rather than being one of them. */
-.transport-readout {
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
-  height: 22px;
-  margin-left: 6px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
-
-.readout-fields {
-  display: flex;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  background: #fff;
-}
-
-.readout-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 52px;
-  padding: 0 8px;
-  color: #111;
-}
-
-.readout-cell + .readout-cell {
-  border-left: 1px solid #e0e0e0;
-  color: #999;
-}
-
-.readout-unit {
-  appearance: none;
-  min-width: 30px;
-  padding: 0 8px;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  background: #fff;
-  color: #888;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.readout-unit:hover {
-  background: #f5f5f5;
-  color: #111;
-}
-
-.transport-spacer {
-  flex: 1;
-}
-
-.driver-pill {
-  appearance: none;
-  padding: 3px 9px;
-  border: 1px solid #e0e0e0;
-  border-radius: 999px;
-  background: transparent;
-  color: #888;
-  font: inherit;
-  font-size: 10px;
-  line-height: 1.4;
-  cursor: pointer;
-}
-
-.driver-pill:hover {
-  border-color: #d0d0d0;
-  color: #111;
-}
-
-.timeline-transport button:focus-visible,
+/* Buttons and the playhead grab only. A field in the head draws its own focus on
+   the box around it, and this outline on top of that is two rings for one focus. */
+.timeline-head button:focus-visible,
+.timeline-head [role="slider"]:focus-visible,
 .timeline-area :focus-visible {
   outline: 1px solid #111;
   outline-offset: 1px;
 }
 
+/* The one scroller — head included, so both columns share the same box. */
 .timeline-body {
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+  /* Explicit: `overflow-y` alone turns this axis to `auto` and adds a scrollbar. */
+  overflow-x: hidden;
+}
+
+.timeline-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+/* Fills the rest even when nearly empty, so the playhead line runs full height. */
+.timeline-rows {
+  display: flex;
+  flex: 1 0 auto;
+  min-height: 0;
 }
 
 /* Track names, and the property rows opened under them. Its rows are the same
    heights as the lanes, so the two columns stay in step. */
 .timeline-gutter {
-  width: 208px;
+  width: var(--gutter-w);
   flex-shrink: 0;
   border-right: 1px solid #e0e0e0;
-}
-
-.timeline-gutter-head {
-  border-bottom: 1px solid #e0e0e0;
 }
 
 .timeline-track-label {
@@ -214,16 +165,20 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 8px 0 2px;
+  padding: 0 8px 0 4px;
+  border-top: 1px solid #e6e6e6;
   border-bottom: 1px solid #f0f0f0;
+  background: #f7f7f7;
   font-size: 11px;
-  color: #555;
+  color: #333;
   white-space: nowrap;
   overflow: hidden;
 }
 
-/* Holds its slot whether or not it has anything to open, so the element names stay
-   in one column however many of them carry keyframes. */
+.timeline-track-label:first-of-type {
+  border-top: 0;
+}
+
 .timeline-twisty {
   display: grid;
   place-items: center;
@@ -248,22 +203,59 @@ body {
   transform: rotate(90deg);
 }
 
-.timeline-twisty.is-empty {
-  cursor: default;
-}
-
-/* A property under its element: the name, whether there is a keyframe under the
-   playhead, and what the property reads there. */
+/* Indented past the element's chevron, so the name starts inside the one above. */
 .timeline-property-label {
   position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px 0 22px;
+  padding: 0 8px 0 34px;
   border-bottom: 1px solid #f5f5f5;
   background: #fff;
   white-space: nowrap;
   overflow: hidden;
+}
+
+/* Elbow tying a property to its element. The last in a run stops its stem at the
+   arm, so the line closes on the group instead of running into the next element. */
+.timeline-branch {
+  position: absolute;
+  left: 13px;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  pointer-events: none;
+}
+
+.timeline-branch::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #e0e0e0;
+}
+
+.timeline-branch.is-last::before {
+  bottom: 50%;
+}
+
+.timeline-branch::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 7px;
+  height: 1px;
+  background: #e0e0e0;
+}
+
+.timeline-property-label.is-selected .timeline-branch::before,
+.timeline-property-label.is-selected .timeline-branch::after,
+.timeline-property-label.is-linked-hot .timeline-branch::before,
+.timeline-property-label.is-linked-hot .timeline-branch::after {
+  background: #b9d8f2;
 }
 
 .timeline-property-label.is-selected {
@@ -288,6 +280,7 @@ body {
   border: 0;
   background: transparent;
   font-size: 11px;
+  font-weight: 500;
   color: inherit;
   text-align: left;
   text-overflow: ellipsis;
@@ -395,6 +388,10 @@ body {
 
 .timeline-ruler {
   position: relative;
+  flex: 1;
+  min-width: 0;
+  /* The last tick's label runs past the end it labels. */
+  overflow: hidden;
   border-bottom: 1px solid #e0e0e0;
   cursor: pointer;
   touch-action: none;
@@ -445,15 +442,59 @@ body {
   border-right-color: #0d99ff;
 }
 
-.timeline-playhead {
+/* A folded element's reach. Muted and unclickable: a summary, not a block. */
+.timeline-folded-span {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: #d4d4d4;
   pointer-events: none;
 }
 
+.timeline-lane {
+  position: relative;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.timeline-lane.is-track {
+  border-top: 1px solid #e6e6e6;
+  background: #f7f7f7;
+}
+
+.timeline-lane.is-track:first-of-type {
+  border-top: 0;
+}
+
+.timeline-lane.is-track.is-selected {
+  background: #eef4fb;
+}
+
+.timeline-lane.is-property {
+  background: #fff;
+  border-bottom-color: #f5f5f5;
+}
+
+.timeline-lane.is-property.is-linked-hot {
+  background: #eef0ff;
+}
+
+.timeline-track-count {
+  flex-shrink: 0;
+  min-width: 15px;
+  padding: 1px 4px;
+  border-radius: 7px;
+  background: #e4e4e4;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  text-align: center;
+  color: #777;
+}
+
+/* Two pieces placed by the same x: the grab rides the pinned head, the line runs
+   down the rows. As one element it could only be whole at the top of the scroll. */
 .playhead-line {
   position: absolute;
   top: 0;
@@ -461,18 +502,20 @@ body {
   left: -0.5px;
   width: 1px;
   background: #0d99ff;
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* The triangle is the grab target; the line under it stays a hairline. */
 .playhead-grab {
   position: absolute;
-  top: 0;
+  bottom: 0;
   left: -6px;
+  z-index: 2;
   width: 12px;
   height: 9px;
   background: #0d99ff;
   clip-path: polygon(0 0, 100% 0, 50% 100%);
-  pointer-events: auto;
   cursor: ew-resize;
   touch-action: none;
 }
