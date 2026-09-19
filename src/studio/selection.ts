@@ -177,11 +177,54 @@ export function containsPoint(state: Transform, size: Size, p: Point): boolean {
   return Math.abs(l.x) <= h.x && Math.abs(l.y) <= h.y;
 }
 
+/**
+ * The part of the source an element actually draws on, in the source's own pixels.
+ * Undefined means the whole of it, which is every raster image and any SVG node the
+ * browser would not measure.
+ */
+export type InkLookup = (item: SceneItem) => Rect | undefined;
+
+export type Rect = { x: number; y: number; width: number; height: number };
+
+/**
+ * Is a composition-space point on the part of the element that draws?
+ *
+ * For anything whose picture fills its box this is `containsPoint`. It differs for a
+ * node lifted out of an SVG: those are all wrapped at the whole drawing's size so
+ * they keep their arrangement, which leaves them nominally overlapping even when
+ * their ink is nowhere near each other. Pointing at one has to go by the ink.
+ */
+export function containsInk(
+  state: Transform,
+  size: Size,
+  ink: Rect | undefined,
+  p: Point,
+): boolean {
+  if (!containsPoint(state, size, p)) return false;
+  if (!ink) return true;
+  if (!(state.scaleX !== 0 && state.scaleY !== 0)) return false;
+  const { cos, sin } = axes(state.rotation);
+  const l = toLocal(state, cos, sin, p);
+  // Back to where this lands on the source itself, whose origin is its top-left.
+  const sx = l.x / state.scaleX + size.width / 2;
+  const sy = l.y / state.scaleY + size.height / 2;
+  return (
+    sx >= ink.x && sx <= ink.x + ink.width && sy >= ink.y && sy <= ink.y + ink.height
+  );
+}
+
 /** Topmost element under a composition-space point, or null. Later items paint on top. */
-export function hitTest(scene: Scene, sizeOf: SizeLookup, p: Point): string | null {
+export function hitTest(
+  scene: Scene,
+  sizeOf: SizeLookup,
+  p: Point,
+  inkOf?: InkLookup,
+): string | null {
   for (let i = scene.length - 1; i >= 0; i--) {
     const size = sizeOf(scene[i]);
-    if (size && containsPoint(scene[i].state, size, p)) return scene[i].id;
+    if (size && containsInk(scene[i].state, size, inkOf?.(scene[i]), p)) {
+      return scene[i].id;
+    }
   }
   return null;
 }

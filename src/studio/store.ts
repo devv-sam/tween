@@ -11,7 +11,9 @@ import type {
   Transform,
 } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
-import { imageError } from "./files";
+import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
+import { dissect, isSvgFile } from "./svg";
+import type { LayerContent } from "../export/code";
 import { renderState } from "../core/renderState";
 import { boundsHalf, clampToFrame } from "./selection";
 import {
@@ -66,7 +68,7 @@ export type MoveAnchor = {
  * image has one; a width in the panel is a factor against it.
  */
 export const designSizeOf = (
-  assets: ImageAsset[],
+  assets: StudioAsset[],
   layer: Layer,
 ): DesignSize | undefined => {
   if (layer.source.kind !== "image") return undefined;
@@ -74,14 +76,78 @@ export const designSizeOf = (
   return asset ? { width: asset.naturalW, height: asset.naturalH } : undefined;
 };
 
+/**
+ * A picture the studio holds: a raster file, a whole SVG it could not take apart, or
+ * one node lifted out of an SVG that it could.
+ *
+ * All three answer the same questions — how big am I, where is my source — because
+ * everything downstream of here draws them the same way. What an SVG node adds is the
+ * markup it was made from, which is what lets an export ship real vector nodes rather
+ * than a picture of them.
+ */
+/**
+ * What each layer ships as in an exported page, for the layers that ship as
+ * something. An SVG node carries its own markup out; everything else has none to
+ * carry, and the exporter draws its standing box.
+ */
+export function exportContent(
+  composition: Composition,
+  assets: StudioAsset[],
+): Record<string, LayerContent> {
+  const out: Record<string, LayerContent> = {};
+  for (const track of composition.tracks) {
+    const { source, id } = track.layer;
+    if (source.kind !== "image") continue;
+    const asset = assets.find((a) => a.id === source.value);
+    if (!asset || !isSvgNode(asset)) continue;
+    out[id] = {
+      svgSource: asset.svgSource,
+      width: asset.naturalW,
+      height: asset.naturalH,
+    };
+  }
+  return out;
+}
+
 export type ImageAsset = {
   id: string;
-  kind: "image";
+  /** `svg` is a file that would not come apart, standing in as one flat image. */
+  kind: "image" | "svg";
   src: string;
   name: string;
   naturalW: number;
   naturalH: number;
+  /** Said quietly on the asset's own card when dissection was tried and failed. */
+  notice?: string;
 };
+
+export type SvgNodeAsset = {
+  id: string;
+  kind: "svg-node";
+  src: string;
+  name: string;
+  naturalW: number;
+  naturalH: number;
+  /** This node alone, on the whole document's canvas. Text, so it survives anything
+   *  a blob URL would not. */
+  svgSource: string;
+  viewBox: string;
+  preserveAspectRatio: string;
+  /** What this node is called: its own id, or its tag and place in the file. */
+  label: string;
+  /** The file it came out of — what the stack and the timeline gather it under. */
+  group: { id: string; label: string };
+  /** A plain move lifted out of the node's own `transform`, in user units. Applied
+   *  when the node is placed, so the arrangement survives the trip. */
+  offset: { x: number; y: number };
+  /** Where this node's ink falls on that canvas, for pointing at it. Undefined means
+   *  the whole canvas, which is what it was before anyone measured. */
+  content?: { x: number; y: number; width: number; height: number };
+};
+
+export type StudioAsset = ImageAsset | SvgNodeAsset;
+
+export const isSvgNode = (a: StudioAsset): a is SvgNodeAsset => a.kind === "svg-node";
 
 const emptyComposition = (): Composition => ({
   fps: 30,
@@ -110,6 +176,84 @@ async function readImageAsset(file: File): Promise<ImageAsset> {
   try {
     const img = await ensureImage(id, src);
     return { id, kind: "image", src, name: file.name, naturalW: img.naturalWidth, naturalH: img.naturalHeight };
+  } catch (err) {
+    URL.revokeObjectURL(src);
+    forgetImage(id);
+    throw err;
+  }
+}
+
+/**
+ * An SVG, as the elements it is made of.
+ *
+ * Each node becomes its own asset with its own blob, drawn on the whole document's
+ * canvas so the nodes keep the arrangement they were drawn in. A file with one node
+ * is not a group of anything, so it stays one element; a file that will not come
+ * apart falls back to the flat image it always was, and says so on its own card.
+ */
+async function readSvgAssets(file: File): Promise<StudioAsset[]> {
+  const text = await file.text();
+  const cut = dissect(text, file.name);
+
+  if (!cut || cut.nodes.length === 0) {
+    return [await readFlatSvg(file, MSG_UNDISSECTED)];
+  }
+  // One node is a drawing, not a group. Nothing is gained by putting a disclosure
+  // triangle in front of a single thing.
+  const group =
+    cut.nodes.length > 1 ? { id: crypto.randomUUID(), label: cut.label } : null;
+
+  const out: SvgNodeAsset[] = [];
+  for (const node of cut.nodes) {
+    const id = crypto.randomUUID();
+    const src = URL.createObjectURL(
+      new Blob([node.svgSource], { type: "image/svg+xml" }),
+    );
+    try {
+      await ensureImage(id, src);
+    } catch {
+      URL.revokeObjectURL(src);
+      forgetImage(id);
+      continue;
+    }
+    out.push({
+      id,
+      kind: "svg-node",
+      src,
+      name: node.label,
+      naturalW: cut.width,
+      naturalH: cut.height,
+      svgSource: node.svgSource,
+      viewBox: cut.viewBox,
+      preserveAspectRatio: node.preserveAspectRatio,
+      label: node.label,
+      content: node.content,
+      group: group ?? { id, label: cut.label },
+      offset: node.offset,
+    });
+  }
+  if (out.length === 0) return [await readFlatSvg(file, MSG_UNDISSECTED)];
+  // A lone node keeps no group, so the stack shows it as the plain element it is.
+  return group ? out : out.map((a) => ({ ...a, group: { id: a.id, label: a.label } }));
+}
+
+/** The whole file as one picture — the shape an SVG had before any of this. */
+async function readFlatSvg(file: File, notice?: string): Promise<ImageAsset> {
+  const id = crypto.randomUUID();
+  const src = URL.createObjectURL(file);
+  try {
+    const img = await ensureImage(id, src);
+    return {
+      id,
+      kind: "svg",
+      src,
+      name: file.name,
+      // An SVG with no intrinsic size reports zero; it still has to be some size to
+      // be placed, so it takes the frame's own.
+      naturalW: img.naturalWidth || 300,
+      naturalH: img.naturalHeight || 300,
+      notice,
+    };
   } catch (err) {
     URL.revokeObjectURL(src);
     forgetImage(id);
@@ -151,7 +295,7 @@ const patchModule = (
  */
 type Snapshot = {
   composition: Composition;
-  assets: ImageAsset[];
+  assets: StudioAsset[];
   frame: Size;
   selectedId: string | null;
   selectedPart: SelectedPart | null;
@@ -189,7 +333,7 @@ const refit = (viewport: Size, frame: Size, view: View): View => {
 
 type StudioState = {
   composition: Composition;
-  assets: ImageAsset[];
+  assets: StudioAsset[];
   importError: string | null;
   frame: Size;
   t: number;
@@ -210,6 +354,10 @@ type StudioState = {
    */
   expandedTracks: string[];
   selectedKeys: string[];
+  /** Which SVG groups are open in the stack and on the timeline. Closed by default:
+   *  a file's nodes arrive as one thing, and are opened when there is a reason. */
+  expandedGroups: string[];
+  toggleGroup: (groupId: string) => void;
   viewport: Size;
   view: View;
   history: History<Snapshot>;
@@ -306,6 +454,7 @@ export const useStudio = create<StudioState>((set, get) => {
     selectedPart: null,
     expandedTracks: [],
     selectedKeys: [],
+    expandedGroups: [],
     viewport: { width: 0, height: 0 },
     view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
     history: emptyHistory<Snapshot>(),
@@ -375,7 +524,7 @@ export const useStudio = create<StudioState>((set, get) => {
 
     importImages: async (files) => {
       let importError: string | null = null;
-      const added: ImageAsset[] = [];
+      const added: StudioAsset[] = [];
       for (const file of files) {
         const err = imageError(file);
         if (err) {
@@ -383,18 +532,49 @@ export const useStudio = create<StudioState>((set, get) => {
           continue;
         }
         try {
-          added.push(await readImageAsset(file));
+          // An SVG is a document with parts; everything else is one picture.
+          if (isSvgFile(file)) added.push(...(await readSvgAssets(file)));
+          else added.push(await readImageAsset(file));
         } catch {
-          importError = imageError(file) ?? "tween takes png, jpg, or webp.";
+          importError = imageError(file) ?? MSG_TYPE;
         }
       }
       if (added.length === 0) {
         set({ importError });
         return;
       }
+
+      // Nodes from one file arrive already arranged, so they are placed rather than
+      // left on the shelf: every one takes the same centre — each is drawn on the
+      // whole document's canvas — and then its own lifted move. Dropping them one at
+      // a time by hand would be asking the author to rebuild an arrangement the file
+      // already had.
+      const { frame } = get();
+      const middle = centerOf(frame);
+      const tracks: Track[] = [];
+      for (const asset of added) {
+        if (!isSvgNode(asset)) continue;
+        const at = clampToFrame(
+          middle,
+          { x: asset.naturalW / 2, y: asset.naturalH / 2 },
+          frame,
+        );
+        tracks.push(
+          imageTrack(crypto.randomUUID(), asset.id, {
+            x: at.x + asset.offset.x,
+            y: at.y + asset.offset.y,
+          }),
+        );
+      }
+
       edit(null, (s) => ({
         assets: [...s.assets, ...added],
         importError,
+        // File order is paint order, and later tracks draw over earlier ones, so the
+        // stack comes out the way the artist stacked it.
+        composition: { ...s.composition, tracks: [...s.composition.tracks, ...tracks] },
+        selectedId: tracks.length > 0 ? tracks[tracks.length - 1].layer.id : s.selectedId,
+        selectedPart: tracks.length > 0 ? null : s.selectedPart,
       }));
     },
 
@@ -792,6 +972,17 @@ export const useStudio = create<StudioState>((set, get) => {
       moveLayer(layerId, anchor, axis === "x" ? by : 0, axis === "y" ? by : 0);
       // One click is one undo step — there is no gesture still in flight to keep open.
       sealHistory();
+    },
+
+    /** Open or close a file's nodes in the stack and on the timeline. A view state,
+     *  so it is not snapshotted or undone. */
+    toggleGroup: (groupId) => {
+      const held = get().expandedGroups;
+      set({
+        expandedGroups: held.includes(groupId)
+          ? held.filter((g) => g !== groupId)
+          : [...held, groupId],
+      });
     },
 
     toggleLayerLock: (layerId) => {

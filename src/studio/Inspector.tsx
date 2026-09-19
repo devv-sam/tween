@@ -4,7 +4,7 @@ import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
-import { designSizeOf, useStudio } from "./store";
+import { designSizeOf, isSvgNode, useStudio } from "./store";
 import {
   DRIVERS,
   FPS_CHOICES,
@@ -341,7 +341,8 @@ function ElementSection({
       ? assets.find((a) => a.id === layer.source.value)
       : undefined;
   const size = designSizeOf(assets, layer);
-  const name = layerName(layer, asset?.name, index);
+  const node = asset && isSvgNode(asset) ? asset : null;
+  const name = layerName(layer, node ? node.label : asset?.name, index);
 
   /** What the element reads at the playhead, curves and modules included — so a field
    *  and the box on the canvas cannot disagree about how wide the thing is. */
@@ -375,6 +376,17 @@ function ElementSection({
         <CentreButton layerId={layer.id} axis="x" />
         <CentreButton layerId={layer.id} axis="y" />
       </div>
+
+      {/* Which node of the file this element is. Read-only: it says where you are in
+          a dissected drawing, and nothing about the drawing is edited from here. */}
+      {node ? (
+        <>
+          <p className={`${SUBLABEL} mb-1`}>node</p>
+          <div className={`${BOX} mb-2 justify-between`} title={node.label}>
+            <span className="min-w-0 truncate text-[11px] text-[#555]">{node.label}</span>
+          </div>
+        </>
+      ) : null}
 
       {size ? (
         <>

@@ -13,7 +13,7 @@ import { IMAGE_ACCEPT } from "./files";
 import { LockIcon, LockOpenIcon } from "./fields";
 import { alignmentFor, type Alignment, type Box } from "./guides";
 import { paintComposition } from "../render/paint";
-import { useStudio, type MoveAnchor } from "./store";
+import { isSvgNode, useStudio, type MoveAnchor } from "./store";
 import {
   CORNERS,
   HANDLES,
@@ -124,6 +124,21 @@ export function StudioCanvas() {
       assets.map((a) => [a.id, { width: a.naturalW, height: a.naturalH }]),
     );
     return (item: SceneItem): Size | undefined =>
+      item.source.kind === "image" ? byId.get(item.source.value) : undefined;
+  }, [assets]);
+
+  /**
+   * Where each element's picture actually is, for hit testing.
+   *
+   * Only SVG nodes have an answer: every node of one file is wrapped at the whole
+   * drawing's size, so without this a click would always land on whichever node paints
+   * last, however far its ink is from the pointer.
+   */
+  const inkOf = useMemo(() => {
+    const byId = new Map(
+      assets.flatMap((a) => (isSvgNode(a) && a.content ? [[a.id, a.content] as const] : [])),
+    );
+    return (item: SceneItem) =>
       item.source.kind === "image" ? byId.get(item.source.value) : undefined;
   }, [assets]);
 
@@ -468,7 +483,7 @@ export function StudioCanvas() {
       }
     }
 
-    const id = hitTest(scene, sizeOf, point);
+    const id = hitTest(scene, sizeOf, point, inkOf);
     if (!id) {
       if (sel) select(null);
       return;
