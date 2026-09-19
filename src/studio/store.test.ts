@@ -471,3 +471,76 @@ describe("removing the picked keyframes", () => {
     expect(keyframes().scale.stops).toHaveLength(3);
   });
 });
+
+describe("centring an element on the frame", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const centre = () => ({
+    x: state().frame.width / 2,
+    y: state().frame.height / 2,
+  });
+
+  it("puts the element on the vertical centre line without touching the other axis", () => {
+    const id = layer().id;
+    state().centreLayer(id, "x");
+    expect(layer().base.x).toBe(centre().x);
+    expect(layer().base.y).toBe(200);
+  });
+
+  it("puts the element on the horizontal centre line", () => {
+    const id = layer().id;
+    state().centreLayer(id, "y");
+    expect(layer().base).toMatchObject({ x: 200, y: centre().y });
+  });
+
+  it("lands dead centre when both are asked for", () => {
+    const id = layer().id;
+    state().centreLayer(id, "x");
+    state().centreLayer(id, "y");
+    expect({ x: layer().base.x, y: layer().base.y }).toEqual(centre());
+  });
+
+  it("is one undo step, because it was one click", () => {
+    const id = layer().id;
+    state().centreLayer(id, "x");
+    state().undo();
+    expect(layer().base.x).toBe(200);
+  });
+
+  it("does nothing at all to an element already on the line", () => {
+    const id = layer().id;
+    state().centreLayer(id, "x");
+    const steps = state().history.past.length;
+    state().centreLayer(id, "x");
+    expect(state().history.past).toHaveLength(steps);
+  });
+
+  it("writes the keyframe under the playhead rather than a base nothing reads", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    state().setT(0.5);
+    state().centreLayer(id, "x");
+
+    // The curve owns x, so centring lands in it — and leaves the base where it was.
+    const stops = state().composition.tracks[0].keyframes!.x.stops;
+    expect(stops.find((s) => s.t === 0.5)?.v).toBe(centre().x);
+    expect(layer().base.x).toBe(200);
+  });
+
+  it("centres where the element reads now, not where its base started", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    // Give x somewhere to travel, then centre from half way along it.
+    state().setKeyframeStops(id, "x", [
+      { t: 0, v: 0, ease: "linear" },
+      { t: 1, v: 400, ease: "linear" },
+    ]);
+    state().setT(0.5);
+    state().centreLayer(id, "x");
+
+    const at = state().composition.tracks[0].keyframes!.x.stops.find((s) => s.t === 0.5);
+    // Read at 200 mid-curve; centring moved it the rest of the way to the middle.
+    expect(at?.v).toBe(centre().x);
+  });
+});

@@ -365,10 +365,16 @@ function ElementSection({
   return (
     <section className={SECTION}>
       {/* The element's own name, so there is no doubt which one these fields belong
-          to once the composition's settings are sitting right above them. */}
-      <p className={`${LABEL} mb-2 truncate`} title={name}>
-        {name}
-      </p>
+          to once the composition's settings are sitting right above them. The two
+          centring buttons ride the same line: they act on the whole element rather
+          than on any one field under it, which is what the heading names. */}
+      <div className="mb-2 flex items-center gap-1">
+        <p className={`${LABEL} min-w-0 flex-1 truncate`} title={name}>
+          {name}
+        </p>
+        <CentreButton layerId={layer.id} axis="x" />
+        <CentreButton layerId={layer.id} axis="y" />
+      </div>
 
       {size ? (
         <>
@@ -397,6 +403,75 @@ function ElementSection({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Put the element on one of the frame's centre lines.
+ *
+ * The icon is the line it aligns to, so the vertical one centres across the width and
+ * the horizontal one centres down the height — the same two lines a drag already draws
+ * when it passes through the middle, reachable without the drag.
+ */
+function CentreButton({ layerId, axis }: { layerId: string; axis: "x" | "y" }) {
+  const label =
+    axis === "x" ? "align centre on the vertical axis" : "align centre on the horizontal axis";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
+      onClick={() => useStudio.getState().centreLayer(layerId, axis)}
+    >
+      {axis === "x" ? <AlignCentreVerticalIcon /> : <AlignCentreHorizontalIcon />}
+    </button>
+  );
+}
+
+/** Lucide `align-center-vertical` — boxes gathered onto a vertical line. */
+function AlignCentreVerticalIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 2v20" />
+      <path d="M8 10H4a2 2 0 0 1-2-2V6c0-1.1.9-2 2-2h4" />
+      <path d="M16 10h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4" />
+      <path d="M8 20H7a2 2 0 0 1-2-2v-2c0-1.1.9-2 2-2h1" />
+      <path d="M16 14h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1" />
+    </svg>
+  );
+}
+
+/** Lucide `align-center-horizontal` — boxes gathered onto a horizontal line. */
+function AlignCentreHorizontalIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12h20" />
+      <path d="M10 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
+      <path d="M10 8V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v4" />
+      <path d="M20 16v1a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-1" />
+      <path d="M14 8V7c0-1.1.9-2 2-2h2a2 2 0 0 1 2 2v1" />
+    </svg>
   );
 }
 

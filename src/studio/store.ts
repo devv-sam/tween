@@ -260,6 +260,8 @@ type StudioState = {
   moveAnchor: (layerId: string) => MoveAnchor | null;
   moveLayer: (layerId: string, anchor: MoveAnchor, dx: number, dy: number) => void;
   nudgeSelected: (dx: number, dy: number) => void;
+  /** Put the element on the composition's centre line, on one axis. */
+  centreLayer: (layerId: string, axis: "x" | "y") => void;
   deleteSelected: () => void;
   /** The picked keyframes, gone. A property whose last keyframe goes stops carrying
    *  motion — there is no curve left to be the one keyframe of. */
@@ -765,6 +767,31 @@ export const useStudio = create<StudioState>((set, get) => {
           )
         : wanted;
       moveLayer(selectedId, anchor, bounded.x - at.state.x, bounded.y - at.state.y);
+    },
+
+    /**
+     * Sit the element on the frame's centre line, across one axis.
+     *
+     * Measured and written the same way a drag is: from where the element reads at the
+     * playhead, through `moveLayer`, so an axis a keyframe or a module owns is moved in
+     * its own holder rather than being overwritten in a base nothing is reading. An
+     * element part-way through its animation centres the frame you can see.
+     */
+    centreLayer: (layerId, axis) => {
+      const { composition, frame, moveAnchor, moveLayer, t, sealHistory } = get();
+      const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (!track) return;
+      const anchor = moveAnchor(layerId);
+      if (!anchor) return;
+      const at =
+        renderState(composition, t).find((it) => it.id === layerId)?.state ??
+        track.layer.base;
+      const middle = axis === "x" ? frame.width / 2 : frame.height / 2;
+      const by = middle - at[axis];
+      if (by === 0) return;
+      moveLayer(layerId, anchor, axis === "x" ? by : 0, axis === "y" ? by : 0);
+      // One click is one undo step — there is no gesture still in flight to keep open.
+      sealHistory();
     },
 
     toggleLayerLock: (layerId) => {
