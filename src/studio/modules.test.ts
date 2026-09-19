@@ -23,6 +23,9 @@ import {
   positionSets,
   slideRange,
   trimRange,
+  fromDisplay,
+  propLabel,
+  toDisplay,
   type Range,
 } from "./modules";
 
@@ -99,7 +102,7 @@ describe("trackBlocks", () => {
   });
   const built: Track = {
     layer: { id: "a", source: { kind: "image", value: "x" }, base },
-    keyframes: { scale: kfSet(1), opacity: kfSet(0.5) },
+    keyframes: { scaleX: kfSet(1), opacity: kfSet(0.5) },
     modules: [
       {
         type: "keyframes",
@@ -111,7 +114,7 @@ describe("trackBlocks", () => {
 
   it("lists standalone sets before modules, matching evaluation order", () => {
     expect(trackBlocks(built).map((b) => [b.label, b.standalone])).toEqual([
-      ["scale", true],
+      ["width", true],
       ["opacity", true],
       ["x", false],
     ]);
@@ -119,7 +122,7 @@ describe("trackBlocks", () => {
 
   it("addresses each block by what selecting it means", () => {
     expect(trackBlocks(built).map((b) => b.part)).toEqual([
-      { kind: "keyframes", property: "scale" },
+      { kind: "keyframes", property: "scaleX" },
       { kind: "keyframes", property: "opacity" },
       { kind: "module", index: 0 },
     ]);
@@ -424,5 +427,51 @@ describe("position", () => {
     const fresh = newPosition(track(undefined));
     expect(fresh.x.stops.map((s) => s.v)).toEqual([base.x]);
     expect(fresh.y.stops.map((s) => s.v)).toEqual([base.y]);
+  });
+});
+
+describe("width and height as the panel reads them", () => {
+  const size = { width: 240, height: 160 };
+
+  it("names the axes after what they are, not after how they are stored", () => {
+    expect(propLabel("scaleX")).toBe("width");
+    expect(propLabel("scaleY")).toBe("height");
+    expect(propLabel("rotation")).toBe("rotation");
+  });
+
+  it("reads a stored factor as the pixels it covers", () => {
+    expect(toDisplay("scaleX", 2, size)).toBe(480);
+    expect(toDisplay("scaleY", 0.5, size)).toBe(80);
+  });
+
+  it("takes a typed width back to the factor the engine multiplies by", () => {
+    expect(fromDisplay("scaleX", 480, size)).toBe(2);
+    expect(fromDisplay("scaleY", 80, size)).toBe(0.5);
+  });
+
+  it("leaves every other property in its own units", () => {
+    expect(toDisplay("rotation", 90, size)).toBe(90);
+    expect(fromDisplay("opacity", 0.5, size)).toBe(0.5);
+    // A uniform module scale is a factor everywhere, with no element to measure it
+    // against — only an element's own axes become pixels.
+    expect(toDisplay("scale", 2, size)).toBe(2);
+  });
+
+  it("leaves the factor alone when there is nothing to measure against", () => {
+    expect(toDisplay("scaleX", 2, undefined)).toBe(2);
+    expect(fromDisplay("scaleX", 2, undefined)).toBe(2);
+    // No width reaches any pixels once the element has been flattened, so the
+    // division that has no answer is not attempted.
+    expect(fromDisplay("scaleX", 480, { width: 0, height: 0 })).toBe(480);
+  });
+
+  it("stacks the two axes as separate blocks, width before height", () => {
+    const flat = (v: number) => ({ stops: [{ t: 0, v }], range: [0, 1] as Range });
+    const track: Track = {
+      layer: { id: "a", source: { kind: "image", value: "x" }, base },
+      keyframes: { scaleY: flat(1), scaleX: flat(1) },
+      modules: [],
+    };
+    expect(trackBlocks(track).map((b) => b.label)).toEqual(["width", "height"]);
   });
 });

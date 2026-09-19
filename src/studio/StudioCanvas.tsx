@@ -10,6 +10,7 @@ import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
 import { IMAGE_ACCEPT } from "./files";
+import { LockIcon, LockOpenIcon } from "./fields";
 import { paintComposition } from "../render/paint";
 import { useStudio, type MoveAnchor } from "./store";
 import {
@@ -731,45 +732,6 @@ export function StudioCanvas() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-/** Lucide `lock` / `lock-open`, inlined so two glyphs don't pull in an icon package. */
-function LockIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
-
-function LockOpenIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-    </svg>
   );
 }
 

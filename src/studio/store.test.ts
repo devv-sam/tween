@@ -362,6 +362,22 @@ describe("a canvas gesture on a keyframed property", () => {
     expect(keyframes().scale.stops.map((st) => st.v)).toEqual([1, 3]);
   });
 
+  it("lands on the axis that is keyed, leaving the one that is not to its base", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "scaleX");
+    state().setT(0.5);
+    // A handle drag reports both axes; only width has a curve to write into.
+    state().captureTransform(id, { scaleX: 2, scaleY: 1.5 });
+
+    expect(keyframes().scaleX.stops).toEqual([
+      { t: 0, v: 1, ease: "linear" },
+      { t: 0.5, v: 2, ease: "linear" },
+    ]);
+    expect(keyframes().scaleY).toBeUndefined();
+    expect(layer().base.scaleX).toBe(1);
+    expect(layer().base.scaleY).toBe(1.5);
+  });
+
   it("writes the base of a property with no motion of its own", () => {
     const id = layer().id;
     state().addKeyframes(id, "scale");

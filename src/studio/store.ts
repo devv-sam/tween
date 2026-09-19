@@ -5,6 +5,7 @@ import type {
   Composition,
   Driver,
   KeyframeSet,
+  Layer,
   ModuleData,
   Track,
   Transform,
@@ -20,8 +21,10 @@ import {
   secondsToT,
   shiftStops,
   stopAtTime,
+  type DesignSize,
   type KeyProp,
   type KeyTarget,
+  type TrackProp,
   type PositionDriver,
   type Range,
   type SelectedPart,
@@ -56,6 +59,19 @@ export type MoveAnchor = {
    *  read live so every move in one drag writes the same keyframe, and dropping in
    *  the same place twice lands the same value. */
   seconds: number;
+};
+
+/**
+ * The element's pixel size before any transform — the asset as it came in. Only an
+ * image has one; a width in the panel is a factor against it.
+ */
+export const designSizeOf = (
+  assets: ImageAsset[],
+  layer: Layer,
+): DesignSize | undefined => {
+  if (layer.source.kind !== "image") return undefined;
+  const asset = assets.find((a) => a.id === layer.source.value);
+  return asset ? { width: asset.naturalW, height: asset.naturalH } : undefined;
 };
 
 export type ImageAsset = {
@@ -222,7 +238,11 @@ type StudioState = {
   renameLayer: (layerId: string, name: string) => void;
   addKeyframes: (layerId: string, target: KeyTarget) => void;
   removeKeyframes: (layerId: string, target: KeyTarget) => void;
-  setKeyframeStops: (layerId: string, prop: KeyProp, stops: KeyframeSet["stops"]) => void;
+  setKeyframeStops: (
+    layerId: string,
+    prop: KeyProp | TrackProp,
+    stops: KeyframeSet["stops"],
+  ) => void;
   /** Both axes of a combined position at once — they only ever move together. */
   setPositionStops: (
     layerId: string,
@@ -631,7 +651,7 @@ export const useStudio = create<StudioState>((set, get) => {
           const keyframes = { ...(tr.keyframes ?? {}) };
           /** True once the value is in a keyframe, so the caller knows to leave the
            *  base alone. */
-          const capture = (prop: KeyProp, v: number): boolean => {
+          const capture = (prop: KeyProp | TrackProp, v: number): boolean => {
             const set = keyframes[prop];
             if (!set) return false;
             const at = clamp(secondsToT(seconds, set.range, span), 0, 1);
@@ -643,12 +663,13 @@ export const useStudio = create<StudioState>((set, get) => {
             number,
           ][]) {
             if (typeof v !== "number") continue;
-            // `scale` is one keyframed property driving both axes, so scaleX speaks
-            // for the pair and scaleY has nowhere of its own to land.
+            // An axis keyed on its own takes the value; failing that, a uniform
+            // `scale` set speaks for both axes, and scaleY has nowhere of its own to
+            // land while it does.
             if (prop === "scaleX") {
-              if (!capture("scale", v)) base.scaleX = v;
+              if (!capture("scaleX", v) && !capture("scale", v)) base.scaleX = v;
             } else if (prop === "scaleY") {
-              if (!keyframes.scale) base.scaleY = v;
+              if (!capture("scaleY", v) && !keyframes.scale) base.scaleY = v;
             } else if (!capture(prop, v)) {
               base[prop] = v;
             }

@@ -1,7 +1,15 @@
 import type { KeyframeSet, Track } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
-import { PROPS, positionSets, stopSeconds, type KeyTarget } from "./modules";
+import {
+  TRACK_PROPS,
+  isSizeProp,
+  positionSets,
+  stopSeconds,
+  toDisplay,
+  type DesignSize,
+  type KeyTarget,
+} from "./modules";
 
 /**
  * One keyframe as the log reads it. Position is one entry holding both axes, because
@@ -59,7 +67,7 @@ export function keyframeLog(track: Track, duration: number): LogGroup[] {
   }
   // The same order the track blocks use, so a property sits where the eye last found
   // it rather than wherever it happened to be authored.
-  for (const prop of PROPS) {
+  for (const prop of TRACK_PROPS) {
     if (position && (prop === "x" || prop === "y")) continue;
     const set = track.keyframes?.[prop];
     if (!set) continue;
@@ -84,13 +92,21 @@ const trim = (v: number, precision = 2): string => String(Number(v.toFixed(preci
 
 /** What a keyframe reads as in its row: the property's own units, so a rotation says
  *  degrees and an opacity says percent without anyone having to know the storage. */
-export function formatValue(property: KeyTarget, v: LogValue): string {
+export function formatValue(
+  property: KeyTarget,
+  v: LogValue,
+  /** The element's size at scale 1, so a width reads as the pixels it covers rather
+   *  than the factor the transform stores. */
+  size?: DesignSize,
+): string {
   if (typeof v !== "number")
     return `${trim(v.x, 0)}, ${trim(v.y, 0)}`;
   if (property === "rotation") return `${trim(v)}°`;
   if (property === "scale") return `${trim(v)}×`;
   if (property === "opacity") return `${Math.round(v * 100)}%`;
-  return trim(v, 0);
+  // Measured against an element, a scale is a width; on its own it is still a factor.
+  if (isSizeProp(property) && !size) return `${trim(v)}×`;
+  return trim(toDisplay(property, v, size), 0);
 }
 
 export const formatSeconds = (t: number): string => `${trim(t)}s`;

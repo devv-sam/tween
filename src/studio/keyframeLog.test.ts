@@ -29,7 +29,7 @@ describe("keyframeLog", () => {
   it("carries the easing a keyframe is reached by, which the editor reads back", () => {
     const groups = keyframeLog(
       track({
-        scale: {
+        scaleX: {
           stops: [
             { t: 0, v: 1, ease: "linear" },
             { t: 1, v: 2, ease: "out" },
@@ -91,7 +91,7 @@ describe("keyframeLog", () => {
 
   it("times entries in the seconds the ruler is labelled with, inside the block", () => {
     const groups = keyframeLog(
-      track({ scale: { stops: stops([0, 1], [0.5, 1.4], [1, 2]), range: [0.25, 0.75] } }),
+      track({ scaleX: { stops: stops([0, 1], [0.5, 1.4], [1, 2]), range: [0.25, 0.75] } }),
       4,
     );
     expect(groups[0].entries.map((e) => e.t)).toEqual([1, 2, 3]);
@@ -117,6 +117,15 @@ describe("formatValue", () => {
     expect(formatValue("scale", 1.4)).toBe("1.4×");
     expect(formatValue("opacity", 0.8)).toBe("80%");
     expect(formatValue("x", 527)).toBe("527");
+  });
+
+  it("reads a size in the pixels it covers, given the element to measure", () => {
+    expect(formatValue("scaleX", 2, { width: 240, height: 160 })).toBe("480");
+    expect(formatValue("scaleY", 0.5, { width: 240, height: 160 })).toBe("80");
+  });
+
+  it("falls back to the bare factor when there is no element to measure against", () => {
+    expect(formatValue("scaleX", 1.5)).toBe("1.5×");
   });
 });
 

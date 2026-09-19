@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Driver, ModuleData, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
-import { useStudio } from "./store";
+import { designSizeOf, useStudio } from "./store";
 import {
   DRIVERS,
   FPS_CHOICES,
@@ -20,7 +20,10 @@ import {
   PROP_STEP,
   PROP_TEXT,
   baseValue,
+  fromDisplay,
   hasKeyframes,
+  layerName,
+  propLabel,
   moduleLabel,
   moduleProp,
   moduleStops,
@@ -30,6 +33,8 @@ import {
   secondsToT,
   stopAtTime,
   stopSeconds,
+  toDisplay,
+  type DesignSize,
   type KeyProp,
   type KeyTarget,
   type Range,
@@ -42,6 +47,8 @@ import {
   GHOST_BTN,
   INPUT,
   LABEL,
+  LockIcon,
+  LockOpenIcon,
   NumberField,
   SECTION,
   SUBLABEL,
@@ -58,7 +65,8 @@ import {
 export function Inspector() {
   const composition = useStudio((s) => s.composition);
   const selectedId = useStudio((s) => s.selectedId);
-  const track = composition.tracks.find((tr) => tr.layer.id === selectedId) ?? null;
+  const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
+  const track = index < 0 ? null : composition.tracks[index];
 
   return (
     <aside
@@ -69,7 +77,7 @@ export function Inspector() {
         {/* The composition is always there to edit, so it stays put and the element's
             own panel stacks under it rather than replacing it. */}
         <CompositionPanel />
-        {track ? <ElementPanel track={track} /> : null}
+        {track ? <ElementPanel track={track} index={index} /> : null}
       </div>
     </aside>
   );
@@ -217,7 +225,7 @@ function SelectField({
   );
 }
 
-function ElementPanel({ track }: { track: Track }) {
+function ElementPanel({ track, index }: { track: Track; index: number }) {
   const selectedPart = useStudio((s) => s.selectedPart);
   const { layer, modules } = track;
   const activeModule =
@@ -231,6 +239,10 @@ function ElementPanel({ track }: { track: Track }) {
 
   return (
     <>
+      {/* What the element is, before anything animates it. The transform below is
+          what happens to it; this is the thing being happened to. */}
+      <ElementSection track={track} index={index} activeKeyframes={activeKeyframes} />
+
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
       {/* The list of keyframes is on the timeline, under the element it belongs to.
@@ -268,11 +280,198 @@ function ElementPanel({ track }: { track: Track }) {
   );
 }
 
-/** The element's own transform, before any module runs. */
 /**
- * The element's base transform, with each field's keyframe button beside it.
- * Authoring motion belongs next to the value it animates rather than in a second
- * list of the same five properties.
+ * One property in the panel: its field, and the diamond that keys it. Motion is
+ * authored beside the value it moves rather than in a second list of the same
+ * properties, so every row that can be animated is built the same way.
+ */
+function KeyCell({
+  layerId,
+  target,
+  track,
+  activeKeyframes,
+  children,
+}: {
+  layerId: string;
+  target: KeyTarget;
+  track: Track;
+  activeKeyframes: KeyTarget | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-1">
+      <div className="min-w-0 flex-1">{children}</div>
+      <KeyframeButton
+        layerId={layerId}
+        target={target}
+        keyframed={hasKeyframes(track, target)}
+        selected={activeKeyframes === target}
+      />
+    </div>
+  );
+}
+
+/**
+ * The element itself: what it is called, how big it is, and how much of it shows.
+ *
+ * Size sits apart from the transform on purpose. Width and height are what the
+ * element *is* — the thing you drew — while position and rotation are what is being
+ * done to it. They were the same number until now only because the engine stores a
+ * size as a scale factor, which is an implementation detail and not a unit anyone
+ * thinks in. This section shows pixels, and the section below it shows motion.
+ *
+ * Both are keyable all the same: an element that stretches on one axis is motion the
+ * old uniform scale could not express.
+ */
+function ElementSection({
+  track,
+  index,
+  activeKeyframes,
+}: {
+  track: Track;
+  index: number;
+  activeKeyframes: KeyTarget | null;
+}) {
+  const assets = useStudio((s) => s.assets);
+  const composition = useStudio((s) => s.composition);
+  const t = useStudio((s) => s.t);
+  const { layer } = track;
+  const asset =
+    layer.source.kind === "image"
+      ? assets.find((a) => a.id === layer.source.value)
+      : undefined;
+  const size = designSizeOf(assets, layer);
+  const name = layerName(layer, asset?.name, index);
+
+  /** What the element reads at the playhead, curves and modules included — so a field
+   *  and the box on the canvas cannot disagree about how wide the thing is. */
+  const state = useMemo(
+    () =>
+      renderState(composition, t).find((it) => it.id === layer.id)?.state ?? layer.base,
+    [composition, t, layer],
+  );
+
+  const cell = (target: KeyTarget, field: ReactNode) => (
+    <KeyCell
+      layerId={layer.id}
+      target={target}
+      track={track}
+      activeKeyframes={activeKeyframes}
+    >
+      {field}
+    </KeyCell>
+  );
+
+  return (
+    <section className={SECTION}>
+      {/* The element's own name, so there is no doubt which one these fields belong
+          to once the composition's settings are sitting right above them. */}
+      <p className={`${LABEL} mb-2 truncate`} title={name}>
+        {name}
+      </p>
+
+      {size ? (
+        <>
+          <p className={`${SUBLABEL} mb-1`}>dimensions</p>
+          <div className="mb-2 flex items-center gap-1.5">
+            {cell("scaleX", <SizeField axis="scaleX" track={track} state={state} size={size} />)}
+            {cell("scaleY", <SizeField axis="scaleY" track={track} state={state} size={size} />)}
+            <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
+          </div>
+        </>
+      ) : null}
+
+      <p className={`${SUBLABEL} mb-1`}>opacity</p>
+      <div className="grid grid-cols-2 gap-x-1.5">
+        {cell(
+          "opacity",
+          <NumberField
+            label="o"
+            title="opacity"
+            value={layer.base.opacity}
+            step={PROP_STEP.opacity}
+            min={0}
+            max={1}
+            onChange={(v) => useStudio.getState().setLayerBase(layer.id, { opacity: v })}
+          />,
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One axis of the element's size, in pixels.
+ *
+ * The engine stores a scale factor, so the pixels are the factor times the asset's
+ * own size; typing a width divides back out. With the ratio locked the other axis
+ * follows by the same factor, which is the same rule a corner handle on the canvas
+ * obeys — one lock, two places to use it.
+ */
+function SizeField({
+  axis,
+  track,
+  state,
+  size,
+}: {
+  axis: "scaleX" | "scaleY";
+  track: Track;
+  state: Transform;
+  size: DesignSize;
+}) {
+  const other = axis === "scaleX" ? "scaleY" : "scaleX";
+  const locked = Boolean(track.layer.lockAspect);
+
+  const write = (px: number) => {
+    const next = fromDisplay(axis, px, size);
+    const patch: Partial<Transform> = { [axis]: next };
+    // A ratio is only a ratio while there is something to take it of: an element
+    // already flattened to nothing has no proportion left to keep.
+    if (locked && state[axis] !== 0) patch[other] = state[other] * (next / state[axis]);
+    useStudio.getState().captureTransform(track.layer.id, patch);
+  };
+
+  return (
+    <NumberField
+      label={axis === "scaleX" ? "w" : "h"}
+      title={axis === "scaleX" ? "width in pixels" : "height in pixels"}
+      value={toDisplay(axis, state[axis], size)}
+      step={PROP_STEP[axis]}
+      min={0}
+      precision={0}
+      onChange={write}
+    />
+  );
+}
+
+/** The aspect lock, the same one the canvas puts beside a selection. Either place
+ *  toggles it, and a resize from either place obeys it. */
+function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
+  const label = locked ? "unlock aspect ratio" : "lock aspect ratio";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={locked}
+      title={label}
+      className={`grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border ${
+        locked
+          ? "border-[#0d99ff] bg-[#e8f4ff] text-[#0d99ff]"
+          : "border-[#e0e0e0] text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+      }`}
+      onClick={() => useStudio.getState().toggleLayerLock(layerId)}
+    >
+      {locked ? <LockIcon size={13} /> : <LockOpenIcon size={13} />}
+    </button>
+  );
+}
+
+/**
+ * What is being done to the element: where it sits and which way it faces.
+ *
+ * Size and opacity used to live here too. They moved up to the element's own section
+ * — they describe the thing rather than the motion, and a panel that says so is a
+ * panel you can read without knowing which is which.
  */
 function BaseTransform({
   track,
@@ -285,20 +484,10 @@ function BaseTransform({
   const separate = Boolean(separatePosition);
   const set = (patch: Partial<Transform>) => useStudio.getState().setLayerBase(id, patch);
 
-  // One scale field for two axes: it drives scaleX and carries scaleY along at the
-  // ratio a non-uniform resize left behind.
-  const ratio = base.scaleX === 0 ? 1 : base.scaleY / base.scaleX;
-
   const cell = (target: KeyTarget, field: ReactNode) => (
-    <div className="flex min-w-0 flex-1 items-center gap-1">
-      <div className="min-w-0 flex-1">{field}</div>
-      <KeyframeButton
-        layerId={id}
-        target={target}
-        keyframed={hasKeyframes(track, target)}
-        selected={activeKeyframes === target}
-      />
-    </div>
+    <KeyCell layerId={id} target={target} track={track} activeKeyframes={activeKeyframes}>
+      {field}
+    </KeyCell>
   );
 
   const x = (join?: Join) => (
@@ -339,18 +528,9 @@ function BaseTransform({
         )}
         <SeparateButton layerId={id} separate={separate} />
       </div>
-      <div className="grid grid-cols-2 gap-x-1.5 gap-y-1">
-        {cell(
-          "scale",
-          <NumberField
-            label="s"
-            title="scale"
-            value={base.scaleX}
-            step={0.05}
-            min={0}
-            onChange={(v) => set({ scaleX: v, scaleY: v * ratio })}
-          />,
-        )}
+
+      <p className={`${SUBLABEL} mb-1`}>rotation</p>
+      <div className="grid grid-cols-2 gap-x-1.5">
         {cell(
           "rotation",
           <NumberField
@@ -358,18 +538,6 @@ function BaseTransform({
             title="rotation in degrees"
             value={base.rotation}
             onChange={(v) => set({ rotation: v })}
-          />,
-        )}
-        {cell(
-          "opacity",
-          <NumberField
-            label="o"
-            title="opacity"
-            value={base.opacity}
-            step={0.05}
-            min={0}
-            max={1}
-            onChange={(v) => set({ opacity: v })}
           />,
         )}
       </div>
@@ -676,7 +844,11 @@ function StopList({
 function KeyframeEditor({ track }: { track: Track }) {
   const duration = useStudio((s) => s.composition.duration);
   const selectedKeys = useStudio((s) => s.selectedKeys);
+  const assets = useStudio((s) => s.assets);
   const layerId = track.layer.id;
+  // A width keyframe is stored as a scale factor; the fields below read and write
+  // pixels, the same as the dimensions row does.
+  const size = designSizeOf(assets, track.layer);
 
   const [naming, setNaming] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -751,8 +923,9 @@ function KeyframeEditor({ track }: { track: Track }) {
   const setEntryValue = (entry: LogEntry, side: "from" | "to", axis: "x" | "y", v: number) => {
     const index = side === "to" ? entry.index : entry.index - 1;
     if (index < 0) return;
+    const stored = fromDisplay(entry.property, v, size);
     writeStops(entry.property, (stops, which) =>
-      which === axis ? patchStop(stops, index, { v }) : stops,
+      which === axis ? patchStop(stops, index, { v: stored }) : stops,
     );
   };
 
@@ -788,6 +961,7 @@ function KeyframeEditor({ track }: { track: Track }) {
       {one ? (
         <KeyframeFields
           entry={one}
+          size={size}
           last={stopsOf(one.property).length <= 1}
           onTime={(seconds) => setEntryTime(one, seconds)}
           onEase={(ease) => setEntryEase(one, ease)}
@@ -858,6 +1032,7 @@ function ModuleNameField({
  */
 function KeyframeFields({
   entry,
+  size,
   last,
   onTime,
   onEase,
@@ -865,6 +1040,8 @@ function KeyframeFields({
   onRemove,
 }: {
   entry: LogEntry;
+  /** The element at scale 1, so a size keyframe reads in pixels here too. */
+  size: DesignSize | undefined;
   /** The property's only keyframe, so removing it is removing the motion. */
   last: boolean;
   onTime: (seconds: number) => void;
@@ -873,7 +1050,8 @@ function KeyframeFields({
   onRemove: () => void;
 }) {
   const axes: ("x" | "y")[] = typeof entry.to === "number" ? ["x"] : ["x", "y"];
-  const at = (v: LogValue, axis: "x" | "y") => (typeof v === "number" ? v : v[axis]);
+  const at = (v: LogValue, axis: "x" | "y") =>
+    toDisplay(entry.property, typeof v === "number" ? v : v[axis], size);
 
   return (
     <div className="mt-2 flex flex-col gap-1.5">
@@ -882,7 +1060,7 @@ function KeyframeFields({
           <DiamondIcon filled />
         </span>
         <span className="min-w-0 flex-1 truncate text-[11px] capitalize text-[#111]">
-          {entry.property}
+          {propLabel(entry.property)}
         </span>
       </div>
 
@@ -947,7 +1125,7 @@ function KeyframeFields({
         aria-label="remove keyframe"
         title={
           last
-            ? `remove the only ${entry.property} keyframe — the property stops animating`
+            ? `remove the only ${propLabel(entry.property)} keyframe — the property stops animating`
             : "remove keyframe — backspace does the same"
         }
         className="self-end rounded px-1 text-[10px] text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"

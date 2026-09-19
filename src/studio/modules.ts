@@ -26,7 +26,7 @@ export type Range = [number, number];
 
 /**
  * Properties a keyframe module can drive. `scale` is the uniform one — it writes both
- * axes at once, so the studio never asks for scaleX and scaleY separately.
+ * axes at once, so a module can resize an element without naming an axis.
  */
 export const PROPS = ["x", "y", "scale", "rotation", "opacity"] as const;
 export type KeyProp = (typeof PROPS)[number];
@@ -35,11 +35,65 @@ export const isKeyProp = (v: string): v is KeyProp =>
   (PROPS as readonly string[]).includes(v);
 
 /**
+ * What an element can carry keyframes of its own on, in the order the inspector
+ * stacks them.
+ *
+ * The two axes are here rather than the uniform `scale` a module uses: width and
+ * height are separate in the panel, so stretching one without the other is something
+ * an author can actually key. A module still drives `scale` — it is describing a
+ * resize in the abstract, with no element in front of it to measure.
+ */
+export const TRACK_PROPS = [
+  "x",
+  "y",
+  "scaleX",
+  "scaleY",
+  "rotation",
+  "opacity",
+] as const;
+export type TrackProp = (typeof TRACK_PROPS)[number];
+
+/**
  * What a keyframe button, a block, or a stop editor can be pointed at. `position` is
  * the pair: x and y authored as one property, which is how an element is animated
  * until someone asks for the axes apart.
  */
-export type KeyTarget = KeyProp | "position";
+export type KeyTarget = KeyProp | TrackProp | "position";
+
+/**
+ * The element's own pixel size at scale 1 — the asset as it came in. A width is a
+ * scale factor against this, which is the only thing the engine stores; everything
+ * the author reads or types is the product.
+ */
+export type DesignSize = { width: number; height: number };
+
+/** The axis of the design size each scale property is measured against. */
+const SIZE_AXIS = { scaleX: "width", scaleY: "height" } as const;
+
+export const isSizeProp = (t: KeyTarget): t is "scaleX" | "scaleY" =>
+  t === "scaleX" || t === "scaleY";
+
+/**
+ * What a property is called where an author reads it. The engine thinks in scale
+ * factors because that is what a transform multiplies by; a panel saying `scaleX`
+ * when the canvas badge says `240 × 180` would be two names for one number.
+ */
+export const propLabel = (t: KeyTarget): string =>
+  t === "scaleX" ? "width" : t === "scaleY" ? "height" : t;
+
+/** A stored value as the panel shows it: pixels for a size, the value itself for
+ *  everything else. Without a size to measure against there is nothing to convert
+ *  to, so the factor stands. */
+export const toDisplay = (t: KeyTarget, v: number, size?: DesignSize): number =>
+  isSizeProp(t) && size ? v * size[SIZE_AXIS[t]] : v;
+
+/** The inverse, for a value typed into a field. A design size of zero has no scale
+ *  that reaches any width, so the factor is left alone rather than made infinite. */
+export const fromDisplay = (t: KeyTarget, v: number, size?: DesignSize): number => {
+  if (!isSizeProp(t) || !size) return v;
+  const against = size[SIZE_AXIS[t]];
+  return against > 0 ? v / against : v;
+};
 
 export const EASINGS: { value: Easing; label: string }[] = [
   { value: "linear", label: "linear" },
@@ -57,6 +111,8 @@ export const PROP_COLOR: Record<KeyTarget, string> = {
   x: "border-sky-300 bg-sky-100 text-sky-900",
   y: "border-teal-300 bg-teal-100 text-teal-900",
   scale: "border-violet-300 bg-violet-100 text-violet-900",
+  scaleX: "border-violet-300 bg-violet-100 text-violet-900",
+  scaleY: "border-fuchsia-300 bg-fuchsia-100 text-fuchsia-900",
   rotation: "border-amber-300 bg-amber-100 text-amber-900",
   opacity: "border-rose-300 bg-rose-100 text-rose-900",
 };
@@ -68,22 +124,27 @@ export const PROP_TEXT: Record<KeyTarget, string> = {
   x: "text-sky-500",
   y: "text-teal-500",
   scale: "text-violet-500",
+  scaleX: "text-violet-500",
+  scaleY: "text-fuchsia-500",
   rotation: "text-amber-500",
   opacity: "text-rose-500",
 };
 
-/** Sensible input steps per property — degrees move faster than opacity. */
+/** Sensible input steps per property — degrees move faster than opacity, and a width
+ *  reads in pixels, so it steps by one of them rather than by a scale factor. */
 export const PROP_STEP: Record<KeyTarget, number> = {
   position: 1,
   x: 1,
   y: 1,
   scale: 0.05,
+  scaleX: 1,
+  scaleY: 1,
   rotation: 1,
   opacity: 0.05,
 };
 
 /** The base transform's current reading for a property. */
-export function baseValue(base: Transform, prop: KeyProp): number {
+export function baseValue(base: Transform, prop: KeyProp | TrackProp): number {
   return prop === "scale" ? base.scaleX : base[prop];
 }
 
@@ -96,11 +157,14 @@ export function defaultStops(v: number): Stop[] {
 
 /** A fresh standalone set: flat on the element's current value, spanning the whole
  *  composition until its block is trimmed. */
-export function newKeyframes(prop: KeyProp, base: Transform): KeyframeSet {
+export function newKeyframes(prop: KeyProp | TrackProp, base: Transform): KeyframeSet {
   return { stops: defaultStops(baseValue(base, prop)), range: [0, 1] };
 }
 
-export const keyframesFor = (track: Track, prop: KeyProp): KeyframeSet | undefined =>
+export const keyframesFor = (
+  track: Track,
+  prop: KeyProp | TrackProp,
+): KeyframeSet | undefined =>
   track.keyframes?.[prop];
 
 /** Whether a target already carries motion — for position, both axes have to. */
@@ -226,7 +290,7 @@ export function trackBlocks(track: Track): BlockView[] {
   const block = (target: KeyTarget, set: KeyframeSet): BlockView => ({
     part: { kind: "keyframes", property: target },
     prop: target,
-    label: target,
+    label: propLabel(target),
     range: set.range,
     stops: set.stops,
     standalone: true,
@@ -236,7 +300,7 @@ export function trackBlocks(track: Track): BlockView[] {
   // inspector; its two axes draw one block until they are separated.
   const position = positionSets(track);
   if (position) out.push(block("position", position.x));
-  for (const prop of PROPS) {
+  for (const prop of TRACK_PROPS) {
     if (position && (prop === "x" || prop === "y")) continue;
     const set = track.keyframes?.[prop];
     if (set) out.push(block(prop, set));
