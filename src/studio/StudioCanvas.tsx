@@ -209,9 +209,19 @@ export function StudioCanvas() {
       boxes.push({ minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY });
       states.push(item.state);
     }
-    // Mid-gesture the box is the one the gesture started from, so it does not chase
-    // the elements it is moving.
-    const box = groupDrag ? groupDrag.box : unionBox(boxes);
+    /**
+     * What is drawn is the union of what is picked, including while it is being
+     * stretched — the box has to follow the elements, or a resize leaves the handles
+     * behind the thing they are resizing.
+     *
+     * A turn is the exception. The elements keep their upright bounds as they swing,
+     * so their union would swell and shrink around them rather than turning; there
+     * the box holds the shape it started as and turns with the pointer instead.
+     *
+     * Neither is what the gesture measures against. That is `groupDrag.box`, taken
+     * once at the start, so the drag cannot compound against its own result.
+     */
+    const box = groupDrag?.mode === "rotate" ? groupDrag.box : unionBox(boxes);
     if (!box) return null;
     const centre = boxCentre(box);
     return {
