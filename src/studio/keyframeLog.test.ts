@@ -32,14 +32,14 @@ describe("keyframeLog", () => {
         scale: {
           stops: [
             { t: 0, v: 1, ease: "linear" },
-            { t: 1, v: 2, ease: "easeOutCubic" },
+            { t: 1, v: 2, ease: "out" },
           ],
           range: [0, 1],
         },
       }),
       4,
     );
-    expect(groups[0].entries.map((e) => e.ease)).toEqual(["linear", "easeOutCubic"]);
+    expect(groups[0].entries.map((e) => e.ease)).toEqual(["linear", "out"]);
   });
 
   it("reads x and y as one position entry per stop", () => {
