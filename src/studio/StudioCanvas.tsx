@@ -65,7 +65,34 @@ type Drag = {
   /** Cursor orientation for the region grabbed, carried so it turns with the element. */
   cursorAngle: number;
   lockAspect: boolean;
+  /**
+   * Every picked element's starting hold, when the drag began on one of several.
+   * Null for a plain single-element move, which keeps its own anchor above.
+   */
+  selection: { id: string; anchor: MoveAnchor }[] | null;
 };
+
+/**
+ * A rectangle being drawn over empty canvas to gather up what it touches. Screen
+ * space, because that is where it is drawn and where the pointer is.
+ */
+type Marquee = { pointerId: number; from: Point; to: Point };
+
+/** Axis-aligned bounds of an element on the frame, at the playhead. */
+type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+const boundsOf = (state: Transform, size: Size): Bounds => {
+  const half = boundsHalf(state, size);
+  return {
+    minX: state.x - half.x,
+    minY: state.y - half.y,
+    maxX: state.x + half.x,
+    maxY: state.y + half.y,
+  };
+};
+
+const overlaps = (a: Bounds, b: Bounds): boolean =>
+  a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
 
 const centreOf = (state: Transform): Point => ({ x: state.x, y: state.y });
 
@@ -100,6 +127,7 @@ export function StudioCanvas() {
   const viewport = useStudio((s) => s.viewport);
   const view = useStudio((s) => s.view);
   const selectedId = useStudio((s) => s.selectedId);
+  const selectedIds = useStudio((s) => s.selectedIds);
   const dpr = useDevicePixelRatio();
   const [imagesReady, setImagesReady] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -110,6 +138,8 @@ export function StudioCanvas() {
   // What the element in flight has lined up with. Chrome only — it is drawn over the
   // render, never into it, and it is dropped the moment the pointer comes up.
   const [alignment, setAlignment] = useState<Alignment | null>(null);
+  // The rectangle being dragged over empty canvas, while it is being dragged.
+  const [marquee, setMarquee] = useState<Marquee | null>(null);
 
   const origin = frameOrigin(viewport, frame, view);
   const size = frameSize(frame, view.scale);
@@ -126,6 +156,33 @@ export function StudioCanvas() {
     return (item: SceneItem): Size | undefined =>
       item.source.kind === "image" ? byId.get(item.source.value) : undefined;
   }, [assets]);
+
+  /**
+   * The box around everything picked, when more than one thing is.
+   *
+   * It is the union of what is picked and nothing more — no handles, because there is
+   * nothing yet that resizes a selection, and a handle that did nothing would be a
+   * promise the studio does not keep.
+   */
+  const group = useMemo(() => {
+    if (selectedIds.length < 2) return null;
+    const boxes: Bounds[] = [];
+    for (const id of selectedIds) {
+      const item = scene.find((it) => it.id === id);
+      const size = item && sizeOf(item);
+      if (item && size) boxes.push(boundsOf(item.state, size));
+    }
+    if (boxes.length === 0) return null;
+    const box = {
+      minX: Math.min(...boxes.map((b) => b.minX)),
+      minY: Math.min(...boxes.map((b) => b.minY)),
+      maxX: Math.max(...boxes.map((b) => b.maxX)),
+      maxY: Math.max(...boxes.map((b) => b.maxY)),
+    };
+    const a = compositionToScreen({ x: box.minX, y: box.minY }, viewport, frame, view);
+    const b = compositionToScreen({ x: box.maxX, y: box.maxY }, viewport, frame, view);
+    return { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y };
+  }, [selectedIds, scene, sizeOf, viewport, frame, view]);
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -403,8 +460,6 @@ export function StudioCanvas() {
     if (e.button !== 0) return;
     const screen = screenAt(e);
     const point = screenToComposition(screen, viewport, frame, view);
-    const { selectedId: sel, select } = useStudio.getState();
-
     const begin = (
       item: SceneItem,
       itemSize: Size,
@@ -430,6 +485,11 @@ export function StudioCanvas() {
         startAngle: angleTo(centreOf(item.state), point),
         cursorAngle: near ? regionAngle(item.state, itemSize, near) : 0,
         lockAspect: Boolean(track?.layer.lockAspect),
+        // Several picked means the drag moves all of them, each from its own hold.
+        selection:
+          mode === "move" && useStudio.getState().selectedIds.length > 1
+            ? useStudio.getState().selectionAnchors()
+            : null,
       };
       // Capture keeps the drag alive past the viewport edge. If the pointer is
       // already gone the drag would strand, so drop it rather than leave it stuck.
@@ -468,12 +528,33 @@ export function StudioCanvas() {
       }
     }
 
+    const store = useStudio.getState();
+    const picked = store.selectedIds;
     const id = hitTest(scene, sizeOf, point);
+
+    // Nothing under the pointer: this is a rectangle being drawn, not a move. The
+    // selection is left alone until the release says what the rectangle caught — a
+    // plain click ends up catching nothing, which clears it.
     if (!id) {
-      if (sel) select(null);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        return;
+      }
+      setMarquee({ pointerId: e.pointerId, from: screen, to: screen });
       return;
     }
-    if (id !== sel) select(id);
+
+    if (e.shiftKey) {
+      // Shift adds, or takes back out. Either way nothing is dragged: the gesture was
+      // about the selection, not about moving what is in it.
+      store.toggleSelectedId(id);
+      return;
+    }
+    // An element already in the selection keeps the selection — otherwise starting to
+    // drag three things would throw two of them away before the drag began.
+    if (!picked.includes(id)) store.setSelectedIds([id]);
+
     const item = scene.find((it) => it.id === id);
     const itemSize = item && sizeOf(item);
     if (!item || !itemSize) return;
@@ -485,6 +566,11 @@ export function StudioCanvas() {
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const screen = screenAt(e);
     const drag = dragRef.current;
+
+    if (marquee && marquee.pointerId === e.pointerId) {
+      setMarquee({ ...marquee, to: screen });
+      return;
+    }
 
     if (!drag) {
       if (!selected) {
@@ -570,15 +656,13 @@ export function StudioCanvas() {
         half,
         frame,
       );
-      const { moveLayer } = useStudio.getState();
-      if (drag.anchor) {
-        moveLayer(
-          drag.id,
-          drag.anchor,
-          at.x - drag.startRendered.x,
-          at.y - drag.startRendered.y,
-        );
-      }
+      const store = useStudio.getState();
+      const dx = at.x - drag.startRendered.x;
+      const dy = at.y - drag.startRendered.y;
+      // Several picked: the whole selection takes the same step, agreed across all of
+      // them so the one nearest an edge decides how far everyone gets to go.
+      if (drag.selection) store.moveSelection(drag.selection, dx, dy);
+      else if (drag.anchor) store.moveLayer(drag.id, drag.anchor, dx, dy);
       return;
     }
 
@@ -630,7 +714,38 @@ export function StudioCanvas() {
     void useStudio.getState().detachPart(id, point);
   };
 
+  /**
+   * What the rectangle caught: everything it touches, as the elements read at the
+   * playhead. Bounds are the ones on the frame right now, so a part-way-through
+   * animation is gathered where it looks like it is.
+   */
+  const closeMarquee = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!marquee || marquee.pointerId !== e.pointerId) return false;
+    setMarquee(null);
+    if (e.currentTarget.hasPointerCapture(marquee.pointerId)) {
+      e.currentTarget.releasePointerCapture(marquee.pointerId);
+    }
+    const a = screenToComposition(marquee.from, viewport, frame, view);
+    const b = screenToComposition(marquee.to, viewport, frame, view);
+    const over: Bounds = {
+      minX: Math.min(a.x, b.x),
+      minY: Math.min(a.y, b.y),
+      maxX: Math.max(a.x, b.x),
+      maxY: Math.max(a.y, b.y),
+    };
+    const caught: string[] = [];
+    for (const item of scene) {
+      const size = sizeOf(item);
+      if (size && overlaps(boundsOf(item.state, size), over)) caught.push(item.id);
+    }
+    // A rectangle that caught nothing is how you let go of everything — which is also
+    // what a plain click on empty canvas is, being a rectangle of no size.
+    useStudio.getState().setSelectedIds(caught);
+    return true;
+  };
+
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (closeMarquee(e)) return;
     const drag = dragRef.current;
     if (!drag) return;
     dragRef.current = null;
@@ -762,6 +877,34 @@ export function StudioCanvas() {
             </div>
           ))}
         </>
+      ) : null}
+      {/* Everything picked, boxed as one. Chrome over the render, like the guides —
+          the exporter paints from the composition and has never heard of it. */}
+      {group ? (
+        <div
+          className="pointer-events-none absolute z-[2] border border-[#0d99ff]"
+          aria-hidden="true"
+          style={{
+            transform: `translate(${group.x}px, ${group.y}px)`,
+            width: group.width,
+            height: group.height,
+          }}
+        />
+      ) : null}
+      {/* The rectangle being drawn, while it is being drawn. */}
+      {marquee ? (
+        <div
+          className="pointer-events-none absolute z-[3] border border-[#0d99ff] bg-[#0d99ff]/10"
+          aria-hidden="true"
+          style={{
+            transform: `translate(${Math.min(marquee.from.x, marquee.to.x)}px, ${Math.min(
+              marquee.from.y,
+              marquee.to.y,
+            )}px)`,
+            width: Math.abs(marquee.to.x - marquee.from.x),
+            height: Math.abs(marquee.to.y - marquee.from.y),
+          }}
+        />
       ) : null}
       {selected && chrome ? (
         <>

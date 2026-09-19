@@ -65,6 +65,7 @@ import {
 export function Inspector() {
   const composition = useStudio((s) => s.composition);
   const selectedId = useStudio((s) => s.selectedId);
+  const selectedIds = useStudio((s) => s.selectedIds);
   const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
   const track = index < 0 ? null : composition.tracks[index];
 
@@ -77,7 +78,11 @@ export function Inspector() {
         {/* The composition is always there to edit, so it stays put and the element's
             own panel stacks under it rather than replacing it. */}
         <CompositionPanel />
+        {/* One element opens its own panel; several open the little that can honestly
+            be said about several at once. `selectedId` is null while more than one is
+            picked, so the two are never both on screen. */}
         {track ? <ElementPanel track={track} index={index} /> : null}
+        {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
       </div>
     </aside>
   );
@@ -277,6 +282,47 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       ) : null}
 
     </>
+  );
+}
+
+/**
+ * What can be said about several elements at once.
+ *
+ * Not much, on purpose. There is no shared position, because moving several things is
+ * a drag on the canvas and a pair of numbers would have to lie about where the group
+ * is. There is no keyframe log, because a keyframe belongs to one element's curve.
+ *
+ * What is left is opacity, and it is a dial rather than a value: the field reads zero
+ * and means "everything, by this much". Three elements at 1, 0.5 and 0.8 have no
+ * shared opacity to show, and showing one of them — or their average — would be
+ * claiming a value the selection does not have.
+ */
+function SelectionPanel({ ids }: { ids: string[] }) {
+  // Reset to zero whenever the selection changes: the dial describes a nudge to what
+  // is picked now, and carrying the last one over would misdescribe it.
+  const [by, setBy] = useState(0);
+  const key = ids.join(",");
+  useEffect(() => setBy(0), [key]);
+
+  return (
+    <section className={SECTION}>
+      <p className={`${LABEL} mb-2`}>{ids.length} elements selected</p>
+      <p className={`${SUBLABEL} mb-1`}>opacity</p>
+      <div className="grid grid-cols-2 gap-x-1.5">
+        <NumberField
+          label="±"
+          title="shift every selected element's opacity by this much"
+          value={by}
+          step={PROP_STEP.opacity}
+          min={-1}
+          max={1}
+          onChange={(v) => {
+            setBy(v);
+            useStudio.getState().nudgeOpacity(ids, v - by);
+          }}
+        />
+      </div>
+    </section>
   );
 }
 

@@ -59,7 +59,7 @@ export function Timeline() {
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);
   const expanded = useStudio((s) => s.expandedTracks);
-  const selectedId = useStudio((s) => s.selectedId);
+  const selectedIds = useStudio((s) => s.selectedIds);
   const driver = composition.driver.kind;
 
   const areaRef = useRef<HTMLDivElement>(null);
@@ -276,7 +276,7 @@ export function Timeline() {
                 given={row.given}
                 blocks={row.blocks.length}
                 open={row.open}
-                selected={row.id === selectedId}
+                selected={selectedIds.includes(row.id)}
               />
               {row.open
                 ? row.blocks.map((block) => (
@@ -334,7 +334,7 @@ export function Timeline() {
                     what it has is the rows underneath. */}
                 <div
                   className={`relative border-b border-[#f0f0f0] ${
-                    row.id === selectedId ? "bg-[#eef4fb]" : "bg-[#fafafa]"
+                    selectedIds.includes(row.id) ? "bg-[#eef4fb]" : "bg-[#fafafa]"
                   }`}
                   style={{ height: TRACK_HEIGHT }}
                 />
@@ -449,7 +449,13 @@ function TrackLabel({
           type="button"
           className="timeline-track-name"
           aria-pressed={selected}
-          onClick={() => useStudio.getState().select(layerId)}
+          // Shift adds or takes back out, the same as it does on the canvas: the
+          // gutter and the frame are two views of one selection.
+          onClick={(e) => {
+            const store = useStudio.getState();
+            if (e.shiftKey) store.toggleSelectedId(layerId);
+            else store.setSelectedIds([layerId]);
+          }}
         >
           {name}
         </button>
