@@ -210,6 +210,7 @@ body {
 }
 
 .timeline-track-label {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -254,6 +255,7 @@ body {
 /* A property under its element: the name, whether there is a keyframe under the
    playhead, and what the property reads there. */
 .timeline-property-label {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -311,6 +313,73 @@ body {
 
 .timeline-property-label.is-selected .timeline-property-name {
   color: #111;
+}
+
+/* Rows being pointed at somewhere else, because they are running the curve under the
+   pointer. Quieter than a selection: nothing has been picked, this is only the strip
+   answering "what else moves with this?". */
+.timeline-property-label.is-linked-hot {
+  background: #eef0ff;
+}
+
+.timeline-property-label.is-linked-hot .timeline-link {
+  opacity: 1;
+}
+
+/* The bracket tying elements that run the same motion. Flush against the panel edge,
+   inside the twisty's column but clear of it, so the names stay in one line down the
+   gutter however many families there are. */
+.timeline-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: #a5b4fc;
+  pointer-events: none;
+}
+
+/* Starts and stops at the middle of the rows on the ends, so the bracket holds its
+   rows rather than running past them. */
+.timeline-rail.is-top {
+  top: 50%;
+}
+
+.timeline-rail.is-bottom {
+  bottom: 50%;
+}
+
+/* Nothing adjacent to run to: the element's partners are further down the strip. */
+.timeline-rail.is-only {
+  top: calc(50% - 3px);
+  bottom: calc(50% - 3px);
+}
+
+/* The link mark on a property row, in that property's own colour. */
+.timeline-link {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.timeline-link:hover {
+  background: #f0f0f0;
+  opacity: 1;
+}
+
+.timeline-link:focus-visible {
+  outline: 1px solid #0d99ff;
+  outline-offset: 1px;
 }
 
 
@@ -528,47 +597,9 @@ body {
   pointer-events: none;
 }
 
-.studio-empty {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  pointer-events: auto;
-}
-
-.studio-empty p {
-  margin: 0;
-  color: #b0b0b0;
-  font-size: 12px;
-}
-
-.studio-empty-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 4px;
-  background: #111;
-  color: #fff;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.studio-empty-btn:focus-visible {
-  outline: 1px solid #111;
-  outline-offset: 3px;
-}
-
-/* Visually hidden file input, clicked by the drawer's import button and the
-   canvas empty state. Kept off-screen rather than `display: none`, which would
-   drop it from the tab order. */
+/* Visually hidden file input, clicked by the drawer's import button. Kept
+   off-screen rather than `display: none`, which would drop it from the tab
+   order. */
 .elements-file {
   position: absolute;
   width: 1px;

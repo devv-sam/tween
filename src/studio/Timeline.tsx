@@ -40,6 +40,14 @@ import {
   type Range,
 } from "./modules";
 import {
+  linkedFamilies,
+  linkedMotion,
+  motionKey,
+  railCaps,
+  type LinkGroup,
+  type RailCap,
+} from "./linked";
+import {
   PROPERTY_HEIGHT,
   RULER_HEIGHT,
   TRACK_HEIGHT,
@@ -73,6 +81,14 @@ export function Timeline() {
   } | null>(null);
   const [width, setWidth] = useState(0);
   const [unit, setUnit] = useState<Unit>("s");
+  // The set of curves being pointed at, by the key they all share. Held here rather
+  // than per row, because the point of it is to light up the rows somewhere else.
+  const [hotLink, setHotLink] = useState<string | null>(null);
+  const enterLink = (key: string) => setHotLink(key);
+  // Only the row that lit it puts it out. Moving from a gutter row onto its own lane
+  // fires the leave after the enter, and unguarded that would blink the set off.
+  const leaveLink = (key: string) =>
+    setHotLink((lit) => (lit === key ? null : lit));
 
   const { duration } = composition;
 
@@ -223,6 +239,27 @@ export function Timeline() {
     };
   });
 
+  // Which curves are running in lockstep, read back off the composition every render
+  // rather than recorded when they were made. Cheap enough at this size, and it can
+  // never be out of date with what the rows are actually drawing.
+  const groups = linkedMotion(rows);
+  const groupByKey = new Map(groups.map((g) => [g.key, g]));
+  const families = linkedFamilies(groups);
+  const linkOf = (block: BlockView): LinkGroup | undefined =>
+    groupByKey.get(motionKey(block));
+
+  /** The gutter, flattened: one entry per row it draws, in the order it draws them,
+   *  so the rail can see which rows sit next to which. An entry with no block is the
+   *  element's own row. */
+  const gutter = rows.flatMap((row) => [
+    { row, block: null as BlockView | null },
+    ...(row.open ? row.blocks.map((block) => ({ row, block })) : []),
+  ]);
+  const caps = railCaps(
+    gutter.map((it) => ({ id: it.row.id })),
+    families,
+  );
+
   return (
     <div className="timeline" aria-label="timeline">
       <div className="timeline-transport">
@@ -268,29 +305,33 @@ export function Timeline() {
       <div className="timeline-body">
         <div className="timeline-gutter">
           <div className="timeline-gutter-head" style={{ height: RULER_HEIGHT }} />
-          {rows.map((row) => (
-            <Fragment key={row.id}>
+          {gutter.map((item, i) =>
+            item.block === null ? (
               <TrackLabel
-                layerId={row.id}
-                name={row.name}
-                given={row.given}
-                blocks={row.blocks.length}
-                open={row.open}
-                selected={selectedIds.includes(row.id)}
+                key={item.row.id}
+                layerId={item.row.id}
+                name={item.row.name}
+                given={item.row.given}
+                blocks={item.row.blocks.length}
+                open={item.row.open}
+                selected={selectedIds.includes(item.row.id)}
+                rail={caps[i]}
               />
-              {row.open
-                ? row.blocks.map((block) => (
-                    <PropertyLabel
-                      key={blockKey(block)}
-                      layerId={row.id}
-                      block={block}
-                      state={states.get(row.id)}
-                      size={row.size}
-                    />
-                  ))
-                : null}
-            </Fragment>
-          ))}
+            ) : (
+              <PropertyLabel
+                key={`${item.row.id}:${blockKey(item.block)}`}
+                layerId={item.row.id}
+                block={item.block}
+                state={states.get(item.row.id)}
+                size={item.row.size}
+                rail={caps[i]}
+                link={linkOf(item.block)}
+                hot={hotLink === motionKey(item.block)}
+                onEnter={enterLink}
+                onLeave={leaveLink}
+              />
+            ),
+          )}
         </div>
 
         <div className="timeline-area" ref={areaRef}>
@@ -317,9 +358,10 @@ export function Timeline() {
             <button
               type="button"
               className="duration-handle"
-              title="drag to set duration"
-              aria-label={`Duration ${clampDuration(duration).toFixed(1)}s, drag to set duration`}
+              title="drag to set duration, double-click to trim"
+              aria-label={`Duration ${clampDuration(duration).toFixed(1)}s, drag to set duration, double-click to trim to the last keyframe`}
               onPointerDown={onDurationDown}
+              onDoubleClick={() => useStudio.getState().trimDurationToContent()}
               onPointerMove={onDurationMove}
               onPointerUp={onDurationUp}
               onPointerCancel={onDurationUp}
@@ -342,8 +384,14 @@ export function Timeline() {
                   ? row.blocks.map((block) => (
                       <div
                         key={blockKey(block)}
-                        className="relative border-b border-[#f0f0f0] bg-white"
+                        className={`relative border-b border-[#f0f0f0] ${
+                          hotLink === motionKey(block) ? "bg-[#eef0ff]" : "bg-white"
+                        }`}
                         style={{ height: PROPERTY_HEIGHT }}
+                        // Pointing at one bar says what it runs with, before anything
+                        // is touched — and touching it is what breaks the link.
+                        onPointerEnter={() => enterLink(motionKey(block))}
+                        onPointerLeave={() => leaveLink(motionKey(block))}
                       >
                         {block.standalone ? (
                           <KeyframeTrack layerId={row.id} block={block} width={width} />
@@ -403,6 +451,7 @@ function TrackLabel({
   blocks,
   open,
   selected,
+  rail,
 }: {
   layerId: string;
   name: string;
@@ -410,6 +459,9 @@ function TrackLabel({
   blocks: number;
   open: boolean;
   selected: boolean;
+  /** Where this row sits in the run of elements it runs alongside, or null when it
+   *  runs alone. */
+  rail: RailCap | null;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
@@ -428,6 +480,7 @@ function TrackLabel({
       title={draft === null ? `${name} — double-click to rename` : undefined}
       onDoubleClick={() => setDraft(given)}
     >
+      <Rail cap={rail} />
       {/* The twisty keeps its slot whether or not there is anything under it, so the
           names stay in one column down the gutter. */}
       {blocks > 0 ? (
@@ -494,6 +547,11 @@ function PropertyLabel({
   block,
   state,
   size,
+  rail,
+  link,
+  hot,
+  onEnter,
+  onLeave,
 }: {
   layerId: string;
   block: BlockView;
@@ -501,6 +559,13 @@ function PropertyLabel({
   /** The element at scale 1 — what turns a stored width factor into the pixels the
    *  row shows, so this number and the inspector's agree. */
   size: DesignSize | undefined;
+  rail: RailCap | null;
+  /** The other elements running this same curve, when there are any. */
+  link: LinkGroup | undefined;
+  /** This curve's set is the one being pointed at, here or on another row. */
+  hot: boolean;
+  onEnter: (key: string) => void;
+  onLeave: (key: string) => void;
 }) {
   const selected = useStudio(
     (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
@@ -544,9 +609,14 @@ function PropertyLabel({
 
   return (
     <div
-      className={`timeline-property-label${selected ? " is-selected" : ""}`}
+      className={`timeline-property-label${selected ? " is-selected" : ""}${
+        hot ? " is-linked-hot" : ""
+      }`}
       style={{ height: PROPERTY_HEIGHT }}
+      onPointerEnter={() => onEnter(motionKey(block))}
+      onPointerLeave={() => onLeave(motionKey(block))}
     >
+      <Rail cap={rail} />
       <button
         type="button"
         className="timeline-property-name"
@@ -558,6 +628,7 @@ function PropertyLabel({
       >
         {block.label}
       </button>
+      {link ? <LinkMark group={link} /> : null}
       {/* A module is a packaged curve, not a property with a value to key here. */}
       {block.standalone ? (
         <div className="flex min-w-0 shrink-0 items-center gap-0.5">
@@ -578,6 +649,57 @@ function PropertyLabel({
         <span className="ml-auto pr-1 text-[10px] text-[#b0b0b0]">module</span>
       )}
     </div>
+  );
+}
+
+/**
+ * The bracket down the left of the gutter, tying together the elements that are
+ * running the same motion.
+ *
+ * Only the ends are shaped: it starts at the middle of the first row it covers and
+ * stops at the middle of the last, so it reads as something holding those rows
+ * together rather than as a border one of them happens to have. An element whose
+ * partners are elsewhere on the timeline gets the stub — there is nothing next to it
+ * to run a line to, and a line to a row that is not in the family would be a lie.
+ */
+function Rail({ cap }: { cap: RailCap | null }) {
+  if (cap === null) return null;
+  return <span className={`timeline-rail is-${cap}`} aria-hidden="true" />;
+}
+
+/**
+ * The mark on a property that says this curve is not the only one of its kind.
+ *
+ * In the property's own colour, so which thing is in lockstep is readable without
+ * opening anything, and clicking it picks the whole set — which is how you get back
+ * to authoring them together after going in to tweak one.
+ */
+function LinkMark({ group }: { group: LinkGroup }) {
+  const others = group.members.length - 1;
+  return (
+    <button
+      type="button"
+      className={`timeline-link ${PROP_TEXT[group.property]}`}
+      title={`runs with ${others} other element${others === 1 ? "" : "s"} — click to pick them all`}
+      aria-label={`${group.property} runs the same on ${group.members.length} elements, pick them all`}
+      onClick={() => useStudio.getState().setSelectedIds(group.members)}
+    >
+      <LinkIcon />
+    </button>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        d="M4.9 7.1 7.1 4.9M5 2.6l.9-.9a2.3 2.3 0 0 1 3.3 3.3l-.9.9M7 9.4l-.9.9a2.3 2.3 0 0 1-3.3-3.3l.9-.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 

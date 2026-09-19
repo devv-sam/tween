@@ -27,6 +27,7 @@ import type { LayerContent } from "../export/code";
 import { renderState } from "../core/renderState";
 import { boundsHalf, clampToFrame } from "./selection";
 import {
+  hasKeyframes,
   newKeyframes,
   newPosition,
   positionDrivers,
@@ -42,7 +43,7 @@ import {
   type SelectedPart,
 } from "./modules";
 import { scaledAbout, turnedAbout } from "./group";
-import { clampFps } from "./composition";
+import { clampFps, contentEnd, retimed } from "./composition";
 import {
   emptyHistory,
   record,
@@ -397,6 +398,11 @@ const refit = (viewport: Size, frame: Size, view: View): View => {
   return { ...next, panX: pan.x, panY: pan.y };
 };
 
+/** The transform properties a selection can be read and set on as one. Size is left
+ *  out: several elements resized to one number is what the canvas box already does,
+ *  and does better. */
+export type SharedProp = "x" | "y" | "rotation";
+
 type StudioState = {
   composition: Composition;
   assets: StudioAsset[];
@@ -436,6 +442,9 @@ type StudioState = {
   setPlaying: (playing: boolean) => void;
   toggleLoop: () => void;
   setDuration: (seconds: number) => void;
+  /** End the composition where its last keyframe does, without retiming the motion
+   *  that gets there. Nothing animated leaves the duration alone. */
+  trimDurationToContent: () => void;
   setFps: (fps: number) => void;
   setResolution: (size: Size) => void;
   setBackground: (hex: string) => void;
@@ -487,6 +496,16 @@ type StudioState = {
   setOpacity: (ids: string[], v: number) => void;
   /** What several elements read at the playhead, when they agree. */
   sharedOpacity: (ids: string[]) => number | null;
+  /** The same reading for a placed or turned property: the value every named element
+   *  holds at the playhead, or null when they hold different ones. */
+  sharedTransform: (ids: string[], prop: SharedProp) => number | null;
+  /** Settle every named element on one x, y or angle. */
+  setSelectionTransform: (ids: string[], prop: SharedProp, v: number) => void;
+  /** Step the property on each of them by the same amount, from its own value. */
+  nudgeSelectionTransform: (ids: string[], prop: SharedProp, by: number) => void;
+  /** Key a property across a whole selection: every element that has no motion on it
+   *  gets some, and every element that already has takes a stop at the playhead. */
+  keySelection: (ids: string[], target: KeyTarget) => void;
   /** Every picked element's hold and the state it was in when a gesture began. */
   selectionStarts: () => SelectionStart[];
   /** Resize or turn the whole selection about a point. One step to undo. */
@@ -581,6 +600,21 @@ export const useStudio = create<StudioState>((set, get) => {
       edit("duration", (s) => ({
         composition: { ...s.composition, duration: clampDuration(seconds) },
       }));
+    },
+
+    trimDurationToContent: () => {
+      const end = contentEnd(get().composition);
+      if (end === null || end <= 0) return;
+      edit("duration", (s) => {
+        const next = clampDuration(end * s.composition.duration);
+        if (next === s.composition.duration) return {};
+        return {
+          composition: retimed(s.composition, next),
+          // The playhead keeps the second it was parked on, so the frame on screen
+          // is the frame that was on screen.
+          t: clamp((s.t * s.composition.duration) / next, 0, 1),
+        };
+      });
     },
 
     setFps: (fps) => {
@@ -1215,6 +1249,146 @@ export const useStudio = create<StudioState>((set, get) => {
         else if (shared !== v) return null;
       }
       return shared;
+    },
+
+    /**
+     * What several elements share for one transform property, or null when they do
+     * not share it. Read at the playhead and rounded the way the field shows it, for
+     * the same reasons `sharedOpacity` is.
+     */
+    sharedTransform: (ids, prop) => {
+      if (ids.length === 0) return null;
+      const { composition, t } = get();
+      const scene = renderState(composition, t);
+      let shared: number | null = null;
+      for (const id of ids) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+        const v = Number(at[prop].toFixed(2));
+        if (shared === null) shared = v;
+        else if (shared !== v) return null;
+      }
+      return shared;
+    },
+
+    /**
+     * Put every named element on one x, one y or one angle.
+     *
+     * Absolute, the way typing a number into a field that several things answer to
+     * reads: they all now say that, whatever they said before. Each one is written
+     * where that property actually lives — an axis goes through `moveLayer` so a
+     * module driving it is shifted rather than overruled, and an angle goes through
+     * `captureTransform` so a keyed element takes it in the stop under the playhead.
+     */
+    setSelectionTransform: (ids, prop, v) => {
+      const { composition, t, moveAnchor, moveLayer, captureTransform } = get();
+      const scene = renderState(composition, t);
+      const key = `${prop}:selection`;
+      for (const id of ids) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+        if (prop === "rotation") {
+          captureTransform(id, { rotation: v }, key);
+          continue;
+        }
+        const anchor = moveAnchor(id);
+        if (!anchor) continue;
+        const by = v - at[prop];
+        moveLayer(id, anchor, prop === "x" ? by : 0, prop === "y" ? by : 0, key);
+      }
+    },
+
+    /**
+     * The relative version, which is what the arrows do: each element moves by the
+     * same amount from wherever it already was, so a spread the author built survives
+     * being stepped.
+     */
+    nudgeSelectionTransform: (ids, prop, by) => {
+      if (by === 0) return;
+      const { composition, t, moveAnchor, moveLayer, captureTransform } = get();
+      const scene = renderState(composition, t);
+      const key = `${prop}:selection`;
+      for (const id of ids) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        if (prop === "rotation") {
+          const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+          captureTransform(id, { rotation: at.rotation + by }, key);
+          continue;
+        }
+        const anchor = moveAnchor(id);
+        if (!anchor) continue;
+        moveLayer(id, anchor, prop === "x" ? by : 0, prop === "y" ? by : 0, key);
+      }
+    },
+
+    /**
+     * Key one property across everything picked.
+     *
+     * An element with no motion on that property gets a curve of its own, holding
+     * what it holds now; an element that already has one takes a stop at the playhead
+     * at the value it reads there, which is what a second press of the diamond means
+     * once the motion exists. Either way each element keeps its own curve — there is
+     * no shared one, and a selection is a way of authoring several at once rather
+     * than a thing with keyframes of its own.
+     *
+     * One step to undo, however many elements it reached.
+     */
+    keySelection: (ids, target) => {
+      const key = `key:selection:${target}`;
+      const props: (KeyProp | TrackProp)[] =
+        target === "position" ? ["x", "y"] : [target as KeyProp | TrackProp];
+      // Worked out before anything is written: an element that gains a curve here
+      // arrives holding one stop at what it reads now, and does not want a second one
+      // stamped on top of it.
+      const keyed = ids.filter((id) => {
+        const track = get().composition.tracks.find((tr) => tr.layer.id === id);
+        return track ? hasKeyframes(track, target) : false;
+      });
+
+      edit(key, (s) => {
+        const scene = renderState(s.composition, s.t);
+        let composition = s.composition;
+        const opened: string[] = [];
+        for (const id of ids) {
+          if (keyed.includes(id)) continue;
+          const track = composition.tracks.find((tr) => tr.layer.id === id);
+          if (!track) continue;
+          const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+          const added =
+            target === "position"
+              ? newPosition({ ...track, layer: { ...track.layer, base: at } })
+              : { [target]: newKeyframes(target as KeyProp | TrackProp, at) };
+          composition = patchTrack(composition, id, (tr) => ({
+            ...tr,
+            keyframes: { ...tr.keyframes, ...added },
+          })).composition;
+          opened.push(id);
+        }
+        return {
+          composition,
+          // The rows that just gained motion open, the same way one element's does.
+          expandedTracks: [
+            ...s.expandedTracks,
+            ...opened.filter((id) => !s.expandedTracks.includes(id)),
+          ],
+        };
+      });
+
+      // Everything that already had motion takes a stop where the playhead is, at the
+      // value it reads there. Filed under the same key, so the press is one step.
+      const { composition, t, captureTransform } = get();
+      const scene = renderState(composition, t);
+      for (const id of keyed) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+        const patch: Partial<Transform> = {};
+        for (const prop of props) patch[prop as keyof Transform] = at[prop as keyof Transform];
+        captureTransform(id, patch, key);
+      }
     },
 
     nudgeSelected: (dx, dy) => {

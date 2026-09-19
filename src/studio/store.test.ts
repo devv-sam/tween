@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useStudio, type ImageAsset } from "./store";
+import { MIN_DURATION } from "./ruler";
 import { DEFAULT_FRAME } from "./view";
 
 const asset: ImageAsset = {
@@ -866,5 +867,216 @@ describe("resizing and turning a whole selection", () => {
   it("has nothing to reshape when nothing is picked", () => {
     state().setSelectedIds([]);
     expect(state().selectionStarts()).toEqual([]);
+  });
+});
+
+describe("trimming the composition to what is animated", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const set = () => state().composition.tracks[0].keyframes!.x;
+
+  /** One element whose x slides across the first 300ms of the 3s composition. */
+  const shortMove = (range: [number, number] = [0, 0.1]) => {
+    const id = layer().id;
+    state().addKeyframes(id, "x");
+    state().setKeyframeStops(id, "x", [
+      { t: 0, v: 0, ease: "linear" },
+      { t: 1, v: 300, ease: "linear" },
+    ]);
+    state().setKeyframeRange(id, "x", range);
+    return id;
+  };
+
+  it("ends the composition where the last keyframe does", () => {
+    shortMove();
+    state().trimDurationToContent();
+    expect(state().composition.duration).toBeCloseTo(0.3);
+  });
+
+  it("leaves the motion at the seconds it was authored at", () => {
+    shortMove();
+    state().trimDurationToContent();
+    // The block was 0 to 0.3s before and is 0 to 0.3s after — it now fills the ruler.
+    expect(set().range[0]).toBe(0);
+    expect(set().range[1]).toBeCloseTo(1);
+  });
+
+  it("keeps the playhead on the frame it was parked on", () => {
+    shortMove();
+    state().setT(0.05); // 0.15s in
+    state().trimDurationToContent();
+    expect(state().t * state().composition.duration).toBeCloseTo(0.15);
+  });
+
+  it("goes no shorter than a composition is allowed to be", () => {
+    shortMove([0, 0.01]); // 30ms of motion
+    state().trimDurationToContent();
+    expect(state().composition.duration).toBe(MIN_DURATION);
+  });
+
+  it("has nothing to trim to when nothing is animated", () => {
+    // A lone stop is a value held, not motion, so there is no end to trim to.
+    state().addKeyframes(layer().id, "x");
+    state().sealHistory();
+    useStudio.setState({ history: { past: [], future: [], key: null, at: 0 } });
+    state().trimDurationToContent();
+    expect(state().composition.duration).toBe(3);
+    expect(state().history.past).toHaveLength(0);
+  });
+
+  it("is one step to undo", () => {
+    shortMove();
+    state().sealHistory();
+    state().trimDurationToContent();
+    state().undo();
+    expect(state().composition.duration).toBe(3);
+    expect(set().range).toEqual([0, 0.1]);
+  });
+});
+
+describe("the position and angle several elements share", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const bases = () => state().composition.tracks.map((tr) => tr.layer.base);
+  /** Two elements, apart from each other and both picked. */
+  const two = () => {
+    state().placeElement(asset.id, { x: 400, y: 300 });
+    const ids = state().composition.tracks.map((tr) => tr.layer.id);
+    state().setSelectedIds(ids);
+    return ids;
+  };
+
+  it("reports the value when they agree and nothing when they do not", () => {
+    const ids = two();
+    expect(state().sharedTransform(ids, "x")).toBeNull();
+    expect(state().sharedTransform(ids, "y")).toBeNull();
+    // Both start unturned, which is something they do agree on.
+    expect(state().sharedTransform(ids, "rotation")).toBe(0);
+    expect(state().sharedTransform([ids[0]], "x")).toBe(200);
+  });
+
+  it("has nothing to report about nothing", () => {
+    two();
+    expect(state().sharedTransform([], "x")).toBeNull();
+  });
+
+  it("settles them all on one value when one is typed", () => {
+    const ids = two();
+    state().setSelectionTransform(ids, "x", 100);
+    expect(bases().map((b) => b.x)).toEqual([100, 100]);
+    // The other axis is left where each one had it.
+    expect(bases().map((b) => b.y)).toEqual([200, 300]);
+    expect(state().sharedTransform(ids, "x")).toBe(100);
+  });
+
+  it("turns them all to one angle", () => {
+    const ids = two();
+    state().setSelectionTransform(ids, "rotation", 45);
+    expect(bases().map((b) => b.rotation)).toEqual([45, 45]);
+  });
+
+  it("steps each from wherever it already was", () => {
+    const ids = two();
+    state().nudgeSelectionTransform(ids, "y", 10);
+    expect(bases().map((b) => b.y)).toEqual([210, 310]);
+  });
+
+  it("does nothing at all for a step of nothing", () => {
+    const ids = two();
+    const before = bases();
+    state().nudgeSelectionTransform(ids, "x", 0);
+    expect(bases()).toEqual(before);
+  });
+
+  it("reads where the elements are now, not where their bases started", () => {
+    const ids = two();
+    state().addKeyframes(ids[0], "rotation");
+    state().setKeyframeStops(ids[0], "rotation", [
+      { t: 0, v: 0, ease: "linear" },
+      { t: 1, v: 90, ease: "linear" },
+    ]);
+    state().setT(0.5);
+    expect(state().sharedTransform([ids[0]], "rotation")).toBe(45);
+    expect(state().sharedTransform(ids, "rotation")).toBeNull();
+  });
+
+  it("writes into the keyframe under the playhead, not over the base", () => {
+    const ids = two();
+    state().addKeyframes(ids[0], "rotation");
+    state().setT(0.5);
+    state().setSelectionTransform(ids, "rotation", 30);
+    const keyed = state().composition.tracks[0];
+    expect(keyed.layer.base.rotation).toBe(0);
+    expect(keyed.keyframes!.rotation.stops.at(-1)).toMatchObject({ t: 0.5, v: 30 });
+    // The one with no motion of its own takes it on the base, as it always has.
+    expect(bases()[1].rotation).toBe(30);
+  });
+
+  it("is one step to undo, however many elements it moved", () => {
+    const ids = two();
+    state().sealHistory();
+    state().setSelectionTransform(ids, "x", 100);
+    state().sealHistory();
+    state().undo();
+    expect(bases().map((b) => b.x)).toEqual([200, 400]);
+  });
+});
+
+describe("keying a property across a selection", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const tracks = () => state().composition.tracks;
+  const two = () => {
+    state().placeElement(asset.id, { x: 400, y: 300 });
+    const ids = tracks().map((tr) => tr.layer.id);
+    state().setSelectedIds(ids);
+    return ids;
+  };
+
+  it("gives every element its own curve, holding what it holds now", () => {
+    const ids = two();
+    state().keySelection(ids, "position");
+    for (const tr of tracks()) {
+      expect(tr.keyframes!.x.stops).toHaveLength(1);
+      expect(tr.keyframes!.y.stops).toHaveLength(1);
+    }
+    expect(tracks()[0].keyframes!.x.stops[0].v).toBe(200);
+    expect(tracks()[1].keyframes!.x.stops[0].v).toBe(400);
+  });
+
+  it("opens the rows that gained motion", () => {
+    const ids = two();
+    state().keySelection(ids, "rotation");
+    expect(state().expandedTracks).toEqual(expect.arrayContaining(ids));
+  });
+
+  it("leaves the selection where it was", () => {
+    const ids = two();
+    state().keySelection(ids, "opacity");
+    expect(state().selectedIds).toEqual(ids);
+  });
+
+  it("stamps a keyframe at the playhead on an element that already has a curve", () => {
+    const ids = two();
+    state().keySelection(ids, "rotation");
+    state().setT(0.5);
+    state().setSelectionTransform(ids, "rotation", 90);
+    state().setT(1);
+    state().keySelection(ids, "rotation");
+    const stops = tracks()[0].keyframes!.rotation.stops;
+    // The one it was already holding at the end, written where the playhead is.
+    expect(stops.at(-1)).toMatchObject({ t: 1, v: 90 });
+  });
+
+  it("is one step to undo", () => {
+    const ids = two();
+    state().sealHistory();
+    state().keySelection(ids, "position");
+    state().sealHistory();
+    state().undo();
+    for (const tr of tracks()) expect(tr.keyframes?.x).toBeUndefined();
   });
 });

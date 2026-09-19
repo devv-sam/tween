@@ -9,7 +9,6 @@ import {
 import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
-import { IMAGE_ACCEPT } from "./files";
 import { LockIcon, LockOpenIcon } from "./fields";
 import { alignmentFor, type Alignment, type Box } from "./guides";
 import {
@@ -146,7 +145,6 @@ const BADGE_GAP = 10;
 export function StudioCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<Drag | null>(null);
 
   const composition = useStudio((s) => s.composition);
@@ -176,7 +174,6 @@ export function StudioCanvas() {
   const origin = frameOrigin(viewport, frame, view);
   const size = frameSize(frame, view.scale);
   const scale = contentScale(view);
-  const empty = assets.length === 0;
 
   /** Evaluated scene, for hit testing and selection chrome. Painting evaluates its own. */
   const scene = useMemo(() => renderState(composition, t), [composition, t]);
@@ -1153,65 +1150,7 @@ export function StudioCanvas() {
           </div>
         </>
       ) : null}
-      {empty && viewport.width > 0 ? (
-        <div
-          className="studio-empty"
-          style={{
-            transform: `translate(${origin.x + size.width / 2}px, ${origin.y + size.height / 2}px) translate(-50%, -50%)`,
-          }}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          <input
-            ref={fileRef}
-            className="elements-file"
-            type="file"
-            accept={IMAGE_ACCEPT}
-            multiple
-            onChange={(e) => {
-              if (e.currentTarget.files?.length) {
-                void useStudio
-                  .getState()
-                  .importImages([...e.currentTarget.files]);
-              }
-              e.currentTarget.value = "";
-            }}
-          />
-          <button
-            type="button"
-            className="studio-empty-btn"
-            onClick={() => fileRef.current?.click()}
-          >
-            <EmptyIcon />
-            Add elements
-          </button>
-          <p>or drop them here to get started.</p>
-        </div>
-      ) : null}
     </div>
-  );
-}
-
-function EmptyIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <rect
-        x="2.5"
-        y="2.5"
-        width="11"
-        height="11"
-        rx="1.2"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-      />
-      <path
-        d="M2.5 11.5 6 8l2.5 2.5 2-2 3 3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-      />
-      <circle cx="10.5" cy="5.5" r="1" fill="currentColor" />
-    </svg>
   );
 }
 
