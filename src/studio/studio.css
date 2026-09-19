@@ -694,3 +694,48 @@ body {
     will-change: auto;
   }
 }
+
+/* Alignment guides, drawn while an element is dragged and gone on release. Chrome
+   over the render, never part of it — the exporter paints from the composition and
+   has no idea these exist. */
+.studio-guides {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.studio-guide {
+  stroke: #ff3b6b;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+/* The composition's own centre reads quieter than an element-to-element match: it is
+   always available, so it should not shout every time a drag passes through it. */
+.studio-guide.is-frame {
+  stroke-dasharray: 4 4;
+}
+
+/* A gap the drag came near but did not take. No line, because nothing is aligned —
+   just the number, for spacing something deliberately off the guide.
+
+   Above the size badge: both can land between the same two elements, and of the two
+   the one that only exists during this drag is the one being read right now. */
+.studio-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #ff3b6b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
