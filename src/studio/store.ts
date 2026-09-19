@@ -305,6 +305,18 @@ async function readFlatSvg(file: File, notice?: string): Promise<SvgAsset> {
   }
 }
 
+/**
+ * A selection, and the single-element view of it.
+ *
+ * `selectedId` is not a second piece of state to keep in step — it is this list when
+ * it holds exactly one thing. Two elements picked means there is no *the* element,
+ * so it reads null and every control built for one quietly steps aside.
+ */
+const pick = (ids: string[]): { selectedIds: string[]; selectedId: string | null } => ({
+  selectedIds: ids,
+  selectedId: ids.length === 1 ? ids[0] : null,
+});
+
 const patchTrack = (
   composition: Composition,
   layerId: string,
@@ -341,7 +353,7 @@ type Snapshot = {
   composition: Composition;
   assets: StudioAsset[];
   frame: Size;
-  selectedId: string | null;
+  selectedIds: string[];
   selectedPart: SelectedPart | null;
 };
 
@@ -349,7 +361,7 @@ const snapshot = (s: StudioState): Snapshot => ({
   composition: s.composition,
   assets: s.assets,
   frame: s.frame,
-  selectedId: s.selectedId,
+  selectedIds: s.selectedIds,
   selectedPart: s.selectedPart,
 });
 
@@ -383,6 +395,15 @@ type StudioState = {
   t: number;
   playing: boolean;
   loop: boolean;
+  /**
+   * Everything picked, in the order it was picked.
+   *
+   * The single source of truth for selection. `selectedId` beside it is this list
+   * when it holds exactly one — which is what lets every control that only makes
+   * sense for one element (the handles, the keyframe log, the element panel) keep
+   * reading one field and fall quiet on its own once a second thing is picked.
+   */
+  selectedIds: string[];
   selectedId: string | null;
   /** Which part of the selected element the inspector is focused on: one of its
    *  standalone keyframed properties, or one of its modules. */
@@ -417,6 +438,8 @@ type StudioState = {
   placeElement: (assetId: string, at?: Point) => void;
   removeAsset: (id: string) => void;
   select: (layerId: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelectedId: (id: string) => void;
   selectPart: (layerId: string, part: SelectedPart | null) => void;
   toggleTrackExpanded: (layerId: string) => void;
   /** Pick a keyframe out on the timeline. `additive` adds to the picked set rather
@@ -444,9 +467,31 @@ type StudioState = {
   setLayerBase: (layerId: string, patch: Partial<Transform>) => void;
   /** The same patch, but landing in the keyframe under the playhead wherever the
    *  property carries its own motion. What a canvas gesture writes through. */
-  captureTransform: (layerId: string, patch: Partial<Transform>) => void;
+  captureTransform: (layerId: string, patch: Partial<Transform>, key?: string) => void;
   moveAnchor: (layerId: string) => MoveAnchor | null;
-  moveLayer: (layerId: string, anchor: MoveAnchor, dx: number, dy: number) => void;
+  /** Everything picked, with where each one's position is held right now. */
+  selectionAnchors: () => { id: string; anchor: MoveAnchor }[];
+  /** Shift every named element's opacity by the same amount, each from its own. */
+  nudgeOpacity: (ids: string[], by: number) => void;
+  /** Settle every named element on the same opacity. */
+  setOpacity: (ids: string[], v: number) => void;
+  /** What several elements read at the playhead, when they agree. */
+  sharedOpacity: (ids: string[]) => number | null;
+  /** Move the whole selection by one agreed amount. One step to undo. */
+  moveSelection: (
+    anchors: { id: string; anchor: MoveAnchor }[],
+    dx: number,
+    dy: number,
+  ) => void;
+  moveLayer: (
+    layerId: string,
+    anchor: MoveAnchor,
+    dx: number,
+    dy: number,
+    /** What the edit is filed under, so several elements moved together coalesce into
+     *  one step rather than one apiece. Defaults to this element alone. */
+    key?: string,
+  ) => void;
   nudgeSelected: (dx: number, dy: number) => void;
   /** Put the element on the composition's centre line, on one axis. */
   centreLayer: (layerId: string, axis: "x" | "y") => void;
@@ -487,6 +532,9 @@ export const useStudio = create<StudioState>((set, get) => {
   /** Put a snapshot back. A different frame is a reframe, so the view refits to it. */
   const restore = (s: StudioState, snap: Snapshot): Partial<StudioState> => ({
     ...snap,
+    // The snapshot holds the selection; the single-element view of it is worked out
+    // again rather than stored, so the two can never come back disagreeing.
+    ...pick(snap.selectedIds),
     view: snap.frame === s.frame ? s.view : refit(s.viewport, snap.frame, s.view),
   });
 
@@ -498,6 +546,7 @@ export const useStudio = create<StudioState>((set, get) => {
     t: 0,
     playing: false,
     loop: true,
+    selectedIds: [],
     selectedId: null,
     selectedPart: null,
     expandedTracks: [],
@@ -610,7 +659,7 @@ export const useStudio = create<StudioState>((set, get) => {
       );
       const layerId = crypto.randomUUID();
       edit(null, (s) => ({
-        selectedId: layerId,
+        ...pick([layerId]),
         selectedPart: null,
         composition: {
           ...s.composition,
@@ -632,28 +681,51 @@ export const useStudio = create<StudioState>((set, get) => {
         const tracks = s.composition.tracks.filter(
           (tr) => !(tr.layer.source.kind === "image" && tr.layer.source.value === id),
         );
-        const kept = tracks.some((tr) => tr.layer.id === s.selectedId);
+        const alive = new Set(tracks.map((tr) => tr.layer.id));
+        const kept = s.selectedIds.filter((sid) => alive.has(sid));
         return {
           assets: s.assets.filter((a) => a.id !== id),
           composition: { ...s.composition, tracks },
-          selectedId: kept ? s.selectedId : null,
-          selectedPart: kept ? s.selectedPart : null,
+          ...pick(kept),
+          selectedPart: kept.length === s.selectedIds.length ? s.selectedPart : null,
         };
       });
     },
 
     select: (layerId) =>
       set((s) => ({
-        selectedId: layerId,
+        ...pick(layerId === null ? [] : [layerId]),
         selectedPart: null,
         // The picked keyframes are read against the selected element, so they mean
         // nothing once a different one is selected.
         selectedKeys: layerId === s.selectedId ? s.selectedKeys : [],
       })),
 
+    /** The one writer for a whole selection. Order is the order things were picked. */
+    setSelectedIds: (ids) =>
+      set((s) => ({
+        ...pick(ids),
+        selectedPart: ids.length === 1 && ids[0] === s.selectedId ? s.selectedPart : null,
+        selectedKeys: ids.length === 1 && ids[0] === s.selectedId ? s.selectedKeys : [],
+      })),
+
+    /** Add it, or take it back out if it is already in. What shift-click does, from
+     *  the canvas and from the timeline alike. */
+    toggleSelectedId: (id) =>
+      set((s) => {
+        const next = s.selectedIds.includes(id)
+          ? s.selectedIds.filter((sid) => sid !== id)
+          : [...s.selectedIds, id];
+        return {
+          ...pick(next),
+          selectedPart: next.length === 1 && next[0] === s.selectedId ? s.selectedPart : null,
+          selectedKeys: next.length === 1 && next[0] === s.selectedId ? s.selectedKeys : [],
+        };
+      }),
+
     selectPart: (layerId, part) =>
       set((s) => ({
-        selectedId: layerId,
+        ...pick([layerId]),
         selectedPart: part,
         selectedKeys: layerId === s.selectedId ? s.selectedKeys : [],
       })),
@@ -670,7 +742,7 @@ export const useStudio = create<StudioState>((set, get) => {
         const same = layerId === s.selectedId;
         const held = same ? s.selectedKeys : [];
         return {
-          selectedId: layerId,
+          ...pick([layerId]),
           selectedKeys: additive
             ? held.includes(id)
               ? held.filter((k) => k !== id)
@@ -702,7 +774,7 @@ export const useStudio = create<StudioState>((set, get) => {
           ? Boolean(track.keyframes?.x && track.keyframes?.y)
           : Boolean(track.keyframes?.[target]);
       if (held) {
-        set({ selectedId: layerId, selectedPart: part });
+        set({ ...pick([layerId]), selectedPart: part });
         return;
       }
       // Position writes both axes, in lockstep from the start.
@@ -711,7 +783,7 @@ export const useStudio = create<StudioState>((set, get) => {
           ? newPosition(track)
           : { [target]: newKeyframes(target, track.layer.base) };
       edit(null, (s) => ({
-        selectedId: layerId,
+        ...pick([layerId]),
         selectedPart: part,
         // The property arrives with a row of its own, so the element opens to show
         // it. Adding motion and then having to go find where it went is a step that
@@ -847,8 +919,8 @@ export const useStudio = create<StudioState>((set, get) => {
      * moving one already works. Properties with no motion of their own still write
      * straight to the base transform.
      */
-    captureTransform: (layerId, patch) => {
-      edit(`capture:${layerId}`, (s) => {
+    captureTransform: (layerId, patch, key = `capture:${layerId}`) => {
+      edit(key, (s) => {
         const span = s.composition.duration;
         const seconds = s.t * span;
         return patchTrack(s.composition, layerId, (tr) => {
@@ -911,10 +983,10 @@ export const useStudio = create<StudioState>((set, get) => {
      * whose shape is the whole point of having bundled it; dragging the element it
      * drives asks for that motion somewhere else, not for a dent in the middle of it.
      */
-    moveLayer: (layerId, anchor, dx, dy) => {
+    moveLayer: (layerId, anchor, dx, dy, key = `move:${layerId}`) => {
       const by = { x: dx, y: dy };
       const driven = new Set(anchor.driven.map((d) => d.axis));
-      edit(`move:${layerId}`, (s) =>
+      edit(key, (s) =>
         patchTrack(s.composition, layerId, (tr) => {
           const base = { ...tr.layer.base };
           if (!driven.has("x")) base.x = anchor.base.x + dx;
@@ -949,27 +1021,141 @@ export const useStudio = create<StudioState>((set, get) => {
       );
     },
 
+    /**
+     * Where each picked element's position is held right now — one anchor apiece, so
+     * a drag that moves several of them measures every one from where it started
+     * rather than from wherever it has got to.
+     */
+    selectionAnchors: () => {
+      const { selectedIds, moveAnchor } = get();
+      const out: { id: string; anchor: MoveAnchor }[] = [];
+      for (const id of selectedIds) {
+        const anchor = moveAnchor(id);
+        if (anchor) out.push({ id, anchor });
+      }
+      return out;
+    },
+
+    /**
+     * Move everything picked by the same amount.
+     *
+     * The amount is agreed first and then applied: the frame bounds every element,
+     * and whichever one is closest to an edge decides how far the whole selection
+     * gets to go. A selection that deformed as it met the edge would not be a
+     * selection, it would be several drags that happened to start together.
+     *
+     * Each element's share is written through `moveLayer`, so it lands wherever that
+     * element's position actually lives — the keyframe under the playhead, a driving
+     * module's stops, or the base. One `edit` key for the whole gesture, so a drag is
+     * one step to undo however many elements it moved.
+     */
+    moveSelection: (anchors, dx, dy) => {
+      const { composition, assets, frame, moveLayer, t } = get();
+      const scene = renderState(composition, t);
+      const held: { id: string; anchor: MoveAnchor; from: Point; half: Point | null }[] = [];
+      for (const { id, anchor } of anchors) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+        const source = track.layer.source;
+        const asset =
+          source.kind === "image" ? assets.find((a) => a.id === source.value) : undefined;
+        held.push({
+          id,
+          anchor,
+          from: { x: at.x, y: at.y },
+          half: asset
+            ? boundsHalf(at, { width: asset.naturalW, height: asset.naturalH })
+            : null,
+        });
+      }
+      if (held.length === 0) return;
+
+      // The most either axis can move before someone leaves the frame.
+      let allowX = dx;
+      let allowY = dy;
+      for (const it of held) {
+        if (!it.half) continue;
+        const bounded = clampToFrame(
+          { x: it.from.x + dx, y: it.from.y + dy },
+          it.half,
+          frame,
+        );
+        if (Math.abs(bounded.x - it.from.x) < Math.abs(allowX)) allowX = bounded.x - it.from.x;
+        if (Math.abs(bounded.y - it.from.y) < Math.abs(allowY)) allowY = bounded.y - it.from.y;
+      }
+      // One key for every element and every move in the gesture: a drag is one thing
+      // that happened, whatever it happened to.
+      for (const it of held) moveLayer(it.id, it.anchor, allowX, allowY, "move:selection");
+    },
+
+    /**
+     * Lift or drop the opacity of several elements together.
+     *
+     * Relative, not absolute: each one moves by the same amount from wherever it
+     * already was, so a selection of a solid thing and a faint thing stays a solid
+     * thing and a faint thing. Clamped per element, which means one of them hitting
+     * an end does not hold the others back — nothing about opacity is rigid the way
+     * a group's position is.
+     *
+     * Lands wherever the element's opacity actually lives, so a keyed element takes
+     * it in the keyframe under the playhead.
+     */
+    nudgeOpacity: (ids, by) => {
+      if (by === 0) return;
+      const { composition, t, captureTransform } = get();
+      const scene = renderState(composition, t);
+      // One key for the run, so dragging the dial is one step to undo.
+      for (const id of ids) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+        captureTransform(id, { opacity: clamp(at.opacity + by, 0, 1) }, "opacity:selection");
+      }
+    },
+
+    /**
+     * Put every named element on one opacity.
+     *
+     * What typing a number into a field that several things answer to means: they now
+     * all say that. The relative nudge beside this is what the arrow keys do, which is
+     * the gesture that has a spread to preserve.
+     */
+    setOpacity: (ids, v) => {
+      const opacity = clamp(v, 0, 1);
+      for (const id of ids) {
+        get().captureTransform(id, { opacity }, "opacity:selection");
+      }
+    },
+
+    /**
+     * The opacity several elements share, or null when they do not share one.
+     *
+     * Read at the playhead rather than off the base, so what the field says is what
+     * is actually on the frame — an element part-way through fading is reported where
+     * it has got to. Compared at the precision the field displays: two values that
+     * round to the same shown number are the same number as far as anyone reading it
+     * is concerned.
+     */
+    sharedOpacity: (ids) => {
+      if (ids.length === 0) return null;
+      const { composition, t } = get();
+      const scene = renderState(composition, t);
+      let shared: number | null = null;
+      for (const id of ids) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+        const v = Number(at.opacity.toFixed(2));
+        if (shared === null) shared = v;
+        else if (shared !== v) return null;
+      }
+      return shared;
+    },
+
     nudgeSelected: (dx, dy) => {
-      const { selectedId, composition, assets, frame, moveAnchor, moveLayer } = get();
-      const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
-      if (!track || !selectedId) return;
-      const anchor = moveAnchor(selectedId);
-      if (!anchor) return;
-      const { base, source } = track.layer;
-      const asset = source.kind === "image" ? assets.find((a) => a.id === source.value) : undefined;
-      // Clamp the element's rendered box, then move by whatever the clamp allowed —
-      // a driven axis still has to stay inside the frame.
-      const rendered = renderState(composition, get().t).find((it) => it.id === selectedId);
-      const at = rendered ?? { state: base };
-      const wanted = { x: at.state.x + dx, y: at.state.y + dy };
-      const bounded = asset
-        ? clampToFrame(
-            wanted,
-            boundsHalf(at.state, { width: asset.naturalW, height: asset.naturalH }),
-            frame,
-          )
-        : wanted;
-      moveLayer(selectedId, anchor, bounded.x - at.state.x, bounded.y - at.state.y);
+      const { selectionAnchors, moveSelection } = get();
+      moveSelection(selectionAnchors(), dx, dy);
     },
 
     /**
@@ -1086,7 +1272,7 @@ export const useStudio = create<StudioState>((set, get) => {
         return {
           assets: [...s.assets, taken, remainder],
           composition: { ...s.composition, tracks },
-          selectedId: partId,
+          ...pick([partId]),
           selectedPart: null,
           selectedKeys: [],
         };
@@ -1159,14 +1345,15 @@ export const useStudio = create<StudioState>((set, get) => {
     },
 
     deleteSelected: () => {
-      const { selectedId } = get();
-      if (!selectedId) return;
+      const gone = new Set(get().selectedIds);
+      if (gone.size === 0) return;
       edit(null, (s) => ({
-        selectedId: null,
+        ...pick([]),
         selectedPart: null,
+        selectedKeys: [],
         composition: {
           ...s.composition,
-          tracks: s.composition.tracks.filter((tr) => tr.layer.id !== selectedId),
+          tracks: s.composition.tracks.filter((tr) => !gone.has(tr.layer.id)),
         },
       }));
     },

@@ -65,6 +65,7 @@ import {
 export function Inspector() {
   const composition = useStudio((s) => s.composition);
   const selectedId = useStudio((s) => s.selectedId);
+  const selectedIds = useStudio((s) => s.selectedIds);
   const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
   const track = index < 0 ? null : composition.tracks[index];
 
@@ -77,7 +78,11 @@ export function Inspector() {
         {/* The composition is always there to edit, so it stays put and the element's
             own panel stacks under it rather than replacing it. */}
         <CompositionPanel />
+        {/* One element opens its own panel; several open the little that can honestly
+            be said about several at once. `selectedId` is null while more than one is
+            picked, so the two are never both on screen. */}
         {track ? <ElementPanel track={track} index={index} /> : null}
+        {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
       </div>
     </aside>
   );
@@ -277,6 +282,54 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       ) : null}
 
     </>
+  );
+}
+
+/**
+ * What can be said about several elements at once.
+ *
+ * Not much, on purpose. There is no shared position, because moving several things is
+ * a drag on the canvas and a pair of numbers would have to lie about where the group
+ * is. There is no keyframe log, because a keyframe belongs to one element's curve.
+ *
+ * What is left is opacity, and the field says what is true: the value when they all
+ * hold the same one, and "Mixed" when they do not. Typing settles them all on what
+ * was typed; the arrows nudge each from wherever it already is, so a spread the
+ * author built survives being stepped.
+ */
+function SelectionPanel({ ids }: { ids: string[] }) {
+  const composition = useStudio((s) => s.composition);
+  const t = useStudio((s) => s.t);
+  // Re-read whenever the frame or the selection changes: what the field reports is
+  // what is on the canvas, not what the base transforms happen to say.
+  const shared = useMemo(
+    () => useStudio.getState().sharedOpacity(ids),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ids, composition, t],
+  );
+
+  return (
+    <section className={SECTION}>
+      <p className={`${LABEL} mb-2`}>{ids.length} elements selected</p>
+      <p className={`${SUBLABEL} mb-1`}>opacity</p>
+      <div className="grid grid-cols-2 gap-x-1.5">
+        <NumberField
+          label="o"
+          title={
+            shared === null
+              ? "these have different opacities — type one to settle them all on it"
+              : "opacity"
+          }
+          value={shared ?? 1}
+          mixed={shared === null}
+          step={PROP_STEP.opacity}
+          min={0}
+          max={1}
+          onChange={(v) => useStudio.getState().setOpacity(ids, v)}
+          onStep={(by) => useStudio.getState().nudgeOpacity(ids, by)}
+        />
+      </div>
+    </section>
   );
 }
 

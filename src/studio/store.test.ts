@@ -544,3 +544,224 @@ describe("centring an element on the frame", () => {
     expect(at?.v).toBe(centre().x);
   });
 });
+
+describe("picking more than one element", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  /** A second and third element, so there is a selection to make. */
+  const three = () => {
+    state().placeElement(asset.id, { x: 400, y: 200 });
+    state().placeElement(asset.id, { x: 600, y: 200 });
+    return state().composition.tracks.map((tr) => tr.layer.id);
+  };
+
+  it("has no single element to point at once a second one is picked", () => {
+    const [a, b] = three();
+    state().setSelectedIds([a]);
+    expect(state().selectedId).toBe(a);
+    // Which is what lets the handles, the keyframe log and the element panel — all
+    // of which read `selectedId` — step aside without being told about selections.
+    state().setSelectedIds([a, b]);
+    expect(state().selectedId).toBeNull();
+    expect(state().selectedIds).toEqual([a, b]);
+  });
+
+  it("adds with a toggle, and takes back out with the same one", () => {
+    const [a, b, c] = three();
+    state().setSelectedIds([a]);
+    state().toggleSelectedId(b);
+    state().toggleSelectedId(c);
+    expect(state().selectedIds).toEqual([a, b, c]);
+    state().toggleSelectedId(b);
+    expect(state().selectedIds).toEqual([a, c]);
+  });
+
+  it("comes back to a single element when a toggle leaves one standing", () => {
+    const [a, b] = three();
+    state().setSelectedIds([a, b]);
+    state().toggleSelectedId(b);
+    expect(state().selectedId).toBe(a);
+  });
+
+  it("drops the picked keyframes when the selection is not the same one element", () => {
+    const [a, b] = three();
+    state().setSelectedIds([a]);
+    state().setSelectedKeys(["position:0"]);
+    state().setSelectedIds([a, b]);
+    expect(state().selectedKeys).toEqual([]);
+  });
+
+  it("forgets what was deleted and keeps what was not", () => {
+    const [a, b, c] = three();
+    state().setSelectedIds([a, b, c]);
+    state().deleteSelected();
+    expect(state().composition.tracks).toHaveLength(0);
+    expect(state().selectedIds).toEqual([]);
+  });
+});
+
+describe("moving a whole selection", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const at = (id: string) => {
+    const tr = state().composition.tracks.find((t) => t.layer.id === id)!;
+    return { x: tr.layer.base.x, y: tr.layer.base.y };
+  };
+  const two = () => {
+    state().placeElement(asset.id, { x: 400, y: 300 });
+    const ids = state().composition.tracks.map((tr) => tr.layer.id);
+    state().setSelectedIds(ids);
+    return ids;
+  };
+
+  it("moves everything picked by the same amount", () => {
+    const [a, b] = two();
+    state().moveSelection(state().selectionAnchors(), 60, -40);
+    expect(at(a)).toEqual({ x: 260, y: 160 });
+    expect(at(b)).toEqual({ x: 460, y: 260 });
+  });
+
+  it("is one step to undo, however many it moved", () => {
+    const [a, b] = two();
+    const before = [at(a), at(b)];
+    state().moveSelection(state().selectionAnchors(), 60, -40);
+    state().sealHistory();
+    state().undo();
+    expect([at(a), at(b)]).toEqual(before);
+  });
+
+  it("stops the whole selection when one of them reaches the frame", () => {
+    const [a, b] = two();
+    // Far enough right that the second element would leave the frame first.
+    state().moveSelection(state().selectionAnchors(), 100000, 0);
+    const moved = { a: at(a).x - 200, b: at(b).x - 400 };
+    // Both travelled the same distance: a selection that deformed at the edge would
+    // not be a selection.
+    expect(moved.a).toBe(moved.b);
+    expect(moved.a).toBeGreaterThan(0);
+  });
+
+  it("measures every element from where it started, not from where it has got to", () => {
+    const [a] = two();
+    const anchors = state().selectionAnchors();
+    state().moveSelection(anchors, 10, 0);
+    state().moveSelection(anchors, 30, 0);
+    // The second call is the whole move so far, not thirty more on top of ten.
+    expect(at(a).x).toBe(230);
+  });
+
+  it("writes a keyframed element's share into its curve, not a base nothing reads", () => {
+    const [a, b] = two();
+    state().addKeyframes(a, "position");
+    state().setSelectedIds([a, b]);
+    state().setT(0.5);
+    state().moveSelection(state().selectionAnchors(), 50, 0);
+
+    expect(state().composition.tracks[0].keyframes!.x.stops).toContainEqual(
+      expect.objectContaining({ t: 0.5, v: 250 }),
+    );
+    expect(at(a).x).toBe(200);
+    // The one with no motion of its own still moves the ordinary way.
+    expect(at(b).x).toBe(450);
+  });
+});
+
+describe("shifting the opacity of several elements", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const opacities = () => state().composition.tracks.map((tr) => tr.layer.base.opacity);
+
+  const spread = () => {
+    state().placeElement(asset.id, { x: 400, y: 300 });
+    const ids = state().composition.tracks.map((tr) => tr.layer.id);
+    state().setLayerBase(ids[1], { opacity: 0.5 });
+    return ids;
+  };
+
+  it("moves each one from where it already was", () => {
+    const ids = spread();
+    state().nudgeOpacity(ids, -0.2);
+    expect(opacities()).toEqual([0.8, 0.3]);
+  });
+
+  it("holds each one inside its own range without holding the others back", () => {
+    const ids = spread();
+    state().nudgeOpacity(ids, 0.4);
+    // The first was already full and stays there; the second still gets its share.
+    expect(opacities()).toEqual([1, 0.9]);
+  });
+
+  it("does nothing at all for a shift of nothing", () => {
+    const ids = spread();
+    const before = opacities();
+    state().nudgeOpacity(ids, 0);
+    expect(opacities()).toEqual(before);
+  });
+
+  it("settles them all on one value when one is typed", () => {
+    const ids = spread();
+    state().setOpacity(ids, 0.4);
+    expect(opacities()).toEqual([0.4, 0.4]);
+  });
+
+  it("keeps a typed value inside the range opacity has", () => {
+    const ids = spread();
+    state().setOpacity(ids, 4);
+    expect(opacities()).toEqual([1, 1]);
+  });
+});
+
+describe("what several elements agree their opacity is", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const two = () => {
+    state().placeElement(asset.id, { x: 400, y: 300 });
+    return state().composition.tracks.map((tr) => tr.layer.id);
+  };
+
+  it("is the value, when they hold the same one", () => {
+    expect(state().sharedOpacity(two())).toBe(1);
+  });
+
+  it("is nothing at all, when they do not", () => {
+    const ids = two();
+    state().setLayerBase(ids[1], { opacity: 0.5 });
+    expect(state().sharedOpacity(ids)).toBeNull();
+  });
+
+  it("is the one element's own value, for a selection of one", () => {
+    const ids = two();
+    state().setLayerBase(ids[1], { opacity: 0.25 });
+    expect(state().sharedOpacity([ids[1]])).toBe(0.25);
+  });
+
+  it("has nothing to report about nothing", () => {
+    two();
+    expect(state().sharedOpacity([])).toBeNull();
+  });
+
+  it("counts values that show the same as the same", () => {
+    const ids = two();
+    // Two thousandths apart is one number once the field has rounded it.
+    state().setLayerBase(ids[0], { opacity: 0.5001 });
+    state().setLayerBase(ids[1], { opacity: 0.4999 });
+    expect(state().sharedOpacity(ids)).toBe(0.5);
+  });
+
+  it("reads where the elements are now, not where their base transforms started", () => {
+    const ids = two();
+    state().addKeyframes(ids[0], "opacity");
+    state().setKeyframeStops(ids[0], "opacity", [
+      { t: 0, v: 1, ease: "linear" },
+      { t: 1, v: 0, ease: "linear" },
+    ]);
+    state().setT(0.5);
+    // Half way down its own fade, so it no longer agrees with the one holding still.
+    expect(state().sharedOpacity(ids)).toBeNull();
+    expect(state().sharedOpacity([ids[0]])).toBe(0.5);
+  });
+});
