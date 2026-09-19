@@ -12,8 +12,17 @@ import { ensureImage, getCachedImage } from "../render/images";
 import { IMAGE_ACCEPT } from "./files";
 import { LockIcon, LockOpenIcon } from "./fields";
 import { alignmentFor, type Alignment, type Box } from "./guides";
+import {
+  angleAt,
+  boxCentre,
+  mustStayUniform,
+  resizeFactors,
+  snapSwing,
+  unionBox,
+  type Box as GroupBox,
+} from "./group";
 import { paintComposition } from "../render/paint";
-import { useStudio, type MoveAnchor } from "./store";
+import { useStudio, type MoveAnchor, type SelectionStart } from "./store";
 import {
   CORNERS,
   HANDLES,
@@ -32,6 +41,7 @@ import {
   normalizeAngle,
   regionAngle,
   resizeFrom,
+  ROTATE_SNAP,
   rotateCursor,
   rotateFrom,
   withinLock,
@@ -77,6 +87,25 @@ type Drag = {
  * space, because that is where it is drawn and where the pointer is.
  */
 type Marquee = { pointerId: number; from: Point; to: Point };
+
+/**
+ * A resize or turn of the whole selection, in flight.
+ *
+ * The box it started from is held here rather than recomputed, so the gesture
+ * measures against where things were when it began. `spin` is what the overlay is
+ * turned by while a rotation is under way — the box has no orientation of its own
+ * once the pointer is up, being only the union of what is picked.
+ */
+type GroupDrag = {
+  pointerId: number;
+  mode: "resize" | "rotate";
+  handle: Handle | null;
+  box: GroupBox;
+  starts: SelectionStart[];
+  uniform: boolean;
+  startAngle: number;
+  spin: number;
+};
 
 /** Axis-aligned bounds of an element on the frame, at the playhead. */
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
@@ -140,6 +169,9 @@ export function StudioCanvas() {
   const [alignment, setAlignment] = useState<Alignment | null>(null);
   // The rectangle being dragged over empty canvas, while it is being dragged.
   const [marquee, setMarquee] = useState<Marquee | null>(null);
+  // A group resize or turn in flight. Held in state, not a ref, because the overlay
+  // turns with it.
+  const [groupDrag, setGroupDrag] = useState<GroupDrag | null>(null);
 
   const origin = frameOrigin(viewport, frame, view);
   const size = frameSize(frame, view.scale);
@@ -160,29 +192,68 @@ export function StudioCanvas() {
   /**
    * The box around everything picked, when more than one thing is.
    *
-   * It is the union of what is picked and nothing more — no handles, because there is
-   * nothing yet that resizes a selection, and a handle that did nothing would be a
-   * promise the studio does not keep.
+   * It is the union of what is picked and nothing more — the selection is not a thing
+   * the composition holds, so there is no orientation to remember between gestures.
+   * While one is being turned the box turns with it, and on release it goes back to
+   * being the plain union of wherever everything ended up.
    */
   const group = useMemo(() => {
     if (selectedIds.length < 2) return null;
-    const boxes: Bounds[] = [];
+    const boxes: GroupBox[] = [];
+    const states: Transform[] = [];
     for (const id of selectedIds) {
       const item = scene.find((it) => it.id === id);
       const size = item && sizeOf(item);
-      if (item && size) boxes.push(boundsOf(item.state, size));
+      if (!item || !size) continue;
+      const b = boundsOf(item.state, size);
+      boxes.push({ minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY });
+      states.push(item.state);
     }
-    if (boxes.length === 0) return null;
-    const box = {
-      minX: Math.min(...boxes.map((b) => b.minX)),
-      minY: Math.min(...boxes.map((b) => b.minY)),
-      maxX: Math.max(...boxes.map((b) => b.maxX)),
-      maxY: Math.max(...boxes.map((b) => b.maxY)),
+    // Mid-gesture the box is the one the gesture started from, so it does not chase
+    // the elements it is moving.
+    const box = groupDrag ? groupDrag.box : unionBox(boxes);
+    if (!box) return null;
+    const centre = boxCentre(box);
+    return {
+      box,
+      /**
+       * The box as a transform and a size, so the same grip and handle helpers a
+       * single element uses can answer for it.
+       */
+      state: {
+        x: centre.x,
+        y: centre.y,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: groupDrag?.spin ?? 0,
+        opacity: 1,
+      } as Transform,
+      size: { width: box.maxX - box.minX, height: box.maxY - box.minY },
+      // A turn anywhere in the selection is a shape this model cannot hold out of
+      // square, so the whole group stays square. See `mustStayUniform`.
+      uniform: mustStayUniform(states),
+      /** Each picked element's own outline, so a large box still says what is in it. */
+      outlines: boxes.map((b) => {
+        const a = compositionToScreen({ x: b.minX, y: b.minY }, viewport, frame, view);
+        const c = compositionToScreen({ x: b.maxX, y: b.maxY }, viewport, frame, view);
+        return { x: a.x, y: a.y, width: c.x - a.x, height: c.y - a.y };
+      }),
     };
-    const a = compositionToScreen({ x: box.minX, y: box.minY }, viewport, frame, view);
-    const b = compositionToScreen({ x: box.maxX, y: box.maxY }, viewport, frame, view);
-    return { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y };
-  }, [selectedIds, scene, sizeOf, viewport, frame, view]);
+  }, [selectedIds, scene, sizeOf, viewport, frame, view, groupDrag]);
+
+  /** The group's outline and handles in screen space, drawn like a single element's. */
+  const groupChrome = useMemo(() => {
+    if (!group) return null;
+    const toScreen = (p: Point) => compositionToScreen(p, viewport, frame, view);
+    const at = handlePositions(group.state, group.size);
+    const handles = {} as Record<Handle, Point>;
+    for (const k of HANDLES) handles[k] = toScreen(at[k]);
+    return {
+      outline: cornerPoints(group.state, group.size).map(toScreen),
+      handles,
+      rotation: group.state.rotation,
+    };
+  }, [group, viewport, frame, view]);
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -502,6 +573,38 @@ export function StudioCanvas() {
       return true;
     };
 
+    // A group's handles are reached for before anything under them: they sit outside
+    // the elements they belong to, and whatever they overlap is not what is grabbed.
+    if (group) {
+      const grip = gripAtScreen(group.state, group.size, screen, viewport, frame, view);
+      if (grip) {
+        const starts = useStudio.getState().selectionStarts();
+        if (starts.length > 0) {
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            return;
+          }
+          setCursor(
+            grip.kind === "resize"
+              ? HANDLE_CURSOR[grip.handle]
+              : rotateCursor(regionAngle(group.state, group.size, grip.near)),
+          );
+          setGroupDrag({
+            pointerId: e.pointerId,
+            mode: grip.kind,
+            handle: grip.kind === "resize" ? grip.handle : null,
+            box: group.box,
+            starts,
+            uniform: group.uniform,
+            startAngle: angleAt(boxCentre(group.box), point),
+            spin: 0,
+          });
+          return;
+        }
+      }
+    }
+
     if (selected) {
       const grip = gripAtScreen(
         selected.item.state,
@@ -569,6 +672,33 @@ export function StudioCanvas() {
 
     if (marquee && marquee.pointerId === e.pointerId) {
       setMarquee({ ...marquee, to: screen });
+      return;
+    }
+
+    if (groupDrag && groupDrag.pointerId === e.pointerId) {
+      const point = screenToComposition(screen, viewport, frame, view);
+      const store = useStudio.getState();
+      if (groupDrag.mode === "resize" && groupDrag.handle) {
+        // Shift flips the lock, the usual canvas convention — except where the
+        // selection has no choice, and there it is held square either way.
+        const uniform = groupDrag.uniform || e.shiftKey;
+        const { about, fx, fy } = resizeFactors(
+          groupDrag.box,
+          groupDrag.handle,
+          point,
+          uniform,
+        );
+        store.transformSelection(groupDrag.starts, { kind: "scale", about, fx, fy });
+      } else {
+        const pivot = boxCentre(groupDrag.box);
+        const deg = snapSwing(
+          angleAt(pivot, point) - groupDrag.startAngle,
+          ROTATE_SNAP,
+          e.shiftKey,
+        );
+        store.transformSelection(groupDrag.starts, { kind: "rotate", about: pivot, deg });
+        setGroupDrag({ ...groupDrag, spin: deg });
+      }
       return;
     }
 
@@ -746,6 +876,16 @@ export function StudioCanvas() {
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (closeMarquee(e)) return;
+    if (groupDrag && groupDrag.pointerId === e.pointerId) {
+      setGroupDrag(null);
+      setCursor(null);
+      // The whole gesture was one edit; releasing closes it.
+      useStudio.getState().sealHistory();
+      if (e.currentTarget.hasPointerCapture(groupDrag.pointerId)) {
+        e.currentTarget.releasePointerCapture(groupDrag.pointerId);
+      }
+      return;
+    }
     const drag = dragRef.current;
     if (!drag) return;
     dragRef.current = null;
@@ -878,18 +1018,47 @@ export function StudioCanvas() {
           ))}
         </>
       ) : null}
-      {/* Everything picked, boxed as one. Chrome over the render, like the guides —
-          the exporter paints from the composition and has never heard of it. */}
-      {group ? (
-        <div
-          className="pointer-events-none absolute z-[2] border border-[#0d99ff]"
+      {/* Everything picked, boxed as one, with a handle on each corner. Chrome over
+          the render, like the guides — the exporter paints from the composition and
+          has never heard of it. */}
+      {group && groupChrome ? (
+        <svg
+          className="studio-selection"
+          width={viewport.width}
+          height={viewport.height}
           aria-hidden="true"
-          style={{
-            transform: `translate(${group.x}px, ${group.y}px)`,
-            width: group.width,
-            height: group.height,
-          }}
-        />
+        >
+          {/* What is in the selection, each in its own right. A box reaching across
+              the frame says very little about what it caught without them. */}
+          {group.outlines.map((o, i) => (
+            <rect
+              key={i}
+              className="studio-group-member"
+              x={o.x}
+              y={o.y}
+              width={o.width}
+              height={o.height}
+            />
+          ))}
+          <polygon
+            className="studio-selection-outline"
+            points={groupChrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
+          />
+          {CORNERS.map((k) => {
+            const p = groupChrome.handles[k];
+            return (
+              <rect
+                key={k}
+                className="studio-handle"
+                x={p.x - HANDLE_SIZE / 2}
+                y={p.y - HANDLE_SIZE / 2}
+                width={HANDLE_SIZE}
+                height={HANDLE_SIZE}
+                transform={`rotate(${groupChrome.rotation} ${p.x} ${p.y})`}
+              />
+            );
+          })}
+        </svg>
       ) : null}
       {/* The rectangle being drawn, while it is being drawn. */}
       {marquee ? (
