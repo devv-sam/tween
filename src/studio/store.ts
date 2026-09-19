@@ -5,6 +5,7 @@ import type {
   Composition,
   Driver,
   KeyframeSet,
+  Layer,
   ModuleData,
   Track,
   Transform,
@@ -20,8 +21,10 @@ import {
   secondsToT,
   shiftStops,
   stopAtTime,
+  type DesignSize,
   type KeyProp,
   type KeyTarget,
+  type TrackProp,
   type PositionDriver,
   type Range,
   type SelectedPart,
@@ -56,6 +59,19 @@ export type MoveAnchor = {
    *  read live so every move in one drag writes the same keyframe, and dropping in
    *  the same place twice lands the same value. */
   seconds: number;
+};
+
+/**
+ * The element's pixel size before any transform — the asset as it came in. Only an
+ * image has one; a width in the panel is a factor against it.
+ */
+export const designSizeOf = (
+  assets: ImageAsset[],
+  layer: Layer,
+): DesignSize | undefined => {
+  if (layer.source.kind !== "image") return undefined;
+  const asset = assets.find((a) => a.id === layer.source.value);
+  return asset ? { width: asset.naturalW, height: asset.naturalH } : undefined;
 };
 
 export type ImageAsset = {
@@ -222,7 +238,11 @@ type StudioState = {
   renameLayer: (layerId: string, name: string) => void;
   addKeyframes: (layerId: string, target: KeyTarget) => void;
   removeKeyframes: (layerId: string, target: KeyTarget) => void;
-  setKeyframeStops: (layerId: string, prop: KeyProp, stops: KeyframeSet["stops"]) => void;
+  setKeyframeStops: (
+    layerId: string,
+    prop: KeyProp | TrackProp,
+    stops: KeyframeSet["stops"],
+  ) => void;
   /** Both axes of a combined position at once — they only ever move together. */
   setPositionStops: (
     layerId: string,
@@ -240,6 +260,8 @@ type StudioState = {
   moveAnchor: (layerId: string) => MoveAnchor | null;
   moveLayer: (layerId: string, anchor: MoveAnchor, dx: number, dy: number) => void;
   nudgeSelected: (dx: number, dy: number) => void;
+  /** Put the element on the composition's centre line, on one axis. */
+  centreLayer: (layerId: string, axis: "x" | "y") => void;
   deleteSelected: () => void;
   /** The picked keyframes, gone. A property whose last keyframe goes stops carrying
    *  motion — there is no curve left to be the one keyframe of. */
@@ -631,7 +653,7 @@ export const useStudio = create<StudioState>((set, get) => {
           const keyframes = { ...(tr.keyframes ?? {}) };
           /** True once the value is in a keyframe, so the caller knows to leave the
            *  base alone. */
-          const capture = (prop: KeyProp, v: number): boolean => {
+          const capture = (prop: KeyProp | TrackProp, v: number): boolean => {
             const set = keyframes[prop];
             if (!set) return false;
             const at = clamp(secondsToT(seconds, set.range, span), 0, 1);
@@ -643,12 +665,13 @@ export const useStudio = create<StudioState>((set, get) => {
             number,
           ][]) {
             if (typeof v !== "number") continue;
-            // `scale` is one keyframed property driving both axes, so scaleX speaks
-            // for the pair and scaleY has nowhere of its own to land.
+            // An axis keyed on its own takes the value; failing that, a uniform
+            // `scale` set speaks for both axes, and scaleY has nowhere of its own to
+            // land while it does.
             if (prop === "scaleX") {
-              if (!capture("scale", v)) base.scaleX = v;
+              if (!capture("scaleX", v) && !capture("scale", v)) base.scaleX = v;
             } else if (prop === "scaleY") {
-              if (!keyframes.scale) base.scaleY = v;
+              if (!capture("scaleY", v) && !keyframes.scale) base.scaleY = v;
             } else if (!capture(prop, v)) {
               base[prop] = v;
             }
@@ -744,6 +767,31 @@ export const useStudio = create<StudioState>((set, get) => {
           )
         : wanted;
       moveLayer(selectedId, anchor, bounded.x - at.state.x, bounded.y - at.state.y);
+    },
+
+    /**
+     * Sit the element on the frame's centre line, across one axis.
+     *
+     * Measured and written the same way a drag is: from where the element reads at the
+     * playhead, through `moveLayer`, so an axis a keyframe or a module owns is moved in
+     * its own holder rather than being overwritten in a base nothing is reading. An
+     * element part-way through its animation centres the frame you can see.
+     */
+    centreLayer: (layerId, axis) => {
+      const { composition, frame, moveAnchor, moveLayer, t, sealHistory } = get();
+      const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (!track) return;
+      const anchor = moveAnchor(layerId);
+      if (!anchor) return;
+      const at =
+        renderState(composition, t).find((it) => it.id === layerId)?.state ??
+        track.layer.base;
+      const middle = axis === "x" ? frame.width / 2 : frame.height / 2;
+      const by = middle - at[axis];
+      if (by === 0) return;
+      moveLayer(layerId, anchor, axis === "x" ? by : 0, axis === "y" ? by : 0);
+      // One click is one undo step — there is no gesture still in flight to keep open.
+      sealHistory();
     },
 
     toggleLayerLock: (layerId) => {

@@ -12,7 +12,7 @@ import { sampleStops } from "../core/curve";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
-import { useStudio } from "./store";
+import { designSizeOf, useStudio } from "./store";
 import { ChevronIcon, NumberField } from "./fields";
 import { entryId } from "./keyframeLog";
 import {
@@ -21,6 +21,7 @@ import {
   PROP_TEXT,
   SAME_STOP,
   baseValue,
+  fromDisplay,
   layerName,
   positionSets,
   samePart,
@@ -28,11 +29,14 @@ import {
   slideRange,
   slideStops,
   stopAtTime,
+  toDisplay,
   stretchStops,
   trackBlocks,
   trimRange,
   type BlockView,
+  type DesignSize,
   type KeyProp,
+  type TrackProp,
   type Range,
 } from "./modules";
 import {
@@ -212,6 +216,7 @@ export function Timeline() {
       track,
       id: track.layer.id,
       name: layerName(track.layer, asset?.name, i),
+      size: designSizeOf(assets, track.layer),
       given: track.layer.name ?? "",
       blocks,
       open: expanded.includes(track.layer.id) && blocks.length > 0,
@@ -280,6 +285,7 @@ export function Timeline() {
                       layerId={row.id}
                       block={block}
                       state={states.get(row.id)}
+                      size={row.size}
                     />
                   ))
                 : null}
@@ -481,10 +487,14 @@ function PropertyLabel({
   layerId,
   block,
   state,
+  size,
 }: {
   layerId: string;
   block: BlockView;
   state: Transform | undefined;
+  /** The element at scale 1 — what turns a stored width factor into the pixels the
+   *  row shows, so this number and the inspector's agree. */
+  size: DesignSize | undefined;
 }) {
   const selected = useStudio(
     (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
@@ -497,7 +507,7 @@ function PropertyLabel({
   const read = (axis: "x" | "y"): number => {
     if (!state) return 0;
     if (target === "position") return axis === "x" ? state.x : state.y;
-    return baseValue(state, target as KeyProp);
+    return toDisplay(target, baseValue(state, target as KeyProp), size);
   };
 
   /** One write for both jobs: the edited axis takes the new value and every other
@@ -516,10 +526,14 @@ function PropertyLabel({
       });
       return;
     }
-    const set = track.keyframes?.[target as KeyProp];
+    const set = track.keyframes?.[target];
     if (!set) return;
     const local = clamp(secondsToT(store.t * span, set.range, span), 0, 1);
-    store.setKeyframeStops(layerId, target as KeyProp, stopAtTime(set.stops, local, v));
+    store.setKeyframeStops(
+      layerId,
+      target as KeyProp | TrackProp,
+      stopAtTime(set.stops, local, fromDisplay(target, v, size)),
+    );
   };
 
   return (

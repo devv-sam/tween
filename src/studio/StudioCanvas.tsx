@@ -10,6 +10,8 @@ import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
 import { IMAGE_ACCEPT } from "./files";
+import { LockIcon, LockOpenIcon } from "./fields";
+import { alignmentFor, type Alignment, type Box } from "./guides";
 import { paintComposition } from "../render/paint";
 import { useStudio, type MoveAnchor } from "./store";
 import {
@@ -67,6 +69,20 @@ type Drag = {
 
 const centreOf = (state: Transform): Point => ({ x: state.x, y: state.y });
 
+/**
+ * How close, in screen px, a line has to come before the drag snaps to it. Screen
+ * rather than composition px so the pull feels the same at any zoom — six pixels
+ * under the pointer is six pixels of forgiveness whatever the ruler says.
+ */
+const SNAP = 6;
+
+/**
+ * How far past the snap band a near miss is still worth measuring. Inside `SNAP` the
+ * guide is drawn and taken; between the two the element is deliberately off the line,
+ * so the distance is reported instead and nothing is drawn.
+ */
+const MEASURE_REACH = 28;
+
 const NUDGE = 1;
 const NUDGE_COARSE = 10;
 const BADGE_GAP = 10;
@@ -91,6 +107,9 @@ export function StudioCanvas() {
   const [hovering, setHovering] = useState(false);
   // While rotating, the badge reports the angle instead of the box size.
   const [rotating, setRotating] = useState(false);
+  // What the element in flight has lined up with. Chrome only — it is drawn over the
+  // render, never into it, and it is dropped the moment the pointer comes up.
+  const [alignment, setAlignment] = useState<Alignment | null>(null);
 
   const origin = frameOrigin(viewport, frame, view);
   const size = frameSize(frame, view.scale);
@@ -121,6 +140,29 @@ export function StudioCanvas() {
       lockAspect: Boolean(track?.layer.lockAspect),
     };
   }, [scene, selectedId, sizeOf, composition]);
+
+  /**
+   * Every other element on the frame, as a box to line up against.
+   *
+   * Measured from `scene`, which is the composition evaluated at the playhead — so an
+   * element part-way through its own animation offers the edges it has right now, not
+   * the ones its base transform started from. Alignment during motion authoring means
+   * what it looks like it means.
+   */
+  const alignTargets = (movingId: string): Box[] => {
+    const out: Box[] = [];
+    for (const item of scene) {
+      if (item.id === movingId) continue;
+      const itemSize = sizeOf(item);
+      if (!itemSize) continue;
+      out.push({
+        id: item.id,
+        centre: { x: item.state.x, y: item.state.y },
+        half: boundsHalf(item.state, itemSize),
+      });
+    }
+    return out;
+  };
 
   useEffect(() => setHovering(false), [selectedId]);
 
@@ -505,14 +547,27 @@ export function StudioCanvas() {
     }
 
     if (!drag.handle) {
+      const half = boundsHalf(drag.startRendered, drag.size);
+      const wanted = {
+        x: drag.startRendered.x + (point.x - drag.from.x),
+        y: drag.startRendered.y + (point.y - drag.from.y),
+      };
+      // The bands are given in screen px, so they come back through the zoom before
+      // anything is measured in composition space.
+      const perPx = scale > 0 ? 1 / scale : 0;
+      const found = alignmentFor(
+        { id: drag.id, centre: wanted, half },
+        alignTargets(drag.id),
+        frame,
+        SNAP * perPx,
+        MEASURE_REACH * perPx,
+      );
+      setAlignment(found.guides.length || found.measures.length ? found : null);
       // Bound the rendered centre, then apply the result to `base` as a delta — same as
       // resize, so an offset an active module contributed survives the clamp.
       const at = clampToFrame(
-        {
-          x: drag.startRendered.x + (point.x - drag.from.x),
-          y: drag.startRendered.y + (point.y - drag.from.y),
-        },
-        boundsHalf(drag.startRendered, drag.size),
+        { x: wanted.x + found.delta.x, y: wanted.y + found.delta.y },
+        half,
         frame,
       );
       const { moveLayer } = useStudio.getState();
@@ -559,12 +614,32 @@ export function StudioCanvas() {
     if (!drag) return;
     dragRef.current = null;
     setRotating(false);
+    setAlignment(null);
     // The whole drag was one edit; releasing closes it.
     useStudio.getState().sealHistory();
     if (e.currentTarget.hasPointerCapture(drag.pointerId)) {
       e.currentTarget.releasePointerCapture(drag.pointerId);
     }
   };
+
+  /** The guides in screen space: a line's own coordinate and the two ends it runs
+   *  between, both carried through the same projection the selection box uses. */
+  const marks = useMemo(() => {
+    if (!alignment) return null;
+    const toScreen = (p: Point) => compositionToScreen(p, viewport, frame, view);
+    const lines = alignment.guides.map((g) => {
+      const a = toScreen(
+        g.axis === "x" ? { x: g.at, y: g.from } : { x: g.from, y: g.at },
+      );
+      const b = toScreen(g.axis === "x" ? { x: g.at, y: g.to } : { x: g.to, y: g.at });
+      return { kind: g.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+    });
+    const labels = alignment.measures.map((m) => ({
+      at: toScreen(m.at),
+      text: `${Math.round(m.gap)}`,
+    }));
+    return { lines, labels };
+  }, [alignment, viewport, frame, view]);
 
   const chrome = useMemo(() => {
     if (!selected) return null;
@@ -632,6 +707,41 @@ export function StudioCanvas() {
         </div>
       ) : null}
       <canvas ref={canvasRef} className="studio-render" />
+      {/* Guides live here rather than in the painted frame: they are something the
+          author is shown while dragging, not something the composition contains, so
+          nothing that renders or exports a frame can ever see them. */}
+      {marks ? (
+        <>
+          <svg
+            className="studio-guides"
+            width={viewport.width}
+            height={viewport.height}
+            aria-hidden="true"
+          >
+            {marks.lines.map((l, i) => (
+              <line
+                key={i}
+                className={`studio-guide${l.kind === "frame" ? " is-frame" : ""}`}
+                x1={l.x1}
+                y1={l.y1}
+                x2={l.x2}
+                y2={l.y2}
+              />
+            ))}
+          </svg>
+          {marks.labels.map((l, i) => (
+            <div
+              key={i}
+              className="studio-measure"
+              style={{
+                transform: `translate(${l.at.x}px, ${l.at.y}px) translate(-50%, -50%)`,
+              }}
+            >
+              {l.text}
+            </div>
+          ))}
+        </>
+      ) : null}
       {selected && chrome ? (
         <>
           <svg
@@ -731,45 +841,6 @@ export function StudioCanvas() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-/** Lucide `lock` / `lock-open`, inlined so two glyphs don't pull in an icon package. */
-function LockIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
-
-function LockOpenIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-    </svg>
   );
 }
 
