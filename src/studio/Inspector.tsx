@@ -444,8 +444,14 @@ function SizeField({
   );
 }
 
-/** The aspect lock, the same one the canvas puts beside a selection. Either place
- *  toggles it, and a resize from either place obeys it. */
+/**
+ * The aspect lock, the same one the canvas puts beside a selection. Either place
+ * toggles it, and a resize from either place obeys it.
+ *
+ * Built like the separate-position button below it rather than like a field: both are
+ * a switch riding at the end of a row, saying how the numbers beside them behave, so
+ * neither should read as another value to fill in.
+ */
 function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
   const label = locked ? "unlock aspect ratio" : "lock aspect ratio";
   return (
@@ -454,10 +460,10 @@ function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
       aria-label={label}
       aria-pressed={locked}
       title={label}
-      className={`grid h-[26px] w-[26px] shrink-0 place-items-center rounded-md border ${
+      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
         locked
-          ? "border-[#0d99ff] bg-[#e8f4ff] text-[#0d99ff]"
-          : "border-[#e0e0e0] text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+          ? "bg-[#e8f4ff] text-[#0d99ff]"
+          : "text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
       }`}
       onClick={() => useStudio.getState().toggleLayerLock(layerId)}
     >
