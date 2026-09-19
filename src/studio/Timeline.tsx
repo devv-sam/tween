@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { Transform } from "../core/types";
@@ -13,7 +14,7 @@ import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
 import { designSizeOf, useStudio } from "./store";
-import { ChevronIcon, NumberField } from "./fields";
+import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
 import { entryId } from "./keyframeLog";
 import {
   PROP_COLOR,
@@ -48,6 +49,8 @@ import {
   type RailCap,
 } from "./linked";
 import {
+  MAX_DURATION,
+  MIN_DURATION,
   PROPERTY_HEIGHT,
   RULER_HEIGHT,
   TRACK_HEIGHT,
@@ -66,9 +69,8 @@ export function Timeline() {
   const t = useStudio((s) => s.t);
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);
-  const expanded = useStudio((s) => s.expandedTracks);
+  const collapsed = useStudio((s) => s.collapsedTracks);
   const selectedIds = useStudio((s) => s.selectedIds);
-  const driver = composition.driver.kind;
 
   const areaRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<Preview | null>(null);
@@ -222,22 +224,25 @@ export function Timeline() {
     return out;
   }, [composition, t]);
 
-  const rows = composition.tracks.map((track, i) => {
-    const asset =
-      track.layer.source.kind === "image"
-        ? assets.find((a) => a.id === track.layer.source.value)
-        : undefined;
-    const blocks = trackBlocks(track);
-    return {
-      track,
-      id: track.layer.id,
-      name: layerName(track.layer, asset?.name, i),
-      size: designSizeOf(assets, track.layer),
-      given: track.layer.name ?? "",
-      blocks,
-      open: expanded.includes(track.layer.id) && blocks.length > 0,
-    };
-  });
+  // Only what animates: being on the canvas is not a reason to hold a lane here.
+  const rows = composition.tracks
+    .map((track, i) => {
+      const asset =
+        track.layer.source.kind === "image"
+          ? assets.find((a) => a.id === track.layer.source.value)
+          : undefined;
+      const blocks = trackBlocks(track);
+      return {
+        track,
+        id: track.layer.id,
+        name: layerName(track.layer, asset?.name, i),
+        size: designSizeOf(assets, track.layer),
+        given: track.layer.name ?? "",
+        blocks,
+        open: blocks.length > 0 && !collapsed.includes(track.layer.id),
+      };
+    })
+    .filter((row) => row.blocks.length > 0);
 
   // Which curves are running in lockstep, read back off the composition every render
   // rather than recorded when they were made. Cheap enough at this size, and it can
@@ -250,94 +255,74 @@ export function Timeline() {
 
   /** The gutter, flattened: one entry per row it draws, in the order it draws them,
    *  so the rail can see which rows sit next to which. An entry with no block is the
-   *  element's own row. */
+   *  element's own row, and `last` is where the branch line under an element stops. */
   const gutter = rows.flatMap((row) => [
-    { row, block: null as BlockView | null },
-    ...(row.open ? row.blocks.map((block) => ({ row, block })) : []),
+    { row, block: null as BlockView | null, last: false },
+    ...(row.open
+      ? row.blocks.map((block, i) => ({
+          row,
+          block,
+          last: i === row.blocks.length - 1,
+        }))
+      : []),
   ]);
   const caps = railCaps(
     gutter.map((it) => ({ id: it.row.id })),
     families,
   );
 
+  // Delete here takes away motion, never the element — so the event is stopped even
+  // when nothing was picked, or the canvas' handler would find an element to remove.
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Delete" && e.key !== "Backspace") return;
+    if (e.target instanceof HTMLInputElement) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const store = useStudio.getState();
+    if (store.selectedKeys.length > 0) store.removeSelectedKeys();
+    else if (store.selectedPart) store.removeSelectedPart();
+  };
+
   return (
-    <div className="timeline" aria-label="timeline">
-      <div className="timeline-transport">
-        <button
-          type="button"
-          className="transport-btn"
-          aria-label={playing ? "pause" : "play"}
-          title={playing ? "pause" : "play"}
-          aria-pressed={playing}
-          onClick={() => useStudio.getState().setPlaying(!playing)}
-        >
-          {playing ? <PauseIcon /> : <PlayIcon />}
-        </button>
-        <button
-          type="button"
-          className={`transport-btn${loop ? " is-on" : ""}`}
-          aria-label="loop"
-          title="loop"
-          aria-pressed={loop}
-          onClick={() => useStudio.getState().toggleLoop()}
-        >
-          <LoopIcon />
-        </button>
-        <Readout
-          time={t * duration}
-          duration={duration}
-          unit={unit}
-          onToggleUnit={() => setUnit((u) => (u === "s" ? "ms" : "s"))}
-        />
-        <span className="transport-spacer" />
-        <button
-          type="button"
-          className="driver-pill"
-          title={`driver: ${driver}`}
-          onClick={() =>
-            useStudio.getState().setDriver(driver === "time" ? "input" : "time")
-          }
-        >
-          {driver}
-        </button>
-      </div>
+    <div className="timeline" aria-label="timeline" onKeyDown={onKeyDown}>
+      {/* `rtl` is what puts the scrollbar on the gutter's side; children stay `ltr`. */}
+      <div className="timeline-body [direction:rtl] [scrollbar-color:#d8d8d8_transparent] [scrollbar-width:thin] [&>*]:[direction:ltr]">
+        {/* Pinned inside the scroller, not above it, so the head and the rows are
+            measured against the same box and ticks stay over their keyframes. */}
+        <div className="timeline-head" style={{ height: RULER_HEIGHT }}>
+          <div className="timeline-transport">
+            <button
+              type="button"
+              className="transport-btn"
+              aria-label={playing ? "pause" : "play"}
+              title={playing ? "pause" : "play"}
+              aria-pressed={playing}
+              onClick={() => useStudio.getState().setPlaying(!playing)}
+            >
+              {playing ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            <button
+              type="button"
+              className={`transport-btn${loop ? " is-on" : ""}`}
+              aria-label="loop"
+              title="loop"
+              aria-pressed={loop}
+              onClick={() => useStudio.getState().toggleLoop()}
+            >
+              <LoopIcon />
+            </button>
+            <Readout
+              time={t * duration}
+              duration={duration}
+              unit={unit}
+              onSeek={(seconds) => seek(clamp(seconds / duration, 0, 1))}
+              onToggleUnit={() => setUnit((u) => (u === "s" ? "ms" : "s"))}
+            />
+          </div>
 
-      <div className="timeline-body">
-        <div className="timeline-gutter">
-          <div className="timeline-gutter-head" style={{ height: RULER_HEIGHT }} />
-          {gutter.map((item, i) =>
-            item.block === null ? (
-              <TrackLabel
-                key={item.row.id}
-                layerId={item.row.id}
-                name={item.row.name}
-                given={item.row.given}
-                blocks={item.row.blocks.length}
-                open={item.row.open}
-                selected={selectedIds.includes(item.row.id)}
-                rail={caps[i]}
-              />
-            ) : (
-              <PropertyLabel
-                key={`${item.row.id}:${blockKey(item.block)}`}
-                layerId={item.row.id}
-                block={item.block}
-                state={states.get(item.row.id)}
-                size={item.row.size}
-                rail={caps[i]}
-                link={linkOf(item.block)}
-                hot={hotLink === motionKey(item.block)}
-                onEnter={enterLink}
-                onLeave={leaveLink}
-              />
-            ),
-          )}
-        </div>
-
-        <div className="timeline-area" ref={areaRef}>
           <div
             className="timeline-ruler"
-            style={{ height: RULER_HEIGHT }}
+            ref={areaRef}
             onPointerDown={beginScrub}
             onPointerMove={moveScrub}
             onPointerUp={endScrub}
@@ -366,49 +351,6 @@ export function Timeline() {
               onPointerUp={onDurationUp}
               onPointerCancel={onDurationUp}
             />
-          </div>
-
-          <div className="timeline-lanes">
-            {rows.map((row) => (
-              <Fragment key={row.id}>
-                {/* The element's own lane stays clear whether or not it is open. An
-                    element is not a property and has no motion of its own to draw;
-                    what it has is the rows underneath. */}
-                <div
-                  className={`relative border-b border-[#f0f0f0] ${
-                    selectedIds.includes(row.id) ? "bg-[#eef4fb]" : "bg-[#fafafa]"
-                  }`}
-                  style={{ height: TRACK_HEIGHT }}
-                />
-                {row.open
-                  ? row.blocks.map((block) => (
-                      <div
-                        key={blockKey(block)}
-                        className={`relative border-b border-[#f0f0f0] ${
-                          hotLink === motionKey(block) ? "bg-[#eef0ff]" : "bg-white"
-                        }`}
-                        style={{ height: PROPERTY_HEIGHT }}
-                        // Pointing at one bar says what it runs with, before anything
-                        // is touched — and touching it is what breaks the link.
-                        onPointerEnter={() => enterLink(motionKey(block))}
-                        onPointerLeave={() => leaveLink(motionKey(block))}
-                      >
-                        {block.standalone ? (
-                          <KeyframeTrack layerId={row.id} block={block} width={width} />
-                        ) : (
-                          <ModuleBlock layerId={row.id} block={block} width={width} />
-                        )}
-                      </div>
-                    ))
-                  : null}
-              </Fragment>
-            ))}
-          </div>
-
-          <div
-            className="timeline-playhead"
-            style={{ transform: `translateX(${playheadX}px)` }}
-          >
             <span
               className="playhead-grab"
               role="slider"
@@ -418,12 +360,94 @@ export function Timeline() {
               aria-valuemax={duration}
               aria-valuenow={Number((t * duration).toFixed(2))}
               aria-valuetext={`${formatTime(t * duration, unit)}${unit}`}
+              style={{ transform: `translateX(${playheadX}px)` }}
               onPointerDown={beginScrub}
               onPointerMove={moveScrub}
               onPointerUp={endScrub}
               onPointerCancel={endScrub}
             />
-            <span className="playhead-line" />
+          </div>
+        </div>
+
+        <div className="timeline-rows">
+          <div className="timeline-gutter">
+            {gutter.map((item, i) =>
+              item.block === null ? (
+                <TrackLabel
+                  key={item.row.id}
+                  layerId={item.row.id}
+                  name={item.row.name}
+                  given={item.row.given}
+                  blocks={item.row.blocks.length}
+                  open={item.row.open}
+                  selected={selectedIds.includes(item.row.id)}
+                  rail={caps[i]}
+                />
+              ) : (
+                <PropertyLabel
+                  key={`${item.row.id}:${blockKey(item.block)}`}
+                  layerId={item.row.id}
+                  block={item.block}
+                  state={states.get(item.row.id)}
+                  size={item.row.size}
+                  rail={caps[i]}
+                  last={item.last}
+                  link={linkOf(item.block)}
+                  hot={hotLink === motionKey(item.block)}
+                  onEnter={enterLink}
+                  onLeave={leaveLink}
+                />
+              ),
+            )}
+          </div>
+
+          <div className="timeline-area">
+            <div className="timeline-lanes">
+              {rows.map((row) => (
+                <Fragment key={row.id}>
+                  {/* An element has no motion of its own, only the rows underneath. */}
+                  <div
+                    className={`timeline-lane is-track${
+                      selectedIds.includes(row.id) ? " is-selected" : ""
+                    }`}
+                    style={{ height: TRACK_HEIGHT }}
+                  >
+                    {row.open ? null : (
+                      <FoldedSpan blocks={row.blocks} width={width} />
+                    )}
+                  </div>
+                  {row.open
+                    ? row.blocks.map((block, i) => (
+                        <div
+                          key={blockKey(block)}
+                          className={`timeline-lane is-property${
+                            hotLink === motionKey(block) ? " is-linked-hot" : ""
+                          }${i === row.blocks.length - 1 ? " is-last" : ""}`}
+                          style={{ height: PROPERTY_HEIGHT }}
+                          // Pointing at one bar says what it runs with, before anything
+                          // is touched — and touching it is what breaks the link.
+                          onPointerEnter={() => enterLink(motionKey(block))}
+                          onPointerLeave={() => leaveLink(motionKey(block))}
+                        >
+                          {block.standalone ? (
+                            <KeyframeTrack layerId={row.id} block={block} width={width} />
+                          ) : (
+                            <ModuleBlock layerId={row.id} block={block} width={width} />
+                          )}
+                        </div>
+                      ))
+                    : null}
+                </Fragment>
+              ))}
+            </div>
+
+            {/* Full height of the rows, not of the window onto them, so any scroll
+                position still has the line crossing it. */}
+            <span
+              className="playhead-line"
+              aria-hidden="true"
+              style={{ transform: `translateX(${playheadX}px)` }}
+            />
           </div>
         </div>
       </div>
@@ -481,22 +505,20 @@ function TrackLabel({
       onDoubleClick={() => setDraft(given)}
     >
       <Rail cap={rail} />
-      {/* The twisty keeps its slot whether or not there is anything under it, so the
-          names stay in one column down the gutter. */}
-      {blocks > 0 ? (
-        <button
-          type="button"
-          className={`timeline-twisty${open ? " is-open" : ""}`}
-          aria-expanded={open}
-          aria-label={open ? `collapse ${name}` : `expand ${name}`}
-          title={open ? "collapse" : "expand"}
-          onClick={() => useStudio.getState().toggleTrackExpanded(layerId)}
-        >
-          <ChevronIcon />
-        </button>
-      ) : (
-        <span className="timeline-twisty is-empty" aria-hidden="true" />
-      )}
+      <button
+        type="button"
+        className={`timeline-twisty${open ? " is-open" : ""}`}
+        aria-expanded={open}
+        aria-label={
+          open
+            ? `collapse ${name}, ${blocks} animated ${blocks === 1 ? "property" : "properties"}`
+            : `expand ${name}, ${blocks} animated ${blocks === 1 ? "property" : "properties"}`
+        }
+        title={open ? "collapse" : "expand"}
+        onClick={() => useStudio.getState().toggleTrackExpanded(layerId)}
+      >
+        <ChevronIcon />
+      </button>
       {draft === null ? (
         <button
           type="button"
@@ -529,6 +551,14 @@ function TrackLabel({
           onFocus={(e) => e.currentTarget.select()}
         />
       )}
+      {!open && draft === null ? (
+        <span
+          className="timeline-track-count"
+          title={`${blocks} animated ${blocks === 1 ? "property" : "properties"}`}
+        >
+          {blocks}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -548,6 +578,7 @@ function PropertyLabel({
   state,
   size,
   rail,
+  last,
   link,
   hot,
   onEnter,
@@ -560,6 +591,8 @@ function PropertyLabel({
    *  row shows, so this number and the inspector's agree. */
   size: DesignSize | undefined;
   rail: RailCap | null;
+  /** Last in its element's run of properties, where the branch line ends. */
+  last: boolean;
   /** The other elements running this same curve, when there are any. */
   link: LinkGroup | undefined;
   /** This curve's set is the one being pointed at, here or on another row. */
@@ -617,14 +650,19 @@ function PropertyLabel({
       onPointerLeave={() => onLeave(motionKey(block))}
     >
       <Rail cap={rail} />
+      {/* The indent alone is too quiet to say this row belongs to the one above. */}
+      <span
+        className={`timeline-branch${last ? " is-last" : ""}`}
+        aria-hidden="true"
+      />
+      {/* Never toggles off: that left the element picked and nothing else, so a
+          Delete aimed at the property took the element with it. */}
       <button
         type="button"
         className="timeline-property-name"
         aria-pressed={selected}
         title={`${block.label} — click to select`}
-        onClick={() =>
-          useStudio.getState().selectPart(layerId, selected ? null : block.part)
-        }
+        onClick={() => useStudio.getState().selectPart(layerId, block.part)}
       >
         {block.label}
       </button>
@@ -649,6 +687,21 @@ function PropertyLabel({
         <span className="ml-auto pr-1 text-[10px] text-[#b0b0b0]">module</span>
       )}
     </div>
+  );
+}
+
+/** How far a folded element's motion reaches. Not a control — unfold to touch it. */
+function FoldedSpan({ blocks, width }: { blocks: BlockView[]; width: number }) {
+  if (blocks.length === 0) return null;
+  const from = Math.min(...blocks.map((b) => b.range[0]));
+  const to = Math.max(...blocks.map((b) => b.range[1]));
+  const left = timeToX(from, width);
+  return (
+    <span
+      className="timeline-folded-span"
+      aria-hidden="true"
+      style={{ left, width: Math.max(2, timeToX(to, width) - left) }}
+    />
   );
 }
 
@@ -1044,34 +1097,67 @@ function ModuleBlock({
 }
 
 /**
- * Current time, composition length, and the unit both read in — one control, with
- * the unit switch set apart because it changes what the other two mean.
+ * Current time and composition length, both typed as well as read, with the unit
+ * switch set apart because it changes what the two numbers mean.
  */
 function Readout({
   time,
   duration,
   unit,
+  onSeek,
   onToggleUnit,
 }: {
   time: number;
   duration: number;
   unit: Unit;
+  /** Seconds, absolute. Normalizing against the duration is the caller's job. */
+  onSeek: (seconds: number) => void;
   onToggleUnit: () => void;
 }) {
   const name = unit === "s" ? "seconds" : "milliseconds";
+  const ms = unit === "ms";
+  // One scale for both fields: what is typed is in the unit on show, what is stored
+  // is always seconds.
+  const scale = ms ? 1000 : 1;
+  const shape = ms
+    ? { step: 10, precision: 0 }
+    : { step: 0.1, precision: 2 };
+
   return (
-    <div className="transport-readout">
-      <div className="readout-fields">
-        <span className="readout-cell" title="current time">
-          {formatTime(time, unit)}
-        </span>
-        <span className="readout-cell is-muted" title="duration">
-          {formatTime(duration, unit)}
-        </span>
+    <div className="flex min-w-0 items-center gap-1 text-[11px]">
+      <div className="flex min-w-0">
+        <div className="w-[52px]">
+          <NumberField
+            label=""
+            ariaLabel={`current time in ${name}`}
+            title="current time — type to move the playhead"
+            join="left"
+            tight
+            value={time * scale}
+            min={0}
+            max={duration * scale}
+            {...shape}
+            onChange={(v) => onSeek(v / scale)}
+          />
+        </div>
+        <div className="w-[52px]">
+          <NumberField
+            label=""
+            ariaLabel={`duration in ${name}`}
+            title="duration — type to set how long the composition runs"
+            join="right"
+            tight
+            value={duration * scale}
+            min={MIN_DURATION * scale}
+            max={MAX_DURATION * scale}
+            {...shape}
+            onChange={(v) => useStudio.getState().setDuration(v / scale)}
+          />
+        </div>
       </div>
       <button
         type="button"
-        className="readout-unit"
+        className={`${GHOST_BTN} shrink-0 tabular-nums`}
         title={name}
         aria-label={`readout unit: ${name}`}
         onClick={onToggleUnit}

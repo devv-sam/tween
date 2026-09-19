@@ -16,6 +16,9 @@ export const INPUT =
   "min-w-0 bg-transparent text-[11px] text-[#111] tabular-nums outline-none placeholder:text-[#c0c0c0]";
 export const BOX =
   "flex items-center gap-1.5 rounded-md border border-[#e0e0e0] px-2 h-[26px] focus-within:border-[#0d99ff]";
+/** `BOX` with the padding pulled in, for a field holding a number and nothing else. */
+export const BOX_TIGHT =
+  "flex items-center rounded-md border border-[#e0e0e0] px-1.5 h-[26px] focus-within:border-[#0d99ff]";
 export const GHOST_BTN =
   "rounded-md border border-[#e0e0e0] px-2 h-[26px] text-[11px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]";
 
@@ -30,6 +33,7 @@ export type Join = "left" | "right";
 export function NumberField({
   label,
   title,
+  ariaLabel,
   value,
   onChange,
   step = 1,
@@ -40,12 +44,15 @@ export function NumberField({
   disabled,
   autoFocus,
   compact,
+  tight,
   onDone,
   mixed,
   onStep,
 }: {
   label: string;
   title?: string;
+  /** For a field with no visible label to be named by. */
+  ariaLabel?: string;
   value: number;
   onChange: (v: number) => void;
   step?: number;
@@ -59,6 +66,8 @@ export function NumberField({
   /** Short enough to sit in a timeline row, where the height is the lane's and there
    *  is no room for a border around every number. */
   compact?: boolean;
+  /** No label beside the number, so it does not need the room for one. */
+  tight?: boolean;
   /** The edit is over: enter, or focus leaving. Lets a field that only exists while
    *  it is being edited put itself away. */
   onDone?: () => void;
@@ -98,7 +107,9 @@ export function NumberField({
 
   const box = compact
     ? "flex items-center gap-1 rounded-[3px] border border-transparent px-1 h-[18px] hover:border-[#e0e0e0] focus-within:border-[#0d99ff]"
-    : BOX;
+    : tight
+      ? BOX_TIGHT
+      : BOX;
 
   return (
     <label
@@ -111,6 +122,7 @@ export function NumberField({
       <input
         className={`${INPUT} w-full text-right disabled:text-[#b0b0b0]`}
         inputMode="decimal"
+        aria-label={ariaLabel}
         placeholder={mixed ? "Mixed" : undefined}
         value={shown}
         disabled={disabled}

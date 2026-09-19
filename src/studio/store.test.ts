@@ -22,7 +22,7 @@ const seed = () => {
     viewport: { width: 800, height: 600 },
     selectedId: null,
     selectedPart: null,
-    expandedTracks: [],
+    collapsedTracks: [],
     selectedKeys: [],
   });
   useStudio.getState().placeElement(asset.id, { x: 200, y: 200 });
@@ -276,18 +276,60 @@ describe("moving a keyframed element", () => {
   });
 });
 
+describe("taking a property's motion off an element", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const tracks = () => state().composition.tracks;
+
+  it("drops the picked property's keyframes and keeps the element", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    state().addKeyframes(id, "opacity");
+    state().selectPart(id, { kind: "keyframes", property: "position" });
+
+    state().removeSelectedPart();
+
+    expect(tracks()).toHaveLength(1);
+    expect(tracks()[0].keyframes?.x).toBeUndefined();
+    expect(tracks()[0].keyframes?.y).toBeUndefined();
+    // The property that was not picked is untouched.
+    expect(tracks()[0].keyframes?.opacity).toBeDefined();
+    expect(state().selectedIds).toEqual([id]);
+    expect(state().selectedPart).toBeNull();
+  });
+
+  it("puts the motion back on undo, without having lost the element", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "rotation");
+    state().selectPart(id, { kind: "keyframes", property: "rotation" });
+    state().removeSelectedPart();
+    state().undo();
+    expect(tracks()).toHaveLength(1);
+    expect(tracks()[0].keyframes?.rotation).toBeDefined();
+  });
+
+  it("does nothing when no property is picked", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "opacity");
+    state().selectPart(id, null);
+    state().removeSelectedPart();
+    expect(tracks()[0].keyframes?.opacity).toBeDefined();
+  });
+});
+
 describe("what the timeline has open and picked", () => {
   beforeEach(seed);
 
   const state = () => useStudio.getState();
 
-  it("opens an element's property rows and closes them again", () => {
+  it("folds an element's property rows away and brings them back", () => {
     const id = layer().id;
-    expect(state().expandedTracks).toEqual([]);
+    expect(state().collapsedTracks).toEqual([]);
     state().toggleTrackExpanded(id);
-    expect(state().expandedTracks).toEqual([id]);
+    expect(state().collapsedTracks).toEqual([id]);
     state().toggleTrackExpanded(id);
-    expect(state().expandedTracks).toEqual([]);
+    expect(state().collapsedTracks).toEqual([]);
   });
 
   it("picks one keyframe, and unpicks it when it is picked again", () => {
@@ -328,7 +370,7 @@ describe("what the timeline has open and picked", () => {
     state().setLayerBase(id, { rotation: 45 });
     state().sealHistory();
     state().undo();
-    expect(state().expandedTracks).toEqual([id]);
+    expect(state().collapsedTracks).toEqual([id]);
     expect(state().selectedKeys).toEqual(["scale:0"]);
   });
 });
@@ -1049,8 +1091,9 @@ describe("keying a property across a selection", () => {
 
   it("opens the rows that gained motion", () => {
     const ids = two();
+    for (const id of ids) state().toggleTrackExpanded(id);
     state().keySelection(ids, "rotation");
-    expect(state().expandedTracks).toEqual(expect.arrayContaining(ids));
+    expect(state().collapsedTracks).toEqual([]);
   });
 
   it("leaves the selection where it was", () => {

@@ -406,7 +406,9 @@ export function StudioCanvas() {
         nudgeSelected,
         deleteSelected,
         selectedKeys,
+        selectedPart,
         removeSelectedKeys,
+        removeSelectedPart,
       } = useStudio.getState();
       const center = { x: vp.width / 2, y: vp.height / 2 };
 
@@ -415,11 +417,15 @@ export function StudioCanvas() {
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        // The narrower selection answers first: picked keyframes are inside the
-        // element, so deleting them is what was asked for, not the element around them.
+        // Narrowest first: a keyframe, then its property, and only then the element.
         if (selectedKeys.length > 0) {
           e.preventDefault();
           removeSelectedKeys();
+          return;
+        }
+        if (selectedPart) {
+          e.preventDefault();
+          removeSelectedPart();
           return;
         }
         if (picked.length > 0) {

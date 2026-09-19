@@ -433,7 +433,8 @@ type StudioState = {
    * read against whichever element `selectedId` names — the timeline puts them there
    * and the inspector edits whatever they point at.
    */
-  expandedTracks: string[];
+  /** Folded, not expanded: rows show by default, so folding is what is remembered. */
+  collapsedTracks: string[];
   selectedKeys: string[];
   viewport: Size;
   view: View;
@@ -536,6 +537,7 @@ type StudioState = {
    * between the parts.
    */
   detachPart: (layerId: string, at: Point) => Promise<string | null>;
+  removeSelectedPart: () => void;
   deleteSelected: () => void;
   /** The picked keyframes, gone. A property whose last keyframe goes stops carrying
    *  motion — there is no curve left to be the one keyframe of. */
@@ -582,7 +584,7 @@ export const useStudio = create<StudioState>((set, get) => {
     selectedIds: [],
     selectedId: null,
     selectedPart: null,
-    expandedTracks: [],
+    collapsedTracks: [],
     selectedKeys: [],
     viewport: { width: 0, height: 0 },
     view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
@@ -780,9 +782,9 @@ export const useStudio = create<StudioState>((set, get) => {
 
     toggleTrackExpanded: (layerId) =>
       set((s) => ({
-        expandedTracks: s.expandedTracks.includes(layerId)
-          ? s.expandedTracks.filter((id) => id !== layerId)
-          : [...s.expandedTracks, layerId],
+        collapsedTracks: s.collapsedTracks.includes(layerId)
+          ? s.collapsedTracks.filter((id) => id !== layerId)
+          : [...s.collapsedTracks, layerId],
       })),
 
     selectKey: (layerId, id, additive = false) =>
@@ -833,12 +835,8 @@ export const useStudio = create<StudioState>((set, get) => {
       edit(null, (s) => ({
         ...pick([layerId]),
         selectedPart: part,
-        // The property arrives with a row of its own, so the element opens to show
-        // it. Adding motion and then having to go find where it went is a step that
-        // exists for no reason.
-        expandedTracks: s.expandedTracks.includes(layerId)
-          ? s.expandedTracks
-          : [...s.expandedTracks, layerId],
+        // The new row has to be visible, so a folded element unfolds.
+        collapsedTracks: s.collapsedTracks.filter((id) => id !== layerId),
         ...patchTrack(s.composition, layerId, (tr) => ({
           ...tr,
           keyframes: { ...tr.keyframes, ...added },
@@ -1370,10 +1368,7 @@ export const useStudio = create<StudioState>((set, get) => {
         return {
           composition,
           // The rows that just gained motion open, the same way one element's does.
-          expandedTracks: [
-            ...s.expandedTracks,
-            ...opened.filter((id) => !s.expandedTracks.includes(id)),
-          ],
+          collapsedTracks: s.collapsedTracks.filter((id) => !opened.includes(id)),
         };
       });
 
@@ -1580,6 +1575,17 @@ export const useStudio = create<StudioState>((set, get) => {
           selectedPart: emptied ? null : s.selectedPart,
         };
       });
+    },
+
+    removeSelectedPart: () => {
+      const { selectedId, selectedPart } = get();
+      if (!selectedId || !selectedPart) return;
+      if (selectedPart.kind === "module") {
+        get().removeModule(selectedId, selectedPart.index);
+      } else {
+        get().removeKeyframes(selectedId, selectedPart.property);
+      }
+      get().sealHistory();
     },
 
     deleteSelected: () => {

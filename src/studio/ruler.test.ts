@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  FINEST_STEP,
   GUTTER_PX,
   MAX_DURATION,
   MIN_DURATION,
@@ -100,6 +101,32 @@ describe("ticks", () => {
     expect(ticks(2, WIDTH, "ms").map((tk) => tk.x)).toEqual(
       ticks(2, WIDTH, "s").map((tk) => tk.x),
     );
+  });
+
+  const gapsInSeconds = (duration: number, width: number) => {
+    const out = ticks(duration, width);
+    return out.slice(1).map((tk, i) => (tk.t - out[i].t) * duration);
+  };
+
+  it("reaches 10ms a tick once the composition is as short as it goes", () => {
+    for (const width of [1400, 800, 400, 200]) {
+      const gaps = gapsInSeconds(MIN_DURATION, width);
+      expect(Math.min(...gaps)).toBeCloseTo(FINEST_STEP, 6);
+    }
+  });
+
+  it("never draws finer than 10ms, however short the composition", () => {
+    for (const duration of [MIN_DURATION, 0.15, 0.25, 0.5, 0.908, 1, 3, MAX_DURATION]) {
+      for (const width of [1400, 800, 320]) {
+        const finest = Math.min(...gapsInSeconds(duration, width));
+        expect(finest).toBeGreaterThanOrEqual(FINEST_STEP - 1e-9);
+      }
+    }
+  });
+
+  it("labels the short end in whole milliseconds", () => {
+    const labels = ticks(MIN_DURATION, 1400, "ms").map((tk) => tk.label).filter(Boolean);
+    expect(labels).toEqual(["0", "50", "100"]);
   });
 
   it("has nothing to draw without a ruler", () => {
