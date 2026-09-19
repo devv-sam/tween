@@ -288,48 +288,149 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
 /**
  * What can be said about several elements at once.
  *
- * Not much, on purpose. There is no shared position, because moving several things is
- * a drag on the canvas and a pair of numbers would have to lie about where the group
- * is. There is no keyframe log, because a keyframe belongs to one element's curve.
+ * The same properties one element shows, read across all of them: a field says the
+ * value when they agree on it and "Mixed" when they do not, typing settles them all
+ * on what was typed, and the arrows step each from wherever it already is, so a
+ * spread the author built survives being nudged.
  *
- * What is left is opacity, and the field says what is true: the value when they all
- * hold the same one, and "Mixed" when they do not. Typing settles them all on what
- * was typed; the arrows nudge each from wherever it already is, so a spread the
- * author built survives being stepped.
+ * Every row keys, and keys the same way one element's does — each element keeps its
+ * own curve, because a selection is a way of authoring several at once and not a
+ * thing with keyframes of its own. There is still no keyframe log here: a stop
+ * belongs to one element's curve, and there is no one curve to list.
  */
 function SelectionPanel({ ids }: { ids: string[] }) {
   const composition = useStudio((s) => s.composition);
   const t = useStudio((s) => s.t);
-  // Re-read whenever the frame or the selection changes: what the field reports is
+  // Re-read whenever the frame or the selection changes: what the fields report is
   // what is on the canvas, not what the base transforms happen to say.
-  const shared = useMemo(
-    () => useStudio.getState().sharedOpacity(ids),
+  const read = useMemo(
+    () => {
+      const store = useStudio.getState();
+      return {
+        x: store.sharedTransform(ids, "x"),
+        y: store.sharedTransform(ids, "y"),
+        rotation: store.sharedTransform(ids, "rotation"),
+        opacity: store.sharedOpacity(ids),
+      };
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [ids, composition, t],
+  );
+
+  const keyed = (target: KeyTarget) =>
+    ids.every((id) => {
+      const track = composition.tracks.find((tr) => tr.layer.id === id);
+      return track ? hasKeyframes(track, target) : false;
+    });
+
+  const axis = (prop: "x" | "y", join: Join) => (
+    <NumberField
+      label={prop}
+      title={
+        read[prop] === null
+          ? `these sit at different ${prop} positions — type one to settle them all on it`
+          : prop
+      }
+      value={read[prop] ?? 0}
+      mixed={read[prop] === null}
+      join={join}
+      onChange={(v) => useStudio.getState().setSelectionTransform(ids, prop, v)}
+      onStep={(by) => useStudio.getState().nudgeSelectionTransform(ids, prop, by)}
+    />
   );
 
   return (
     <section className={SECTION}>
       <p className={`${LABEL} mb-2`}>{ids.length} elements selected</p>
+
+      {/* Position is one property with two fields here too, and one diamond keys the
+          pair. The axes are not split apart: that is a per-element choice, and the
+          place to make it is the element. */}
+      <p className={`${SUBLABEL} mb-1`}>position</p>
+      <div className="mb-2 flex items-center gap-1.5">
+        <div className="flex min-w-0 flex-1">
+          <div className="min-w-0 flex-1">{axis("x", "left")}</div>
+          <div className="min-w-0 flex-1">{axis("y", "right")}</div>
+        </div>
+        <SelectionKeyButton ids={ids} target="position" keyframed={keyed("position")} />
+      </div>
+
+      <p className={`${SUBLABEL} mb-1`}>rotation</p>
+      <div className="mb-2 flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <NumberField
+            label="r"
+            title={
+              read.rotation === null
+                ? "these are turned differently — type one angle to settle them all on it"
+                : "rotation in degrees"
+            }
+            value={read.rotation ?? 0}
+            mixed={read.rotation === null}
+            onChange={(v) => useStudio.getState().setSelectionTransform(ids, "rotation", v)}
+            onStep={(by) =>
+              useStudio.getState().nudgeSelectionTransform(ids, "rotation", by)
+            }
+          />
+        </div>
+        <SelectionKeyButton ids={ids} target="rotation" keyframed={keyed("rotation")} />
+      </div>
+
       <p className={`${SUBLABEL} mb-1`}>opacity</p>
-      <div className="grid grid-cols-2 gap-x-1.5">
-        <NumberField
-          label="o"
-          title={
-            shared === null
-              ? "these have different opacities — type one to settle them all on it"
-              : "opacity"
-          }
-          value={shared ?? 1}
-          mixed={shared === null}
-          step={PROP_STEP.opacity}
-          min={0}
-          max={1}
-          onChange={(v) => useStudio.getState().setOpacity(ids, v)}
-          onStep={(by) => useStudio.getState().nudgeOpacity(ids, by)}
-        />
+      <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <NumberField
+            label="o"
+            title={
+              read.opacity === null
+                ? "these have different opacities — type one to settle them all on it"
+                : "opacity"
+            }
+            value={read.opacity ?? 1}
+            mixed={read.opacity === null}
+            step={PROP_STEP.opacity}
+            min={0}
+            max={1}
+            onChange={(v) => useStudio.getState().setOpacity(ids, v)}
+            onStep={(by) => useStudio.getState().nudgeOpacity(ids, by)}
+          />
+        </div>
+        <SelectionKeyButton ids={ids} target="opacity" keyframed={keyed("opacity")} />
       </div>
     </section>
+  );
+}
+
+/**
+ * The diamond, for a whole selection. Filled once every picked element carries the
+ * property, hollow while any of them still does not — and a press means the same
+ * thing either way: everyone has motion on this, and everyone has a keyframe here.
+ *
+ * Unlike one element's, it never opens an editor. There are several curves behind it
+ * and no single one to open; the stops are edited on the element, where they live.
+ */
+function SelectionKeyButton({
+  ids,
+  target,
+  keyframed,
+}: {
+  ids: string[];
+  target: KeyTarget;
+  keyframed: boolean;
+}) {
+  const label = keyframed ? "keyframe here" : "add keyframe";
+  return (
+    <button
+      type="button"
+      aria-label={`${label}: ${target}, ${ids.length} elements`}
+      title={label}
+      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md hover:bg-[#f5f5f5] ${
+        keyframed ? PROP_TEXT[target] : "text-[#c0c0c0] hover:text-[#555]"
+      }`}
+      onClick={() => useStudio.getState().keySelection(ids, target)}
+    >
+      <DiamondIcon filled={keyframed} />
+    </button>
   );
 }
 

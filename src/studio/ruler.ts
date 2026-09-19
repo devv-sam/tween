@@ -1,7 +1,8 @@
 import { clamp } from "../core/math";
 
-/** A composition shorter than this reads as a flash; longer than this is a film. */
-export const MIN_DURATION = 1;
+/** Short enough for a single gesture to be the whole composition; longer than the
+ *  maximum is a film. */
+export const MIN_DURATION = 0.1;
 export const MAX_DURATION = 30;
 
 /** Lane geometry, shared by the gutter labels so the two columns stay in step. */
