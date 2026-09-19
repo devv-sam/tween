@@ -630,3 +630,13 @@ body {
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+
+/* One picked element inside a group box. Quieter than the box around them: it says
+   what is in the selection without competing with the thing being dragged. */
+.studio-group-member {
+  fill: none;
+  stroke: #0d99ff;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}

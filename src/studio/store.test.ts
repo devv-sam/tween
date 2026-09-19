@@ -765,3 +765,106 @@ describe("what several elements agree their opacity is", () => {
     expect(state().sharedOpacity([ids[0]])).toBe(0.5);
   });
 });
+
+describe("resizing and turning a whole selection", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const layerAt = (i: number) => state().composition.tracks[i].layer;
+  /** Two 100x100 elements side by side, both picked. */
+  const two = () => {
+    state().placeElement(asset.id, { x: 400, y: 200 });
+    const ids = state().composition.tracks.map((tr) => tr.layer.id);
+    state().setSelectedIds(ids);
+    return ids;
+  };
+
+  it("grows each element and the gaps between them", () => {
+    two();
+    // Double about the left-hand element's centre.
+    state().transformSelection(state().selectionStarts(), {
+      kind: "scale",
+      about: { x: 200, y: 200 },
+      fx: 2,
+      fy: 2,
+    });
+    expect(layerAt(0).base).toMatchObject({ x: 200, y: 200, scaleX: 2, scaleY: 2 });
+    // Was 200 away, now 400 — the arrangement stretched rather than each swelling
+    // in place.
+    expect(layerAt(1).base).toMatchObject({ x: 600, y: 200, scaleX: 2, scaleY: 2 });
+  });
+
+  it("takes each axis on its own when the stretch is not square", () => {
+    two();
+    state().transformSelection(state().selectionStarts(), {
+      kind: "scale",
+      about: { x: 200, y: 100 },
+      fx: 2,
+      fy: 0.5,
+    });
+    expect(layerAt(1).base).toMatchObject({ x: 600, y: 150, scaleX: 2, scaleY: 0.5 });
+  });
+
+  it("turns each element and orbits it about the pivot", () => {
+    two();
+    state().transformSelection(state().selectionStarts(), {
+      kind: "rotate",
+      about: { x: 200, y: 200 },
+      deg: 90,
+    });
+    expect(layerAt(0).base.rotation).toBe(90);
+    // The far one swung a quarter turn about the pivot rather than staying put.
+    expect(layerAt(1).base.x).toBeCloseTo(200);
+    expect(layerAt(1).base.y).toBeCloseTo(400);
+    expect(layerAt(1).base.rotation).toBe(90);
+  });
+
+  it("measures every step from where the gesture began, not from the last one", () => {
+    two();
+    const starts = state().selectionStarts();
+    const op = { kind: "scale" as const, about: { x: 200, y: 200 }, fx: 2, fy: 2 };
+    state().transformSelection(starts, op);
+    state().transformSelection(starts, op);
+    // Twice, not four times: a drag that compounded would run away from the pointer.
+    expect(layerAt(1).base).toMatchObject({ x: 600, scaleX: 2 });
+  });
+
+  it("is one step to undo, however many it reshaped", () => {
+    two();
+    state().transformSelection(state().selectionStarts(), {
+      kind: "rotate",
+      about: { x: 200, y: 200 },
+      deg: 45,
+    });
+    state().sealHistory();
+    state().undo();
+    expect(layerAt(0).base).toMatchObject({ x: 200, y: 200, rotation: 0 });
+    expect(layerAt(1).base).toMatchObject({ x: 400, y: 200, rotation: 0 });
+  });
+
+  it("writes a keyframed element's share into its curve, not a base nothing reads", () => {
+    const ids = two();
+    state().addKeyframes(ids[1], "position");
+    state().setSelectedIds(ids);
+    state().setT(0.5);
+    state().transformSelection(state().selectionStarts(), {
+      kind: "scale",
+      about: { x: 200, y: 200 },
+      fx: 2,
+      fy: 2,
+    });
+
+    expect(state().composition.tracks[1].keyframes!.x.stops).toContainEqual(
+      expect.objectContaining({ t: 0.5, v: 600 }),
+    );
+    // The curve owns x, so the base it would have overridden is left alone.
+    expect(layerAt(1).base.x).toBe(400);
+    // Size has no curve of its own, so it lands in the base as usual.
+    expect(layerAt(1).base.scaleX).toBe(2);
+  });
+
+  it("has nothing to reshape when nothing is picked", () => {
+    state().setSelectedIds([]);
+    expect(state().selectionStarts()).toEqual([]);
+  });
+});

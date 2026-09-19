@@ -41,6 +41,7 @@ import {
   type Range,
   type SelectedPart,
 } from "./modules";
+import { scaledAbout, turnedAbout } from "./group";
 import { clampFps } from "./composition";
 import {
   emptyHistory,
@@ -161,6 +162,15 @@ export type SvgAsset = {
 };
 
 export type StudioAsset = ImageAsset | SvgAsset;
+
+/** One element at the moment a group gesture began: where its position is held, and
+ *  what it read on the frame. */
+export type SelectionStart = { id: string; anchor: MoveAnchor; from: Transform };
+
+/** What a group gesture is doing, worked out on the box and shared out per element. */
+export type SelectionOp =
+  | { kind: "scale"; about: Point; fx: number; fy: number }
+  | { kind: "rotate"; about: Point; deg: number };
 
 export const isSvg = (a: StudioAsset): a is SvgAsset => a.kind === "svg";
 
@@ -477,6 +487,10 @@ type StudioState = {
   setOpacity: (ids: string[], v: number) => void;
   /** What several elements read at the playhead, when they agree. */
   sharedOpacity: (ids: string[]) => number | null;
+  /** Every picked element's hold and the state it was in when a gesture began. */
+  selectionStarts: () => SelectionStart[];
+  /** Resize or turn the whole selection about a point. One step to undo. */
+  transformSelection: (starts: SelectionStart[], op: SelectionOp) => void;
   /** Move the whole selection by one agreed amount. One step to undo. */
   moveSelection: (
     anchors: { id: string; anchor: MoveAnchor }[],
@@ -1034,6 +1048,56 @@ export const useStudio = create<StudioState>((set, get) => {
         if (anchor) out.push({ id, anchor });
       }
       return out;
+    },
+
+    /**
+     * Everything picked, with its hold and the state it is in right now.
+     *
+     * Taken once when a gesture starts and read from for the whole of it, so every
+     * move is measured from where things began rather than from where the last move
+     * left them. Without that a resize would compound itself frame by frame.
+     */
+    selectionStarts: () => {
+      const { selectedIds, composition, moveAnchor, t } = get();
+      const scene = renderState(composition, t);
+      const out: SelectionStart[] = [];
+      for (const id of selectedIds) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        const anchor = moveAnchor(id);
+        if (!track || !anchor) continue;
+        out.push({
+          id,
+          anchor,
+          from: { ...(scene.find((it) => it.id === id)?.state ?? track.layer.base) },
+        });
+      }
+      return out;
+    },
+
+    /**
+     * Resize or turn the whole selection about a point.
+     *
+     * There is no group in the composition to transform, so the gesture is worked out
+     * once on the box and then handed to each element as its own share: a new place,
+     * and a new size or a new angle. Position goes through `moveLayer` so a keyframed
+     * or module-driven axis is written where it actually lives; size and angle go
+     * through `captureTransform` for the same reason. Everything files under one key,
+     * so a drag is one step to undo however many elements it reshaped.
+     */
+    transformSelection: (starts, op) => {
+      const { moveLayer, captureTransform } = get();
+      const key = `group:${op.kind}`;
+      for (const { id, anchor, from } of starts) {
+        if (op.kind === "scale") {
+          const next = scaledAbout(from, op.about, op.fx, op.fy);
+          moveLayer(id, anchor, next.x - from.x, next.y - from.y, key);
+          captureTransform(id, { scaleX: next.scaleX, scaleY: next.scaleY }, key);
+        } else {
+          const next = turnedAbout(from, op.about, op.deg);
+          moveLayer(id, anchor, next.x - from.x, next.y - from.y, key);
+          captureTransform(id, { rotation: next.rotation }, key);
+        }
+      }
     },
 
     /**
