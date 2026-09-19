@@ -700,4 +700,68 @@ describe("shifting the opacity of several elements", () => {
     state().nudgeOpacity(ids, 0);
     expect(opacities()).toEqual(before);
   });
+
+  it("settles them all on one value when one is typed", () => {
+    const ids = spread();
+    state().setOpacity(ids, 0.4);
+    expect(opacities()).toEqual([0.4, 0.4]);
+  });
+
+  it("keeps a typed value inside the range opacity has", () => {
+    const ids = spread();
+    state().setOpacity(ids, 4);
+    expect(opacities()).toEqual([1, 1]);
+  });
+});
+
+describe("what several elements agree their opacity is", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const two = () => {
+    state().placeElement(asset.id, { x: 400, y: 300 });
+    return state().composition.tracks.map((tr) => tr.layer.id);
+  };
+
+  it("is the value, when they hold the same one", () => {
+    expect(state().sharedOpacity(two())).toBe(1);
+  });
+
+  it("is nothing at all, when they do not", () => {
+    const ids = two();
+    state().setLayerBase(ids[1], { opacity: 0.5 });
+    expect(state().sharedOpacity(ids)).toBeNull();
+  });
+
+  it("is the one element's own value, for a selection of one", () => {
+    const ids = two();
+    state().setLayerBase(ids[1], { opacity: 0.25 });
+    expect(state().sharedOpacity([ids[1]])).toBe(0.25);
+  });
+
+  it("has nothing to report about nothing", () => {
+    two();
+    expect(state().sharedOpacity([])).toBeNull();
+  });
+
+  it("counts values that show the same as the same", () => {
+    const ids = two();
+    // Two thousandths apart is one number once the field has rounded it.
+    state().setLayerBase(ids[0], { opacity: 0.5001 });
+    state().setLayerBase(ids[1], { opacity: 0.4999 });
+    expect(state().sharedOpacity(ids)).toBe(0.5);
+  });
+
+  it("reads where the elements are now, not where their base transforms started", () => {
+    const ids = two();
+    state().addKeyframes(ids[0], "opacity");
+    state().setKeyframeStops(ids[0], "opacity", [
+      { t: 0, v: 1, ease: "linear" },
+      { t: 1, v: 0, ease: "linear" },
+    ]);
+    state().setT(0.5);
+    // Half way down its own fade, so it no longer agrees with the one holding still.
+    expect(state().sharedOpacity(ids)).toBeNull();
+    expect(state().sharedOpacity([ids[0]])).toBe(0.5);
+  });
 });

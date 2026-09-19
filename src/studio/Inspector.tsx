@@ -292,17 +292,21 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
  * a drag on the canvas and a pair of numbers would have to lie about where the group
  * is. There is no keyframe log, because a keyframe belongs to one element's curve.
  *
- * What is left is opacity, and it is a dial rather than a value: the field reads zero
- * and means "everything, by this much". Three elements at 1, 0.5 and 0.8 have no
- * shared opacity to show, and showing one of them — or their average — would be
- * claiming a value the selection does not have.
+ * What is left is opacity, and the field says what is true: the value when they all
+ * hold the same one, and "Mixed" when they do not. Typing settles them all on what
+ * was typed; the arrows nudge each from wherever it already is, so a spread the
+ * author built survives being stepped.
  */
 function SelectionPanel({ ids }: { ids: string[] }) {
-  // Reset to zero whenever the selection changes: the dial describes a nudge to what
-  // is picked now, and carrying the last one over would misdescribe it.
-  const [by, setBy] = useState(0);
-  const key = ids.join(",");
-  useEffect(() => setBy(0), [key]);
+  const composition = useStudio((s) => s.composition);
+  const t = useStudio((s) => s.t);
+  // Re-read whenever the frame or the selection changes: what the field reports is
+  // what is on the canvas, not what the base transforms happen to say.
+  const shared = useMemo(
+    () => useStudio.getState().sharedOpacity(ids),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ids, composition, t],
+  );
 
   return (
     <section className={SECTION}>
@@ -310,16 +314,19 @@ function SelectionPanel({ ids }: { ids: string[] }) {
       <p className={`${SUBLABEL} mb-1`}>opacity</p>
       <div className="grid grid-cols-2 gap-x-1.5">
         <NumberField
-          label="±"
-          title="shift every selected element's opacity by this much"
-          value={by}
+          label="o"
+          title={
+            shared === null
+              ? "these have different opacities — type one to settle them all on it"
+              : "opacity"
+          }
+          value={shared ?? 1}
+          mixed={shared === null}
           step={PROP_STEP.opacity}
-          min={-1}
+          min={0}
           max={1}
-          onChange={(v) => {
-            setBy(v);
-            useStudio.getState().nudgeOpacity(ids, v - by);
-          }}
+          onChange={(v) => useStudio.getState().setOpacity(ids, v)}
+          onStep={(by) => useStudio.getState().nudgeOpacity(ids, by)}
         />
       </div>
     </section>

@@ -473,6 +473,10 @@ type StudioState = {
   selectionAnchors: () => { id: string; anchor: MoveAnchor }[];
   /** Shift every named element's opacity by the same amount, each from its own. */
   nudgeOpacity: (ids: string[], by: number) => void;
+  /** Settle every named element on the same opacity. */
+  setOpacity: (ids: string[], v: number) => void;
+  /** What several elements read at the playhead, when they agree. */
+  sharedOpacity: (ids: string[]) => number | null;
   /** Move the whole selection by one agreed amount. One step to undo. */
   moveSelection: (
     anchors: { id: string; anchor: MoveAnchor }[],
@@ -1108,6 +1112,45 @@ export const useStudio = create<StudioState>((set, get) => {
         const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
         captureTransform(id, { opacity: clamp(at.opacity + by, 0, 1) }, "opacity:selection");
       }
+    },
+
+    /**
+     * Put every named element on one opacity.
+     *
+     * What typing a number into a field that several things answer to means: they now
+     * all say that. The relative nudge beside this is what the arrow keys do, which is
+     * the gesture that has a spread to preserve.
+     */
+    setOpacity: (ids, v) => {
+      const opacity = clamp(v, 0, 1);
+      for (const id of ids) {
+        get().captureTransform(id, { opacity }, "opacity:selection");
+      }
+    },
+
+    /**
+     * The opacity several elements share, or null when they do not share one.
+     *
+     * Read at the playhead rather than off the base, so what the field says is what
+     * is actually on the frame — an element part-way through fading is reported where
+     * it has got to. Compared at the precision the field displays: two values that
+     * round to the same shown number are the same number as far as anyone reading it
+     * is concerned.
+     */
+    sharedOpacity: (ids) => {
+      if (ids.length === 0) return null;
+      const { composition, t } = get();
+      const scene = renderState(composition, t);
+      let shared: number | null = null;
+      for (const id of ids) {
+        const track = composition.tracks.find((tr) => tr.layer.id === id);
+        if (!track) continue;
+        const at = scene.find((it) => it.id === id)?.state ?? track.layer.base;
+        const v = Number(at.opacity.toFixed(2));
+        if (shared === null) shared = v;
+        else if (shared !== v) return null;
+      }
+      return shared;
     },
 
     nudgeSelected: (dx, dy) => {

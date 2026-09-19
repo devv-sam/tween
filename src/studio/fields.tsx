@@ -41,6 +41,8 @@ export function NumberField({
   autoFocus,
   compact,
   onDone,
+  mixed,
+  onStep,
 }: {
   label: string;
   title?: string;
@@ -60,9 +62,22 @@ export function NumberField({
   /** The edit is over: enter, or focus leaving. Lets a field that only exists while
    *  it is being edited put itself away. */
   onDone?: () => void;
+  /**
+   * The things this field speaks for do not agree, so there is no value to show. It
+   * reads "Mixed" until something is typed, and typing settles them all on that.
+   */
+  mixed?: boolean;
+  /**
+   * Step by an amount rather than to a value — what the arrow keys do when they have
+   * one, so a nudge can reach several things at once and leave the spread between
+   * them intact. Without it the arrows write `value + by`, as they always have.
+   */
+  onStep?: (by: number) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const shown = draft ?? String(Number(value.toFixed(precision)));
+  // Nothing agreed on means nothing to show: the field is empty, and its placeholder
+  // says why, rather than naming a value none of them holds.
+  const shown = draft ?? (mixed ? "" : String(Number(value.toFixed(precision))));
   const bounded = (v: number) =>
     clamp(v, min ?? Number.NEGATIVE_INFINITY, max ?? Number.POSITIVE_INFINITY);
 
@@ -96,6 +111,7 @@ export function NumberField({
       <input
         className={`${INPUT} w-full text-right disabled:text-[#b0b0b0]`}
         inputMode="decimal"
+        placeholder={mixed ? "Mixed" : undefined}
         value={shown}
         disabled={disabled}
         autoFocus={autoFocus}
@@ -121,7 +137,8 @@ export function NumberField({
           e.preventDefault();
           const by = (e.shiftKey ? 10 : 1) * step * (e.key === "ArrowUp" ? 1 : -1);
           setDraft(null);
-          onChange(bounded(Number((value + by).toFixed(4))));
+          if (onStep) onStep(Number(by.toFixed(4)));
+          else onChange(bounded(Number((value + by).toFixed(4))));
         }}
       />
     </label>
