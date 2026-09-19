@@ -609,6 +609,27 @@ export function StudioCanvas() {
     });
   };
 
+  /**
+   * Reach into a drawing.
+   *
+   * A double-click on an SVG takes the part under the pointer off it, as its own
+   * element — which is the whole of "going in": there is no mode to be in and nothing
+   * to come back out of, because what you get is an ordinary element that everything
+   * already knows how to move, key and export. Undo puts it back.
+   *
+   * Anywhere else the gesture still means what it always did, so double-clicking the
+   * empty canvas resets the zoom.
+   */
+  const onDoubleClick = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const point = screenToComposition(screenAt(e), viewport, frame, view);
+    const id = hitTest(scene, sizeOf, point);
+    if (!id) {
+      useStudio.getState().resetZoom();
+      return;
+    }
+    void useStudio.getState().detachPart(id, point);
+  };
+
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
@@ -682,7 +703,7 @@ export function StudioCanvas() {
         setCursor(null);
         setHovering(false);
       }}
-      onDoubleClick={() => useStudio.getState().resetZoom()}
+      onDoubleClick={onDoubleClick}
     >
       {viewport.width > 0 ? (
         <div

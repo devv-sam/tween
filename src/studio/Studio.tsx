@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Inspector } from "./Inspector";
 import { StudioCanvas } from "./StudioCanvas";
 import { Timeline } from "./Timeline";
-import { useStudio, type ImageAsset } from "./store";
+import { shelfAssets, useStudio, type StudioAsset } from "./store";
 import { IMAGE_ACCEPT, baseName, extensionOf } from "./files";
 import { contentScale } from "./view";
 import { readAssetsCollapsed, writeAssetsCollapsed } from "./prefs";
@@ -95,11 +95,11 @@ export function Studio() {
               />
               {assets.length === 0 ? (
                 <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-[#b0b0b0]">
-                  Nothing here yet. Import png, jpg, or webp.
+                  Nothing here yet. Import png, jpg, webp, or svg.
                 </p>
               ) : (
                 <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 px-3 pt-1 pb-3.5">
-                  {assets.map((asset) => (
+                  {shelfAssets(assets).map((asset) => (
                     <AssetCard key={asset.id} asset={asset} />
                   ))}
                 </div>
@@ -142,9 +142,18 @@ function PanelToggle({
   );
 }
 
-function AssetCard({ asset }: { asset: ImageAsset }) {
+/** Per-extension chip colours. */
+const CHIP: Record<string, string> = {
+  png: "bg-[#f1ebfd] text-[#7c4ddb]",
+  jpg: "bg-[#fdeedd] text-[#c4711a]",
+  webp: "bg-[#e5f1fe] text-[#1a76cc]",
+  svg: "bg-[#e8f7ef] text-[#1a8a5a]",
+};
+
+function AssetCard({ asset }: { asset: StudioAsset }) {
   const ghostRef = useRef<HTMLImageElement | null>(null);
   const ext = extensionOf(asset.name);
+  const label = baseName(asset.name);
 
   const onDragStart = (e: DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData("application/x-tween-asset", asset.id);
@@ -171,31 +180,52 @@ function AssetCard({ asset }: { asset: ImageAsset }) {
 
   return (
     <div
-      className="asset-card"
+      // Dragging is the interaction, but the pointer stays a plain arrow over the card.
+      className="group/asset flex min-w-0 cursor-default flex-col gap-1.5"
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
-      <div className="asset-card-thumb">
-        <img src={asset.src} alt={asset.name} draggable={false} />
+      <div className="relative grid aspect-square place-items-center overflow-hidden rounded-[7px] border border-[#e0e0e0] bg-[#f5f5f5] p-1.5 group-hover/asset:border-[#c8c8c8]">
+        {/* `contain` inside a box of the thumb's own size, so an asset reads whole in
+            the drawer the way it does on canvas. Sizing by `max-h-full` instead lets a
+            portrait asset out of the bottom of the square: a percentage max-height has
+            nothing definite to resolve against in an auto-height grid row. */}
+        <img
+          className="block h-full w-full object-contain"
+          src={asset.src}
+          alt={asset.name}
+          draggable={false}
+        />
         {/* Takes any elements placed from this asset with it — see `removeAsset`. */}
         <button
           type="button"
-          className="asset-remove"
+          className="pointer-events-none absolute right-1 top-1 grid h-[17px] w-[17px] place-items-center rounded border border-[#e0e0e0] bg-white p-0 text-[#555] opacity-0 hover:border-[#111] hover:bg-[#111] hover:text-white focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111] group-hover/asset:pointer-events-auto group-hover/asset:opacity-100"
           draggable={false}
-          aria-label={`Remove ${baseName(asset.name)}`}
+          aria-label={`Remove ${label}`}
           title="Remove"
           onClick={() => useStudio.getState().removeAsset(asset.id)}
         >
           <XIcon />
         </button>
       </div>
-      <div className="asset-card-meta">
-        <span className="asset-card-name" title={asset.name}>
-          {baseName(asset.name)}
+      <div className="flex min-w-0 items-center justify-between gap-1.5">
+        <span className="truncate text-[10px] leading-[1.3] text-[#111]" title={asset.name}>
+          {label}
         </span>
-        {ext ? <span className={`asset-chip is-${ext}`}>{ext}</span> : null}
+        {ext ? (
+          <span
+            className={`shrink-0 rounded-[3px] px-1 py-px text-[8px] font-semibold uppercase leading-[1.3] tracking-[0.04em] ${CHIP[ext]}`}
+          >
+            {ext}
+          </span>
+        ) : null}
       </div>
+      {/* Quiet, and on the card rather than in the import error: the file did come
+          in, it just came in whole. */}
+      {asset.kind === "svg" && asset.notice ? (
+        <p className="m-0 text-[9px] leading-[1.35] text-[#b0b0b0]">{asset.notice}</p>
+      ) : null}
     </div>
   );
 }

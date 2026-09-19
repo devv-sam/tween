@@ -4,7 +4,7 @@ import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
-import { designSizeOf, useStudio } from "./store";
+import { designSizeOf, isSvg, useStudio } from "./store";
 import {
   DRIVERS,
   FPS_CHOICES,
@@ -341,6 +341,12 @@ function ElementSection({
       ? assets.find((a) => a.id === layer.source.value)
       : undefined;
   const size = designSizeOf(assets, layer);
+  // Only an element that *is* one part of a drawing has a node to name. What is left
+  // of a file after parts came off it is still that file, however much it lost.
+  const part =
+    asset && isSvg(asset) && asset.takenFrom !== undefined && asset.nodes.length === 1
+      ? asset
+      : null;
   const name = layerName(layer, asset?.name, index);
 
   /** What the element reads at the playhead, curves and modules included — so a field
@@ -375,6 +381,17 @@ function ElementSection({
         <CentreButton layerId={layer.id} axis="x" />
         <CentreButton layerId={layer.id} axis="y" />
       </div>
+
+      {/* Which part of which drawing this is. Read-only: it says where this came
+          from, and nothing about the drawing is edited from here. */}
+      {part ? (
+        <>
+          <p className={`${SUBLABEL} mb-1`}>node</p>
+          <div className={`${BOX} mb-2 justify-between`} title={part.name}>
+            <span className="min-w-0 truncate text-[11px] text-[#555]">{part.name}</span>
+          </div>
+        </>
+      ) : null}
 
       {size ? (
         <>

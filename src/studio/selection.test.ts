@@ -515,3 +515,4 @@ describe("frame bounds", () => {
     expect(clampToFrame({ x: 9999, y: 540 }, wide, frame).x).toBe(1200);
   });
 });
+

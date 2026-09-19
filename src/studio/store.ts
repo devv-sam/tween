@@ -11,7 +11,19 @@ import type {
   Transform,
 } from "../core/types";
 import { ensureImage, forgetImage } from "../render/images";
-import { imageError } from "./files";
+import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
+import {
+  cropFor,
+  docToWorld,
+  isSvgFile,
+  nodeAt,
+  readSvg,
+  wrapNodes,
+  worldToDoc,
+  type Rect,
+  type SvgNode,
+} from "./svg";
+import type { LayerContent } from "../export/code";
 import { renderState } from "../core/renderState";
 import { boundsHalf, clampToFrame } from "./selection";
 import {
@@ -66,13 +78,46 @@ export type MoveAnchor = {
  * image has one; a width in the panel is a factor against it.
  */
 export const designSizeOf = (
-  assets: ImageAsset[],
+  assets: StudioAsset[],
   layer: Layer,
 ): DesignSize | undefined => {
   if (layer.source.kind !== "image") return undefined;
   const asset = assets.find((a) => a.id === layer.source.value);
   return asset ? { width: asset.naturalW, height: asset.naturalH } : undefined;
 };
+
+/**
+ * A picture the studio holds: a raster file, a whole SVG it could not take apart, or
+ * one node lifted out of an SVG that it could.
+ *
+ * All three answer the same questions — how big am I, where is my source — because
+ * everything downstream of here draws them the same way. What an SVG node adds is the
+ * markup it was made from, which is what lets an export ship real vector nodes rather
+ * than a picture of them.
+ */
+/**
+ * What each layer ships as in an exported page, for the layers that ship as
+ * something. An SVG carries its own markup out; a raster has none to carry, and the
+ * exporter draws its standing box.
+ */
+export function exportContent(
+  composition: Composition,
+  assets: StudioAsset[],
+): Record<string, LayerContent> {
+  const out: Record<string, LayerContent> = {};
+  for (const track of composition.tracks) {
+    const { source, id } = track.layer;
+    if (source.kind !== "image") continue;
+    const asset = assets.find((a) => a.id === source.value);
+    if (!asset || !isSvg(asset) || !asset.svgSource) continue;
+    out[id] = {
+      svgSource: asset.svgSource,
+      width: asset.naturalW,
+      height: asset.naturalH,
+    };
+  }
+  return out;
+}
 
 export type ImageAsset = {
   id: string;
@@ -82,6 +127,46 @@ export type ImageAsset = {
   naturalW: number;
   naturalH: number;
 };
+
+/**
+ * A drawing the studio holds: a whole SVG file, or a part taken off one.
+ *
+ * Both are the same thing — some nodes, seen through a window onto the document they
+ * came from. A whole file's window is the document's own frame, so it behaves exactly
+ * like a raster image and nobody need know it has parts. A part's window is just far
+ * enough to hold that part, which is what makes it its own drawing rather than a
+ * small shape adrift in a document-sized field of nothing.
+ */
+export type SvgAsset = {
+  id: string;
+  kind: "svg";
+  src: string;
+  name: string;
+  naturalW: number;
+  naturalH: number;
+  /** The nodes this asset draws, wrapped at `crop`. Empty for a file that would not
+   *  parse, which stands in as one flat picture and cannot be taken apart. */
+  nodes: SvgNode[];
+  /** The window onto the document, in the document's own units. */
+  crop: Rect;
+  /** The document's own frame — what a part is measured against as it moves. */
+  doc: Rect;
+  defs: string;
+  svgSource: string;
+  /** The shelf card this was taken off. Absent when it *is* the card: only whole
+   *  files are offered for placing, so parts stay out of the drawer. */
+  takenFrom?: string;
+  /** Said quietly on the card when the file would not come apart. */
+  notice?: string;
+};
+
+export type StudioAsset = ImageAsset | SvgAsset;
+
+export const isSvg = (a: StudioAsset): a is SvgAsset => a.kind === "svg";
+
+/** What the drawer offers: whole files, never the parts pulled off them. */
+export const shelfAssets = (assets: StudioAsset[]): StudioAsset[] =>
+  assets.filter((a) => !(isSvg(a) && a.takenFrom !== undefined));
 
 const emptyComposition = (): Composition => ({
   fps: 30,
@@ -93,12 +178,21 @@ const emptyComposition = (): Composition => ({
 
 const centerOf = (frame: Size): Point => ({ x: frame.width / 2, y: frame.height / 2 });
 
-function imageTrack(id: string, assetId: string, at: Point): Track {
+function imageTrack(
+  id: string,
+  assetId: string,
+  at: Point,
+  /** Vectors arrive locked: keeping its proportions under a resize is most of what
+   *  makes a drawing a drawing rather than a picture of one. The lock is the same one
+   *  as ever, and can be let go. */
+  lockAspect = false,
+): Track {
   return {
     layer: {
       id,
       source: { kind: "image", value: assetId },
       base: { x: at.x, y: at.y, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 },
+      ...(lockAspect ? { lockAspect: true } : {}),
     },
     modules: [],
   };
@@ -110,6 +204,100 @@ async function readImageAsset(file: File): Promise<ImageAsset> {
   try {
     const img = await ensureImage(id, src);
     return { id, kind: "image", src, name: file.name, naturalW: img.naturalWidth, naturalH: img.naturalHeight };
+  } catch (err) {
+    URL.revokeObjectURL(src);
+    forgetImage(id);
+    throw err;
+  }
+}
+
+/**
+ * A drawing the studio can hold, made from some nodes of a document.
+ *
+ * The blob is built here and cached by the asset's own id, so the renderer needs to
+ * know nothing about SVG: it asks for a picture by asset and gets one, exactly as it
+ * does for a PNG.
+ */
+async function makeSvgAsset(
+  name: string,
+  doc: Rect,
+  defs: string,
+  nodes: SvgNode[],
+  takenFrom?: string,
+): Promise<SvgAsset> {
+  const id = crypto.randomUUID();
+  // A whole file is seen through its own frame — that is the size it says it is, the
+  // way a raster's size is its pixels. A part is seen through just enough to hold it.
+  const crop = takenFrom === undefined ? doc : cropFor(nodes, doc);
+  const svgSource = wrapNodes(nodes, crop, defs);
+  const src = URL.createObjectURL(new Blob([svgSource], { type: "image/svg+xml" }));
+  try {
+    await ensureImage(id, src);
+  } catch {
+    URL.revokeObjectURL(src);
+    forgetImage(id);
+    throw new Error("svg");
+  }
+  return {
+    id,
+    kind: "svg",
+    src,
+    name,
+    naturalW: crop.width,
+    naturalH: crop.height,
+    nodes,
+    crop,
+    doc,
+    defs,
+    svgSource,
+    takenFrom,
+  };
+}
+
+/**
+ * A file, as one drawing.
+ *
+ * Nothing is taken apart on the way in. An SVG is a picture until someone asks it to
+ * be more than one, which is a thing they do on the canvas, to the element in front
+ * of them — not a thing that happens to every file that arrives.
+ */
+async function readSvgAsset(file: File): Promise<StudioAsset> {
+  const text = await file.text();
+  const read = readSvg(text, file.name);
+  if (!read || read.nodes.length === 0) return readFlatSvg(file, MSG_UNDISSECTED);
+  try {
+    return await makeSvgAsset(file.name, read.box, read.defs, read.nodes);
+  } catch {
+    return readFlatSvg(file, MSG_UNDISSECTED);
+  }
+}
+
+/** The whole file as one flat picture, for one that would not come apart. It keeps
+ *  no nodes, so there is nothing in it to reach for. */
+async function readFlatSvg(file: File, notice?: string): Promise<SvgAsset> {
+  const id = crypto.randomUUID();
+  const src = URL.createObjectURL(file);
+  try {
+    const img = await ensureImage(id, src);
+    // An SVG with no intrinsic size reports zero; it still has to be some size to be
+    // placed, so it takes a square.
+    const width = img.naturalWidth || 300;
+    const height = img.naturalHeight || 300;
+    const box = { x: 0, y: 0, width, height };
+    return {
+      id,
+      kind: "svg",
+      src,
+      name: file.name,
+      naturalW: width,
+      naturalH: height,
+      nodes: [],
+      crop: box,
+      doc: box,
+      defs: "",
+      svgSource: "",
+      notice,
+    };
   } catch (err) {
     URL.revokeObjectURL(src);
     forgetImage(id);
@@ -151,7 +339,7 @@ const patchModule = (
  */
 type Snapshot = {
   composition: Composition;
-  assets: ImageAsset[];
+  assets: StudioAsset[];
   frame: Size;
   selectedId: string | null;
   selectedPart: SelectedPart | null;
@@ -189,7 +377,7 @@ const refit = (viewport: Size, frame: Size, view: View): View => {
 
 type StudioState = {
   composition: Composition;
-  assets: ImageAsset[];
+  assets: StudioAsset[];
   importError: string | null;
   frame: Size;
   t: number;
@@ -262,6 +450,14 @@ type StudioState = {
   nudgeSelected: (dx: number, dy: number) => void;
   /** Put the element on the composition's centre line, on one axis. */
   centreLayer: (layerId: string, axis: "x" | "y") => void;
+  /**
+   * Take one part off a drawing, at a point on the frame.
+   *
+   * Resolves to the part that was pulled out, or null when there was nothing at that
+   * point to pull — an element that is not an SVG, the last part of one, or a gap
+   * between the parts.
+   */
+  detachPart: (layerId: string, at: Point) => Promise<string | null>;
   deleteSelected: () => void;
   /** The picked keyframes, gone. A property whose last keyframe goes stops carrying
    *  motion — there is no curve left to be the one keyframe of. */
@@ -375,7 +571,7 @@ export const useStudio = create<StudioState>((set, get) => {
 
     importImages: async (files) => {
       let importError: string | null = null;
-      const added: ImageAsset[] = [];
+      const added: StudioAsset[] = [];
       for (const file of files) {
         const err = imageError(file);
         if (err) {
@@ -383,15 +579,19 @@ export const useStudio = create<StudioState>((set, get) => {
           continue;
         }
         try {
-          added.push(await readImageAsset(file));
+          // An SVG comes in whole. What it is made of is reached on the canvas,
+          // by the author, to the element in front of them.
+          if (isSvgFile(file)) added.push(await readSvgAsset(file));
+          else added.push(await readImageAsset(file));
         } catch {
-          importError = imageError(file) ?? "tween takes png, jpg, or webp.";
+          importError = imageError(file) ?? MSG_TYPE;
         }
       }
       if (added.length === 0) {
         set({ importError });
         return;
       }
+
       edit(null, (s) => ({
         assets: [...s.assets, ...added],
         importError,
@@ -414,7 +614,10 @@ export const useStudio = create<StudioState>((set, get) => {
         selectedPart: null,
         composition: {
           ...s.composition,
-          tracks: [...s.composition.tracks, imageTrack(layerId, assetId, place)],
+          tracks: [
+            ...s.composition.tracks,
+            imageTrack(layerId, assetId, place, isSvg(asset)),
+          ],
         },
       }));
     },
@@ -792,6 +995,104 @@ export const useStudio = create<StudioState>((set, get) => {
       moveLayer(layerId, anchor, axis === "x" ? by : 0, axis === "y" ? by : 0);
       // One click is one undo step — there is no gesture still in flight to keep open.
       sealHistory();
+    },
+
+    /**
+     * Take one part off a drawing.
+     *
+     * Both sides come out as their own drawing, each cropped to what it actually
+     * holds: the part that was taken, and the element it came off, which is now
+     * shorter by whatever it lost. Neither moves — each one's new window is measured
+     * back through the element's own transform, so the picture on the frame is
+     * identical the instant after the cut, and only then is there something to drag.
+     *
+     * Everything the studio already does to an element works on both halves, because
+     * both halves are elements. Nothing here is a group.
+     */
+    detachPart: async (layerId, at) => {
+      const { composition, assets, t } = get();
+      const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (!track || track.layer.source.kind !== "image") return null;
+      const asset = assets.find((a) => a.id === track.layer.source.value);
+      // One part is not a thing to take apart: there would be nothing left behind.
+      if (!asset || !isSvg(asset) || asset.nodes.length < 2) return null;
+
+      const state =
+        renderState(composition, t).find((it) => it.id === layerId)?.state ??
+        track.layer.base;
+      const part = nodeAt(asset.nodes, worldToDoc(at, asset.crop, state));
+      if (!part) return null;
+
+      const rest = asset.nodes.filter((n) => n !== part);
+      let taken: SvgAsset;
+      let remainder: SvgAsset;
+      try {
+        const from = asset.takenFrom ?? asset.id;
+        taken = await makeSvgAsset(part.label, asset.doc, asset.defs, [part], from);
+        remainder = await makeSvgAsset(asset.name, asset.doc, asset.defs, rest, from);
+      } catch {
+        return null;
+      }
+
+      /** Where a window's middle sits on the frame, seen through the element it is
+       *  being cut out of — which is what keeps both halves where they were. */
+      const centreOfCrop = (a: SvgAsset) =>
+        docToWorld(
+          { x: a.crop.x + a.crop.width / 2, y: a.crop.y + a.crop.height / 2 },
+          asset.crop,
+          state,
+        );
+      const restAt = centreOfCrop(remainder);
+      const takenAt = centreOfCrop(taken);
+      const partId = crypto.randomUUID();
+
+      edit(null, (s) => {
+        const tracks: Track[] = [];
+        for (const tr of s.composition.tracks) {
+          if (tr.layer.id !== layerId) {
+            tracks.push(tr);
+            continue;
+          }
+          // The element keeps its own motion and its own name; all that changed is
+          // that it draws less, through a smaller window, from a moved centre.
+          tracks.push({
+            ...tr,
+            layer: {
+              ...tr.layer,
+              source: { kind: "image", value: remainder.id },
+              base: {
+                ...tr.layer.base,
+                x: tr.layer.base.x + (restAt.x - state.x),
+                y: tr.layer.base.y + (restAt.y - state.y),
+              },
+            },
+          });
+          // Straight on top of what it came off, which is where it was already.
+          tracks.push({
+            layer: {
+              id: partId,
+              name: part.label,
+              source: { kind: "image", value: taken.id },
+              lockAspect: tr.layer.lockAspect,
+              base: {
+                ...tr.layer.base,
+                x: tr.layer.base.x + (takenAt.x - state.x),
+                y: tr.layer.base.y + (takenAt.y - state.y),
+              },
+            },
+            modules: [],
+          });
+        }
+        return {
+          assets: [...s.assets, taken, remainder],
+          composition: { ...s.composition, tracks },
+          selectedId: partId,
+          selectedPart: null,
+          selectedKeys: [],
+        };
+      });
+      get().sealHistory();
+      return partId;
     },
 
     toggleLayerLock: (layerId) => {
