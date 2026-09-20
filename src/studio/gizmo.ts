@@ -154,6 +154,34 @@ export function gizmoFor(d: Distributor, base: Transform): Gizmo {
 }
 
 /**
+ * The other arm of a smoothed anchor, swung to stay in line with the one being
+ * dragged and keeping its own reach.
+ *
+ * A run is what clones are spread along, and with `align` on it is what they face
+ * down — so a bend that is smooth on screen has to be smooth in its tangent too. An
+ * anchor that looked rounded while secretly turning a corner is the one state the
+ * gizmo must not be able to get into. A sharp turn is still available: that is what
+ * an anchor with no arms already is.
+ *
+ * Lengths stay independent. Mirroring those as well would rule out every asymmetric
+ * curve and put the break gesture straight back on the table.
+ */
+function facing(
+  node: PathNode,
+  dragged: "in" | "out",
+  arm: Pt,
+): Partial<Pick<PathNode, "in" | "out">> {
+  const other = dragged === "in" ? "out" : "in";
+  const partner = node[other];
+  const reach = Math.hypot(arm.x, arm.y);
+  // Nothing on the other side, or an arm pulled onto its own anchor: no direction
+  // to be read off it, so the partner is left exactly where it was.
+  if (!partner || reach === 0) return {};
+  const keep = Math.hypot(partner.x, partner.y);
+  return { [other]: { x: (-arm.x / reach) * keep, y: (-arm.y / reach) * keep } };
+}
+
+/**
  * The distributor after a handle has been dragged to a point on the frame.
  *
  * Offsets, so the drag is read back against the element rather than against the
@@ -177,7 +205,8 @@ export function dragHandle(
       if (id.kind === "node") return { ...n, x: local.x, y: local.y };
       // A handle is stored against its own anchor, so dragging the anchor takes
       // both arms with it and dragging an arm leaves the anchor where it is.
-      return { ...n, [id.kind]: { x: local.x - n.x, y: local.y - n.y } };
+      const arm = { x: local.x - n.x, y: local.y - n.y };
+      return { ...n, [id.kind]: arm, ...facing(n, id.kind, arm) };
     });
     return { ...d, params: { ...params, points: next } };
   }

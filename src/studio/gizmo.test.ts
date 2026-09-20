@@ -82,6 +82,60 @@ describe("dragHandle", () => {
     expect(node.out).toEqual({ x: 0, y: -40 });
   });
 
+  it("swings the other arm to stay in line, keeping its own reach", () => {
+    const bent = path([
+      { x: -100, y: 0 },
+      { x: 0, y: 0, in: { x: -40, y: 0 }, out: { x: 80, y: 0 } },
+      { x: 100, y: 0 },
+    ]);
+    // Pull the outgoing arm straight down from the anchor at (0,0) → (500,300).
+    const next = dragHandle(bent, { kind: "out", index: 1 }, { x: 500, y: 380 }, base);
+    const node = nodesOf(next)[1];
+    expect(node.out).toEqual({ x: 0, y: 80 });
+    // The incoming arm now points the opposite way, still 40 long rather than 80.
+    expect(node.in!.x).toBeCloseTo(0);
+    expect(node.in!.y).toBeCloseTo(-40);
+    expect(Math.hypot(node.in!.x, node.in!.y)).toBeCloseTo(40);
+  });
+
+  it("keeps a smoothed anchor smooth however its arms are dragged", () => {
+    const bent = path([
+      { x: -100, y: 0 },
+      { x: 0, y: 0, in: { x: -40, y: 0 }, out: { x: 80, y: 0 } },
+      { x: 100, y: 0 },
+    ]);
+    const node = nodesOf(
+      dragHandle(bent, { kind: "in", index: 1 }, { x: 460, y: 340 }, base),
+    )[1];
+    // Collinear and opposed: the cross product vanishes and the dot is negative.
+    const cross = node.in!.x * node.out!.y - node.in!.y * node.out!.x;
+    const dot = node.in!.x * node.out!.x + node.in!.y * node.out!.y;
+    expect(cross).toBeCloseTo(0);
+    expect(dot).toBeLessThan(0);
+  });
+
+  it("leaves an end anchor's single arm free, with nothing to mirror", () => {
+    const steered = path([{ x: -100, y: 0, out: { x: 50, y: 0 } }, { x: 100, y: 0 }]);
+    const node = nodesOf(
+      dragHandle(steered, { kind: "out", index: 0 }, { x: 400, y: 260 }, base),
+    )[0];
+    expect(node.out).toEqual({ x: 0, y: -40 });
+    expect(node.in).toBeUndefined();
+  });
+
+  it("leaves the partner alone when an arm is dropped onto its own anchor", () => {
+    const bent = path([
+      { x: -100, y: 0 },
+      { x: 0, y: 0, in: { x: -40, y: 0 }, out: { x: 80, y: 0 } },
+      { x: 100, y: 0 },
+    ]);
+    const node = nodesOf(
+      dragHandle(bent, { kind: "out", index: 1 }, { x: 500, y: 300 }, base),
+    )[1];
+    expect(node.out).toEqual({ x: 0, y: 0 });
+    expect(node.in).toEqual({ x: -40, y: 0 });
+  });
+
   it("reads a radius as the distance from the element", () => {
     const d: Distributor = { type: "radial", count: 4, params: { radius: 80 } };
     const next = dragHandle(d, { kind: "radius" }, { x: 620, y: 300 }, base);
