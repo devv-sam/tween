@@ -27,6 +27,14 @@ import {
   propLabel,
   toDisplay,
   type Range,
+  blockSpan,
+  slideTrackEdits,
+  stretchTrackEdits,
+  trackSpan,
+  type BlockView,
+  type KeyTarget,
+  type TimeEdit,
+  hasSpan,
 } from "./modules";
 
 const base = { x: 40, y: 20, scaleX: 2, scaleY: 3, rotation: 90, opacity: 0.5 };
@@ -473,5 +481,95 @@ describe("width and height as the panel reads them", () => {
       modules: [],
     };
     expect(trackBlocks(track).map((b) => b.label)).toEqual(["width", "height"]);
+  });
+});
+
+describe("retiming an element as one set", () => {
+  const keys = (property: KeyTarget, ts: number[]): BlockView => ({
+    part: { kind: "keyframes", property },
+    prop: property,
+    label: String(property),
+    range: [0, 1],
+    stops: ts.map((t) => ({ t, v: t })),
+    standalone: true,
+  });
+
+  const mod = (index: number, range: Range): BlockView => ({
+    part: { kind: "module", index },
+    prop: "scale",
+    label: "scale",
+    range,
+    stops: [],
+    standalone: false,
+  });
+
+  const timesOf = (edit: TimeEdit) =>
+    edit.kind === "keyframes" ? edit.stops.map((s) => s.t) : [...edit.range];
+
+  /** Times are accumulated floats; compare them as times, not as bit patterns. */
+  const expectTimes = (got: number[], want: number[]) => {
+    expect(got).toHaveLength(want.length);
+    got.forEach((v, i) => expect(v).toBeCloseTo(want[i], 9));
+  };
+
+  // The element's bar is the handle for the skeletons under it, so it only exists
+  // once one of them does. A single keyframe is a value held, not a stretch of time.
+  it("has no span to move until some curve has two keyframes", () => {
+    expect(hasSpan([])).toBe(false);
+    expect(hasSpan([keys("position", [0])])).toBe(false);
+    // Two properties, one keyframe each, at different times: still nothing animates.
+    expect(hasSpan([keys("position", [0]), keys("opacity", [0.6])])).toBe(false);
+    expect(hasSpan([keys("position", [0, 0.5])])).toBe(true);
+    // A module is a window by nature, so it always has one.
+    expect(hasSpan([mod(0, [0.2, 0.5])])).toBe(true);
+  });
+
+  it("reaches from the earliest keyframe to the latest, across every property", () => {
+    expect(trackSpan([keys("opacity", [0.2, 0.5]), keys("rotation", [0.4, 0.8])]))
+      .toEqual([0.2, 0.8]);
+  });
+
+  it("measures a module by its window and a curve by its keyframes", () => {
+    expect(blockSpan(keys("opacity", [0.25, 0.75]))).toEqual([0.25, 0.75]);
+    expect(blockSpan(mod(0, [0.1, 0.4]))).toEqual([0.1, 0.4]);
+  });
+
+  it("moves every property by the same amount, keeping the spread between them", () => {
+    const blocks = [keys("opacity", [0.1, 0.3]), keys("rotation", [0.2, 0.6])];
+    const [a, b] = slideTrackEdits(blocks, 0.1);
+    expectTimes(timesOf(a), [0.2, 0.4]);
+    expectTimes(timesOf(b), [0.3, 0.7]);
+  });
+
+  /** The whole point of doing this per element rather than per curve: one property
+   *  hitting the edge must not let the others keep going. */
+  it("stops the whole set at the edge rather than letting one curve pile up", () => {
+    const blocks = [keys("opacity", [0.05, 0.25]), keys("rotation", [0.5, 0.7])];
+    const moved = slideTrackEdits(blocks, -0.4).map(timesOf);
+    // Only 0.05 of room before the earliest keyframe, so nothing moves further.
+    expectTimes(moved[0], [0, 0.2]);
+    expectTimes(moved[1], [0.45, 0.65]);
+  });
+
+  it("carries a module's window along with the curves", () => {
+    const edits = slideTrackEdits([keys("opacity", [0.2, 0.4]), mod(0, [0.2, 0.5])], 0.1);
+    expectTimes(timesOf(edits[1]), [0.3, 0.6]);
+  });
+
+  it("does nothing when there is nowhere left to go", () => {
+    expect(slideTrackEdits([keys("opacity", [0, 0.4])], -0.2)).toEqual([]);
+    expect(slideTrackEdits([], 0.1)).toEqual([]);
+  });
+
+  it("stretches every property about the same anchor", () => {
+    const blocks = [keys("opacity", [0, 0.2]), keys("rotation", [0.1, 0.4])];
+    // The set spans 0 to 0.4; dragging that end out to 0.8 doubles everything.
+    const [a, b] = stretchTrackEdits(blocks, 0, 0.4, 0.8).map(timesOf);
+    expectTimes(a, [0, 0.4]);
+    expectTimes(b, [0.2, 0.8]);
+  });
+
+  it("refuses a stretch with no span to work from", () => {
+    expect(stretchTrackEdits([keys("opacity", [0.3, 0.3])], 0.3, 0.3, 0.6)).toEqual([]);
   });
 });

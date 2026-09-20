@@ -426,17 +426,22 @@ export function slideStops(stops: Stop[], by: number): Stop[] {
  * The moved end cannot cross the anchor: a curve turned inside out is not a shorter
  * curve, and there is nothing sensible on the other side.
  */
+export function stretchFactor(anchor: number, from: number, to: number): number | null {
+  const span = from - anchor;
+  if (Math.abs(span) < SAME_STOP) return null;
+  // Toward the anchor stops at a hair's width; away stops at the composition's edge.
+  const limit = span > 0 ? [anchor + SAME_STOP, 1] : [0, anchor - SAME_STOP];
+  return (clamp(to, limit[0], limit[1]) - anchor) / span;
+}
+
 export function stretchStops(
   stops: Stop[],
   anchor: number,
   from: number,
   to: number,
 ): Stop[] {
-  const span = from - anchor;
-  if (Math.abs(span) < SAME_STOP) return stops;
-  // Toward the anchor stops at a hair's width; away stops at the composition's edge.
-  const limit = span > 0 ? [anchor + SAME_STOP, 1] : [0, anchor - SAME_STOP];
-  const k = (clamp(to, limit[0], limit[1]) - anchor) / span;
+  const k = stretchFactor(anchor, from, to);
+  if (k === null) return stops;
   return stops.map((s) => ({ ...s, t: anchor + (s.t - anchor) * k }));
 }
 
@@ -456,4 +461,99 @@ export function stopAtTime(stops: Stop[], t: number, v: number): Stop[] {
  *  a set is removing the property's keyframes, which is its own command. */
 export function removeStop(stops: Stop[], i: number): Stop[] {
   return stops.length <= 1 ? stops : stops.filter((_, k) => k !== i);
+}
+
+
+/**
+ * What an element's curves are moved by as a set.
+ *
+ * The rows under an element are one performance, and the bar on the element's own
+ * row is the handle for all of it: sliding it should move every property by the same
+ * amount and leave the spread between them exactly as it was. That is the whole
+ * reason these are worked out here rather than per row — a per-curve clamp would let
+ * one property stop at the edge while the rest kept going, which is the one thing
+ * moving them together must not do.
+ */
+export type TimeEdit =
+  | { kind: "keyframes"; property: KeyTarget; stops: Stop[] }
+  | { kind: "module"; index: number; range: Range };
+
+/** A block's reach on the ruler. A standalone set's stops live inside its own range,
+ *  so its extent is the first and last of them mapped back out. */
+export function blockSpan(block: BlockView): Range {
+  const [from, to] = block.range;
+  if (!block.standalone || block.stops.length === 0) return block.range;
+  const width = to - from;
+  return [
+    from + block.stops[0].t * width,
+    from + block.stops[block.stops.length - 1].t * width,
+  ];
+}
+
+/**
+ * Whether anything under the element stretches across time.
+ *
+ * A lone keyframe is a value, not a span — nothing moves, so there is nothing to
+ * retime and no handle to offer. The same rule the property rows already draw by:
+ * one keyframe is a diamond, two are what make a line.
+ */
+export const hasSpan = (blocks: BlockView[]): boolean =>
+  blocks.some((b) => (b.standalone ? b.stops.length > 1 : b.range[1] > b.range[0]));
+
+/** Everything the element reaches across, or null when it has nothing to reach. */
+export function trackSpan(blocks: BlockView[]): Range | null {
+  if (blocks.length === 0) return null;
+  const spans = blocks.map(blockSpan);
+  return [
+    Math.min(...spans.map((s) => s[0])),
+    Math.max(...spans.map((s) => s[1])),
+  ];
+}
+
+const localOf = (block: BlockView, by: number): number => {
+  const width = block.range[1] - block.range[0];
+  return width < SAME_STOP ? 0 : by / width;
+};
+
+export function slideTrackEdits(blocks: BlockView[], delta: number): TimeEdit[] {
+  const span = trackSpan(blocks);
+  if (span === null) return [];
+  // One clamp for the element, not one per curve.
+  const by = clamp(delta, -span[0], 1 - span[1]);
+  if (Math.abs(by) < 1e-9) return [];
+  return blocks.map((block): TimeEdit => {
+    if (block.part.kind === "module") {
+      return { kind: "module", index: block.part.index, range: slideRange(block.range, by) };
+    }
+    const local = localOf(block, by);
+    return {
+      kind: "keyframes",
+      property: block.part.property,
+      stops: block.stops.map((s) => ({ ...s, t: s.t + local })),
+    };
+  });
+}
+
+export function stretchTrackEdits(
+  blocks: BlockView[],
+  anchor: number,
+  from: number,
+  to: number,
+): TimeEdit[] {
+  const k = stretchFactor(anchor, from, to);
+  if (k === null) return [];
+  const scale = (c: number) => anchor + (c - anchor) * k;
+  return blocks.map((block): TimeEdit => {
+    if (block.part.kind === "module") {
+      const [s, e] = block.range;
+      const lo = clamp(scale(s), 0, 1);
+      const hi = clamp(scale(e), 0, 1);
+      return { kind: "module", index: block.part.index, range: [Math.min(lo, hi), Math.max(lo, hi)] };
+    }
+    return {
+      kind: "keyframes",
+      property: block.part.property,
+      stops: stretchStops(block.stops, anchor, from, to),
+    };
+  });
 }
