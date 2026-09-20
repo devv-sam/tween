@@ -1,5 +1,5 @@
 import type { Layer, Transform } from "./types";
-import { samplePath, type Pt } from "./geometry";
+import { samplePath, type PathNode } from "./geometry";
 
 export interface Instance { base: Transform; u: number; i: number; count: number; }
 
@@ -29,7 +29,7 @@ export function expand(layer: Layer): Instance[] {
   // Points are offsets from the element, not places on the frame — the run is a
   // shape the element is spread along, and it goes where the element goes.
   if (d.type === "path") {
-    const points = (p.points as Pt[]) ?? [];
+    const points = (p.points as PathNode[]) ?? [];
     const align = Boolean(p.align);
     return Array.from({ length: count }, (_, i) => {
       const u = spread(i, count);
