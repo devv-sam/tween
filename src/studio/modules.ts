@@ -1,7 +1,18 @@
 import { clamp } from "../core/math";
 import { sampleStops, type Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
-import type { KeyframeSet, Layer, ModuleData, Track, Transform } from "../core/types";
+import { isLinked, resolveModule } from "../core/library";
+import type {
+  Distributor,
+  ElementModule,
+  KeyframeSet,
+  Layer,
+  LinkedModule,
+  ModuleAsset,
+  ModuleData,
+  Track,
+  Transform,
+} from "../core/types";
 
 /**
  * What the inspector is currently focused on inside an element. A standalone
@@ -283,9 +294,15 @@ export type BlockView = {
   range: Range;
   stops: Stop[];
   standalone: boolean;
+  /**
+   * Borrowed from the library rather than written here. Its timing belongs to the
+   * master, so the strip draws it but will not let the element retime it — one
+   * element dragging a block should not move the same motion everywhere else.
+   */
+  linked: boolean;
 };
 
-export function trackBlocks(track: Track): BlockView[] {
+export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
   const out: BlockView[] = [];
   const block = (target: KeyTarget, set: KeyframeSet): BlockView => ({
     part: { kind: "keyframes", property: target },
@@ -294,6 +311,7 @@ export function trackBlocks(track: Track): BlockView[] {
     range: set.range,
     stops: set.stops,
     standalone: true,
+    linked: false,
   });
   // A fixed order rather than whatever order the sets were authored in, so a block
   // stays in the lane the eye last found it in. Position leads, as it does in the
@@ -305,21 +323,116 @@ export function trackBlocks(track: Track): BlockView[] {
     const set = track.keyframes?.[prop];
     if (set) out.push(block(prop, set));
   }
-  track.modules.forEach((md, index) => {
-    out.push({
-      part: { kind: "module", index },
-      prop: moduleProp(md),
-      label: moduleLabel(md),
-      range: md.range,
-      stops: moduleStops(md),
-      standalone: false,
-    });
+  // A borrowed module is a whole stack, so one entry on the element can draw
+  // several blocks. They share the element's index: the strip is showing what runs,
+  // and what the inspector opens is the one row that put it all there.
+  track.modules.forEach((em, index) => {
+    const linked = isLinked(em);
+    for (const md of resolveModule(em, library)) {
+      out.push({
+        part: { kind: "module", index },
+        prop: moduleProp(md),
+        label: moduleLabel(md),
+        range: md.range,
+        stops: moduleStops(md),
+        standalone: false,
+        linked,
+      });
+    }
   });
   return out;
 }
 
+/** What a saved module is made of, said in one line: its entries' types, in order. */
+export const stackSummary = (stack: ModuleData[]): string =>
+  stack.map((md) => md.type).join(" · ");
+
+/**
+ * One row of the element's module stack — what the inspector lists, which is one row
+ * per thing the element carries rather than one per module that ends up running.
+ */
+export type StackRow =
+  | { kind: "raw"; index: number; module: ModuleData }
+  | {
+      kind: "linked";
+      index: number;
+      link: LinkedModule;
+      asset: ModuleAsset;
+      resolved: ModuleData[];
+    };
+
+export function stackRows(modules: ElementModule[], library: ModuleAsset[]): StackRow[] {
+  return modules.map((em, index) => {
+    if (!isLinked(em)) return { kind: "raw", index, module: em };
+    return {
+      kind: "linked",
+      index,
+      link: em,
+      asset: findAssetOrThrow(library, em.ref),
+      resolved: resolveModule(em, library),
+    };
+  });
+}
+
+const findAssetOrThrow = (library: ModuleAsset[], id: string): ModuleAsset => {
+  const asset = library.find((a) => a.id === id);
+  if (!asset) throw new Error(`module ref ${id} not found`);
+  return asset;
+};
+
 /** Label on the track block and in the module stack: the property, lowercase. */
 export const moduleLabel = (md: ModuleData): string => moduleProp(md);
+
+/**
+ * The module types an author can add.
+ *
+ * `field` is registered and evaluates, but nothing in the studio authors a `FieldDef`
+ * yet, so one added here could only ever point at a field that does not exist. It
+ * stays out of the menu until there is something for it to read.
+ */
+export const MODULE_TYPES = ["keyframes", "clonerGraph"] as const;
+export type ModuleType = (typeof MODULE_TYPES)[number];
+
+/** What each type reads on the axis it is driven by, for the menu. */
+export const MODULE_BLURB: Record<ModuleType, string> = {
+  keyframes: "a curve over the module's own time",
+  clonerGraph: "a curve over the clone index",
+};
+
+/**
+ * A fresh module, flat on whatever the element currently reads. One stop, for the
+ * same reason a standalone property gets one: motion nobody wrote is not a sensible
+ * thing to start from.
+ */
+export function newModule(type: ModuleType, base: Transform, range: Range = [0, 1]): ModuleData {
+  const property: KeyProp = "scale";
+  return {
+    type,
+    range,
+    params: {
+      property,
+      stops: defaultStops(baseValue(base, property)),
+      blend: type === "clonerGraph" ? "mul" : "set",
+      delay: 0,
+    },
+  };
+}
+
+/** A cloner to start from: a straight run through where the element already stands,
+ *  so turning one on spreads the element rather than piling every clone on the origin. */
+export function defaultDistributor(base: Transform): Distributor {
+  return {
+    type: "path",
+    count: 6,
+    params: {
+      points: [
+        { x: base.x - 200, y: base.y },
+        { x: base.x + 200, y: base.y },
+      ],
+      align: false,
+    },
+  };
+}
 
 export function layerName(
   layer: Layer,
@@ -346,7 +459,11 @@ export function positionDrivers(track: Track): PositionDriver[] {
     // Standalone keyframes always `set`, so they always own their axis.
     if (set) out.push({ axis, part: { kind: "keyframes", property: axis }, stops: set.stops });
   }
-  track.modules.forEach((md, index) => {
+  track.modules.forEach((em, index) => {
+    // A borrowed curve is the library's, and every other element running it would
+    // move too. Dragging an element it owns is refused rather than shared out.
+    if (isLinked(em)) return;
+    const md = em;
     const axis = moduleProp(md);
     if (md.type !== "keyframes" || (axis !== "x" && axis !== "y")) return;
     if ((md.params.blend ?? "set") !== "set") return;
@@ -515,7 +632,11 @@ const localOf = (block: BlockView, by: number): number => {
   return width < SAME_STOP ? 0 : by / width;
 };
 
-export function slideTrackEdits(blocks: BlockView[], delta: number): TimeEdit[] {
+/** What an element is allowed to retime: everything it owns. */
+const ownedBy = (blocks: BlockView[]): BlockView[] => blocks.filter((b) => !b.linked);
+
+export function slideTrackEdits(all: BlockView[], delta: number): TimeEdit[] {
+  const blocks = ownedBy(all);
   const span = trackSpan(blocks);
   if (span === null) return [];
   // One clamp for the element, not one per curve.
@@ -535,11 +656,12 @@ export function slideTrackEdits(blocks: BlockView[], delta: number): TimeEdit[] 
 }
 
 export function stretchTrackEdits(
-  blocks: BlockView[],
+  all: BlockView[],
   anchor: number,
   from: number,
   to: number,
 ): TimeEdit[] {
+  const blocks = ownedBy(all);
   const k = stretchFactor(anchor, from, to);
   if (k === null) return [];
   const scale = (c: number) => anchor + (c - anchor) * k;

@@ -148,6 +148,7 @@ export function StudioCanvas() {
   const dragRef = useRef<Drag | null>(null);
 
   const composition = useStudio((s) => s.composition);
+  const moduleLibrary = useStudio((s) => s.moduleLibrary);
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
   const t = useStudio((s) => s.t);
@@ -176,7 +177,10 @@ export function StudioCanvas() {
   const scale = contentScale(view);
 
   /** Evaluated scene, for hit testing and selection chrome. Painting evaluates its own. */
-  const scene = useMemo(() => renderState(composition, t), [composition, t]);
+  const scene = useMemo(
+    () => renderState(composition, t, moduleLibrary),
+    [composition, t, moduleLibrary],
+  );
 
   const sizeOf = useMemo(() => {
     const byId = new Map(
@@ -511,7 +515,7 @@ export function StudioCanvas() {
     ctx.beginPath();
     ctx.rect(0, 0, frame.width, frame.height);
     ctx.clip();
-    paintComposition(ctx, composition, t, frame.width, frame.height, (id) => {
+    paintComposition(ctx, composition, t, frame.width, frame.height, moduleLibrary, (id) => {
       const img = getCachedImage(id);
       if (!img || img.naturalWidth < 1) return undefined;
       return {

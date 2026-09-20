@@ -5,13 +5,13 @@ import { demo } from "../demo";
 
 describe("code export", () => {
   it("bakes a runnable waapi snippet per layer", () => {
-    const html = exportCode(demo, 30);
+    const html = exportCode(demo, [], 30);
     expect(html).toContain("animate");
     expect(html).toContain("translate(");
     expect(html).toContain('id="card"');
   });
   it("is deterministic", () => {
-    expect(exportCode(demo, 30)).toBe(exportCode(demo, 30));
+    expect(exportCode(demo, [], 30)).toBe(exportCode(demo, [], 30));
   });
 });
 
@@ -49,14 +49,14 @@ describe("an svg node in the export", () => {
   };
 
   it("ships the node's own markup, not a picture of it", () => {
-    const html = exportCode(comp, 4, content);
+    const html = exportCode(comp, [], 4, content);
     expect(html).toContain('<path d="M 40 20" fill="#1a0f00"/>');
     expect(html).toContain('viewBox="0 0 224 260"');
     expect(html).not.toContain("<img");
   });
 
   it("wraps it in the same animated div every other layer gets", () => {
-    const html = exportCode(comp, 4, content);
+    const html = exportCode(comp, [], 4, content);
     expect(html).toContain('<div id="path-0" class="layer is-svg"');
     // The animation still drives the wrapper by id — the markup inside is along for
     // the ride, which is what leaves it addressable by anything else.
@@ -64,14 +64,14 @@ describe("an svg node in the export", () => {
   });
 
   it("centres the node's canvas on the transform, as the standing box is", () => {
-    expect(exportCode(comp, 4, content)).toContain("left:-112px;top:-130px");
+    expect(exportCode(comp, [], 4, content)).toContain("left:-112px;top:-130px");
   });
 
   it("leaves a layer with no markup as the box it has always been", () => {
-    expect(exportCode(comp, 4, content)).toContain('<div id="photo" class="layer"></div>');
+    expect(exportCode(comp, [], 4, content)).toContain('<div id="photo" class="layer"></div>');
   });
 
   it("is still deterministic", () => {
-    expect(exportCode(comp, 4, content)).toBe(exportCode(comp, 4, content));
+    expect(exportCode(comp, [], 4, content)).toBe(exportCode(comp, [], 4, content));
   });
 });

@@ -93,12 +93,17 @@ export function Timeline() {
   const leaveLink = (key: string) =>
     setHotLink((lit) => (lit === key ? null : lit));
 
+  const moduleLibrary = useStudio((s) => s.moduleLibrary);
   const { duration } = composition;
 
   // One clock for the whole studio: `Preview` owns the rAF loop and writes every
   // tick into the store, which is what the canvas renders from.
   useEffect(() => {
-    const preview = new Preview(null, useStudio.getState().composition);
+    const preview = new Preview(
+      null,
+      useStudio.getState().composition,
+      useStudio.getState().moduleLibrary,
+    );
     preview.t = useStudio.getState().t;
     preview.loop = useStudio.getState().loop;
     preview.onTick = (next) => useStudio.getState().setT(next);
@@ -113,8 +118,8 @@ export function Timeline() {
   }, []);
 
   useEffect(() => {
-    previewRef.current?.setComposition(composition);
-  }, [composition]);
+    previewRef.current?.setComposition(composition, moduleLibrary);
+  }, [composition, moduleLibrary]);
 
   useEffect(() => {
     if (previewRef.current) previewRef.current.loop = loop;
@@ -223,9 +228,10 @@ export function Timeline() {
   // strip rather than per property row.
   const states = useMemo(() => {
     const out = new Map<string, Transform>();
-    for (const item of renderState(composition, t)) out.set(item.id, item.state);
+    for (const item of renderState(composition, t, moduleLibrary))
+      out.set(item.id, item.state);
     return out;
-  }, [composition, t]);
+  }, [composition, t, moduleLibrary]);
 
   // Only what animates: being on the canvas is not a reason to hold a lane here.
   const rows = composition.tracks
@@ -234,7 +240,7 @@ export function Timeline() {
         track.layer.source.kind === "image"
           ? assets.find((a) => a.id === track.layer.source.value)
           : undefined;
-      const blocks = trackBlocks(track);
+      const blocks = trackBlocks(track, moduleLibrary);
       return {
         track,
         id: track.layer.id,

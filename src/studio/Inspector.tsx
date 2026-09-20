@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Driver, ModuleData, Track, Transform } from "../core/types";
+import type { Driver, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { Easing } from "../core/easing";
-import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
 import {
@@ -15,35 +14,25 @@ import {
 } from "./composition";
 import {
   EASINGS,
-  PROPS,
-  PROP_COLOR,
   PROP_STEP,
   PROP_TEXT,
-  baseValue,
   fromDisplay,
   hasKeyframes,
   layerName,
   propLabel,
-  moduleLabel,
-  moduleProp,
-  moduleStops,
   patchStop,
   positionSets,
-  removeStop,
   secondsToT,
-  stopAtTime,
-  stopSeconds,
   toDisplay,
   type DesignSize,
   type KeyProp,
   type KeyTarget,
   type Range,
 } from "./modules";
+import { DistributorSection, ModuleInspector, ModuleStackSection } from "./ModuleStack";
 import {
   BOX,
   DiamondIcon,
-  DiamondMinusIcon,
-  DiamondPlusIcon,
   GHOST_BTN,
   INPUT,
   LABEL,
@@ -254,33 +243,17 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
           What is left here is the editor for whichever one is picked. */}
       <KeyframeEditor track={track} />
 
-      {/* Only what an element actually carries — there is no way to add a module
-          until there are real module types to add. */}
-      {modules.length > 0 ? (
-        <section className={SECTION}>
-          <p className={`${LABEL} mb-2`}>modules</p>
-          <ul className="flex flex-col gap-1">
-            {modules.map((md, i) => (
-              <ModuleRow
-                key={i}
-                module={md}
-                index={i}
-                layerId={layer.id}
-                selected={i === activeModule}
-              />
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <DistributorSection
+        distributor={layer.distributor}
+        base={layer.base}
+        onChange={(d) => useStudio.getState().setDistributor(layer.id, d)}
+      />
+
+      <ModuleStackSection track={track} />
 
       {activeModule !== null ? (
-        <KeyframeInspector
-          layerId={layer.id}
-          index={activeModule}
-          module={modules[activeModule]}
-        />
+        <ModuleInspector track={track} index={activeModule} />
       ) : null}
-
     </>
   );
 }
@@ -488,6 +461,7 @@ function ElementSection({
 }) {
   const assets = useStudio((s) => s.assets);
   const composition = useStudio((s) => s.composition);
+  const library = useStudio((s) => s.moduleLibrary);
   const t = useStudio((s) => s.t);
   const { layer } = track;
   const asset =
@@ -507,8 +481,9 @@ function ElementSection({
    *  and the box on the canvas cannot disagree about how wide the thing is. */
   const state = useMemo(
     () =>
-      renderState(composition, t).find((it) => it.id === layer.id)?.state ?? layer.base,
-    [composition, t, layer],
+      renderState(composition, t, library).find((it) => it.id === layer.id)?.state ??
+      layer.base,
+    [composition, t, library, layer],
   );
 
   const cell = (target: KeyTarget, field: ReactNode) => (
@@ -851,261 +826,6 @@ function SeparateButton({ layerId, separate }: { layerId: string; separate: bool
     >
       <SeparatorVerticalIcon />
     </button>
-  );
-}
-
-function ModuleRow({
-  module: md,
-  index,
-  layerId,
-  selected,
-}: {
-  module: ModuleData;
-  index: number;
-  layerId: string;
-  selected: boolean;
-}) {
-  const prop = moduleProp(md);
-  return (
-    <li className="flex items-center gap-1">
-      <button
-        type="button"
-        aria-pressed={selected}
-        className={`flex h-[26px] min-w-0 flex-1 items-center gap-2 rounded-md border px-2 text-left text-[11px] ${
-          selected
-            ? "border-[#0d99ff] bg-[#e8f4ff] text-[#111]"
-            : "border-[#e0e0e0] text-[#555] hover:bg-[#f5f5f5]"
-        }`}
-        onClick={() =>
-          useStudio
-            .getState()
-            .selectPart(layerId, selected ? null : { kind: "module", index })
-        }
-      >
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] border ${PROP_COLOR[prop]}`} />
-        <span className="truncate">{moduleLabel(md)}</span>
-        <span className="ml-auto shrink-0 text-[10px] tabular-nums text-[#999]">
-          {md.type}
-        </span>
-      </button>
-      <button
-        type="button"
-        aria-label={`remove ${moduleLabel(md)} module`}
-        title="remove module"
-        className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
-        onClick={() => useStudio.getState().removeModule(layerId, index)}
-      >
-        ×
-      </button>
-    </li>
-  );
-}
-
-function KeyframeInspector({
-  layerId,
-  index,
-  module: md,
-}: {
-  layerId: string;
-  index: number;
-  module: ModuleData;
-}) {
-  const prop = moduleProp(md);
-  const stops = moduleStops(md);
-  const clones = useStudio((s) => {
-    const d = s.composition.tracks.find((tr) => tr.layer.id === layerId)?.layer.distributor;
-    return d && d.type !== "none" ? d.count : 1;
-  });
-  const delay = typeof md.params.delay === "number" ? md.params.delay : 0;
-  const params = (patch: Record<string, unknown>) =>
-    useStudio.getState().setModuleParams(layerId, index, patch);
-
-  return (
-    <section className={`${SECTION} bg-[#fbfbfb]`}>
-      <p className={`${LABEL} mb-2`}>keyframes · {prop}</p>
-
-      <label className={`${BOX} justify-between`}>
-        <span className={LABEL}>property</span>
-        <select
-          className="bg-transparent text-[11px] text-[#111] outline-none"
-          value={prop}
-          onChange={(e) => {
-            const next = e.target.value as KeyProp;
-            const track = useStudio
-              .getState()
-              .composition.tracks.find((tr) => tr.layer.id === layerId);
-            // Values belong to the old property, so re-seed them from the base.
-            const seed = track ? baseValue(track.layer.base, next) : 0;
-            params({
-              property: next,
-              stops: stops.map((s) => ({ ...s, v: seed })),
-            });
-          }}
-        >
-          {PROPS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {/* Only a cloner has anything to stagger — on a single element the field would
-          be a control with nothing on the other end of it. */}
-      {clones > 1 ? (
-        <>
-          <div className="mt-1.5">
-            <NumberField
-              label="delay"
-              title="clone delay"
-              value={delay}
-              step={0.01}
-              min={0}
-              max={1}
-              onChange={(v) => params({ delay: v })}
-            />
-          </div>
-          <p className="mt-1 text-[10px] text-[#b0b0b0]">
-            staggers clones across time. 0 = simultaneous
-          </p>
-        </>
-      ) : null}
-
-      <StopList
-        layerId={layerId}
-        axes={[{ prop, stops }]}
-        range={md.range}
-        onChange={(next) => params({ stops: next[0] })}
-      />
-    </section>
-  );
-}
-
-/**
- * Time, value, easing, one row per stop. Time is read in the same seconds the ruler
- * is labelled with, so a stop and the tick it sits under say the same number.
- */
-/** One property inside a stop list. Two of them means a combined position, whose
- *  axes share every stop time and differ only in value. */
-type Axis = { prop: KeyProp; stops: Stop[] };
-
-function StopList({
-  layerId,
-  axes,
-  range,
-  onChange,
-}: {
-  layerId: string;
-  axes: Axis[];
-  range: Range;
-  onChange: (stops: Stop[][]) => void;
-}) {
-  const duration = useStudio((s) => s.composition.duration);
-  // Times, easings, and the count are shared, so the first axis speaks for the row.
-  const stops = axes[0].stops;
-  /** The same edit on every axis — what keeps them in lockstep. */
-  const all = (fn: (axis: Axis) => Stop[]) => onChange(axes.map(fn));
-
-  /** At the playhead, each axis holding whatever it reads there right now. */
-  const addAtPlayhead = () => {
-    const { composition, t } = useStudio.getState();
-    const item = renderState(composition, t).find((it) => it.id === layerId);
-    const at = clamp(secondsToT(t * duration, range, duration), 0, 1);
-    all((axis) => {
-      const v = item
-        ? baseValue(item.state, axis.prop)
-        : axis.stops[axis.stops.length - 1].v;
-      return stopAtTime(axis.stops, at, v);
-    });
-  };
-
-  return (
-    <>
-      <div className="flex items-center justify-between">
-        <p className={LABEL}>keyframes</p>
-        <button
-          type="button"
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
-          onClick={addAtPlayhead}
-        >
-          <DiamondPlusIcon />
-          add keyframe
-        </button>
-      </div>
-      <ul className="mt-2 flex flex-col gap-1">
-        {stops.map((stop, i) => {
-          // One axis fits beside the time; two need a line of their own, so the row
-          // wraps rather than squeezing four controls into 236px.
-          const values = axes.map((axis) => (
-            <div key={axis.prop} className="min-w-0 flex-1">
-              <NumberField
-                label={axes.length > 1 ? axis.prop : "v"}
-                title={`${axis.prop} value`}
-                value={axis.stops[i].v}
-                step={PROP_STEP[axis.prop]}
-                onChange={(v) =>
-                  onChange(
-                    axes.map((other, k) =>
-                      k === axes.indexOf(axis)
-                        ? patchStop(other.stops, i, { v })
-                        : other.stops,
-                    ),
-                  )
-                }
-              />
-            </div>
-          ));
-          return (
-            <li key={i} className="flex flex-wrap items-center gap-1">
-              <div className="w-[68px] shrink-0">
-                <NumberField
-                  label="s"
-                  title="time in seconds"
-                  value={stopSeconds(stop.t, range, duration)}
-                  step={0.1}
-                  min={0}
-                  onChange={(v) =>
-                    all((axis) =>
-                      patchStop(axis.stops, i, { t: secondsToT(v, range, duration) }),
-                    )
-                  }
-                />
-              </div>
-              {axes.length === 1 ? values : null}
-              <select
-                className="h-[26px] w-[74px] shrink-0 rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none"
-                aria-label="easing"
-                value={stop.ease ?? "linear"}
-                onChange={(e) =>
-                  all((axis) =>
-                    patchStop(axis.stops, i, { ease: e.target.value as Easing }),
-                  )
-                }
-              >
-                {EASINGS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                aria-label="remove keyframe"
-                title="remove keyframe"
-                disabled={stops.length <= 1}
-                className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
-                onClick={() => all((axis) => removeStop(axis.stops, i))}
-              >
-                <DiamondMinusIcon />
-              </button>
-              {axes.length > 1 ? (
-                <div className="flex w-full items-center gap-1">{values}</div>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-    </>
   );
 }
 

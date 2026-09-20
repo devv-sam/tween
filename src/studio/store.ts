@@ -1,15 +1,21 @@
-import { create } from "zustand";
+import { create, type StateCreator } from "zustand";
+import { persist } from "zustand/middleware";
 import { clamp } from "../core/math";
 import { sampleStops } from "../core/curve";
 import type {
   Composition,
+  Distributor,
   Driver,
+  ElementModule,
   KeyframeSet,
   Layer,
+  LinkedModule,
+  ModuleAsset,
   ModuleData,
   Track,
   Transform,
 } from "../core/types";
+import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
 import {
@@ -33,6 +39,7 @@ import {
   positionDrivers,
   secondsToT,
   shiftStops,
+  newModule,
   slideTrackEdits,
   stopAtTime,
   stretchTrackEdits,
@@ -43,6 +50,7 @@ import {
   type PositionDriver,
   type BlockView,
   type Range,
+  type ModuleType,
   type SelectedPart,
   type TimeEdit,
 } from "./modules";
@@ -68,6 +76,9 @@ import {
   type Size,
   type View,
 } from "./view";
+
+/** Where the work is kept between visits. */
+const STORE_KEY = "tween:store";
 
 /** A move's starting point, captured before the first pointer move. */
 export type MoveAnchor = {
@@ -354,10 +365,18 @@ const patchKeyframes = (
 };
 
 const patchModule = (
-  modules: ModuleData[],
+  modules: ElementModule[],
+  index: number,
+  fn: (md: ElementModule) => ElementModule,
+): ElementModule[] => modules.map((md, i) => (i === index ? fn(md) : md));
+
+/** The same, for an entry the caller only wants to touch if the element owns it
+ *  outright. A borrowed one is written through its overrides instead. */
+const patchRaw = (
+  modules: ElementModule[],
   index: number,
   fn: (md: ModuleData) => ModuleData,
-): ModuleData[] => modules.map((md, i) => (i === index ? fn(md) : md));
+): ElementModule[] => patchModule(modules, index, (md) => (isLinked(md) ? md : fn(md)));
 
 /**
  * Everything undo puts back: the document, and the selection that was pointing into
@@ -366,6 +385,9 @@ const patchModule = (
  */
 type Snapshot = {
   composition: Composition;
+  /** Edited through the same door as the composition, so a module renamed or a stack
+   *  saved is one more thing undo puts back. */
+  moduleLibrary: ModuleAsset[];
   assets: StudioAsset[];
   frame: Size;
   selectedIds: string[];
@@ -374,6 +396,7 @@ type Snapshot = {
 
 const snapshot = (s: StudioState): Snapshot => ({
   composition: s.composition,
+  moduleLibrary: s.moduleLibrary,
   assets: s.assets,
   frame: s.frame,
   selectedIds: s.selectedIds,
@@ -407,8 +430,78 @@ const refit = (viewport: Size, frame: Size, view: View): View => {
  *  and does better. */
 export type SharedProp = "x" | "y" | "rotation";
 
+/**
+ * The module bench: a place to write a behaviour with no element in front of you.
+ *
+ * Its proxy is a plain square the canvas draws while the bench is open, and it never
+ * reaches the composition — closing without saving has to leave nothing behind, so
+ * there is nothing here for the composition to have to forget.
+ */
+export type Bench = {
+  /** The asset being edited, or null while this is a new one. */
+  editing: string | null;
+  name: string;
+  distributor: Distributor | null;
+  stack: ModuleData[];
+  /** Set when save was pressed with no name, cleared on the next keystroke. */
+  nameMissing: boolean;
+};
+
+/** Where the bench's proxy stands and how big it is. Fixed: the bench is about
+ *  behaviour, and a proxy you can resize is one more thing that is not the point. */
+export const PROXY_SIZE = 200;
+
+const emptyBench = (): Bench => ({
+  editing: null,
+  name: "",
+  distributor: null,
+  stack: [],
+  nameMissing: false,
+});
+
+/** The transform the bench's proxy sits at, centred on the frame. */
+export const proxyBase = (frame: Size): Transform => ({
+  x: frame.width / 2,
+  y: frame.height / 2,
+  scaleX: 1,
+  scaleY: 1,
+  rotation: 0,
+  opacity: 1,
+});
+
+/**
+ * The bench as a composition of one, so the canvas can draw it with the renderer it
+ * already has rather than a second path that could disagree with the first.
+ */
+export function benchComposition(bench: Bench, comp: Composition, frame: Size): Composition {
+  return {
+    ...comp,
+    background: undefined,
+    tracks: [
+      {
+        layer: {
+          id: PROXY_ID,
+          source: { kind: "shape", value: "#ffffff" },
+          base: proxyBase(frame),
+          ...(bench.distributor ? { distributor: bench.distributor } : {}),
+        },
+        modules: bench.stack,
+      },
+    ],
+  };
+}
+
+export const PROXY_ID = "__bench-proxy";
+
 type StudioState = {
   composition: Composition;
+  /**
+   * Saved behaviours, kept beside the composition rather than inside it: a library is
+   * the author's, and it should still be there behind whatever they open next.
+   */
+  moduleLibrary: ModuleAsset[];
+  /** Open only while a module is being written. Never part of the composition. */
+  bench: Bench | null;
   assets: StudioAsset[];
   importError: string | null;
   frame: Size;
@@ -485,9 +578,46 @@ type StudioState = {
   ) => void;
   setKeyframeRange: (layerId: string, target: KeyTarget, range: Range) => void;
   setSeparatePosition: (layerId: string, separate: boolean) => void;
+  addModule: (layerId: string, type: ModuleType) => void;
   removeModule: (layerId: string, index: number) => void;
   setModuleParams: (layerId: string, index: number, patch: Record<string, unknown>) => void;
   setModuleRange: (layerId: string, index: number, range: Range) => void;
+  /** Turn a cloner on or off, and reconfigure the one that is on. */
+  setDistributor: (layerId: string, distributor: Distributor | null) => void;
+  /**
+   * Put a saved module on an element as a linked instance. A module that carries a
+   * distributor brings it along; `replaceDistributor` says what to do when the
+   * element already has one, and the caller has asked before setting it.
+   */
+  attachModule: (layerId: string, assetId: string, replaceDistributor?: boolean) => void;
+  /** Write a param on one entry of a linked instance. Lands in the element's own
+   *  overrides — the master is never touched from here. */
+  setLinkedOverride: (
+    layerId: string,
+    index: number,
+    entry: number,
+    patch: Record<string, unknown>,
+  ) => void;
+  /** Cut an instance loose: its resolved entries become the element's own. */
+  detachModule: (layerId: string, index: number) => void;
+  /** Bundle the element's raw entries into a new asset and link them back. */
+  saveStackAsModule: (layerId: string, name: string) => void;
+  /** How many linked instances of an asset are out there, across every element. */
+  moduleUses: (assetId: string) => number;
+  /** Detaches every instance first, so nothing is left pointing at nothing. */
+  deleteModuleAsset: (assetId: string) => void;
+  renameModuleAsset: (assetId: string, name: string) => void;
+  openBench: (assetId?: string) => void;
+  closeBench: () => void;
+  setBenchName: (name: string) => void;
+  setBenchDistributor: (distributor: Distributor | null) => void;
+  addBenchModule: (type: ModuleType) => void;
+  setBenchModuleParams: (index: number, patch: Record<string, unknown>) => void;
+  setBenchModuleRange: (index: number, range: Range) => void;
+  removeBenchModule: (index: number) => void;
+  moveBenchModule: (index: number, to: number) => void;
+  /** Save and close. Refuses an unnamed module, and says so on the field. */
+  saveBench: () => void;
   /**
    * Move everything the element animates through time as one set.
    *
@@ -571,7 +701,10 @@ type StudioState = {
   sealHistory: () => void;
 };
 
-export const useStudio = create<StudioState>((set, get) => {
+const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = (
+  set,
+  get,
+) => {
   /**
    * The one door every document edit goes through: it records the state being
    * replaced before applying the change. `key` names the interaction the edit belongs
@@ -580,11 +713,12 @@ export const useStudio = create<StudioState>((set, get) => {
   const edit = (
     key: string | null,
     fn: (s: StudioState) => Partial<StudioState>,
-  ): void =>
+  ): void => {
     set((s) => ({
       ...fn(s),
       history: record(s.history, snapshot(s), key, Date.now()),
     }));
+  };
 
   /** Put a snapshot back. A different frame is a reframe, so the view refits to it. */
   const restore = (s: StudioState, snap: Snapshot): Partial<StudioState> => ({
@@ -605,7 +739,7 @@ export const useStudio = create<StudioState>((set, get) => {
         let modules = tr.modules;
         for (const e of edits) {
           if (e.kind === "module") {
-            modules = patchModule(modules, e.index, (md) => ({ ...md, range: e.range }));
+            modules = patchRaw(modules, e.index, (md) => ({ ...md, range: e.range }));
             continue;
           }
           // Position is two sets on shared times: y takes x's times, keeps its values.
@@ -626,6 +760,8 @@ export const useStudio = create<StudioState>((set, get) => {
 
   return {
     composition: emptyComposition(),
+    moduleLibrary: [],
+    bench: null,
     assets: [],
     importError: null,
     frame: DEFAULT_FRAME,
@@ -656,7 +792,7 @@ export const useStudio = create<StudioState>((set, get) => {
     },
 
     trimDurationToContent: () => {
-      const end = contentEnd(get().composition);
+      const end = contentEnd(get().composition, get().moduleLibrary);
       if (end === null || end <= 0) return;
       edit("duration", (s) => {
         const next = clampDuration(end * s.composition.duration);
@@ -960,6 +1096,21 @@ export const useStudio = create<StudioState>((set, get) => {
       }));
     },
 
+    addModule: (layerId, type) => {
+      edit(null, (s) => {
+        const track = s.composition.tracks.find((tr) => tr.layer.id === layerId);
+        if (!track) return {};
+        return {
+          // The new one is what you came to configure, so it opens picked.
+          selectedPart: { kind: "module", index: track.modules.length },
+          ...patchTrack(s.composition, layerId, (tr) => ({
+            ...tr,
+            modules: [...tr.modules, newModule(type, tr.layer.base)],
+          })),
+        };
+      });
+    },
+
     removeModule: (layerId, index) => {
       edit(null, (s) => ({
         // The stack shifts under the selection, so drop it rather than point it elsewhere.
@@ -977,7 +1128,7 @@ export const useStudio = create<StudioState>((set, get) => {
     setModuleParams: (layerId, index, patch) => {
       edit(`params:${layerId}:${index}`, (s) => patchTrack(s.composition, layerId, (tr) => ({
         ...tr,
-        modules: patchModule(tr.modules, index, (md) => ({
+        modules: patchRaw(tr.modules, index, (md) => ({
           ...md,
           params: { ...md.params, ...patch },
         })),
@@ -989,8 +1140,247 @@ export const useStudio = create<StudioState>((set, get) => {
     setModuleRange: (layerId, index, range) => {
       edit(`range:${layerId}:${index}`, (s) => patchTrack(s.composition, layerId, (tr) => ({
         ...tr,
-        modules: patchModule(tr.modules, index, (md) => ({ ...md, range })),
+        modules: patchRaw(tr.modules, index, (md) => ({ ...md, range })),
       })));
+    },
+
+    setDistributor: (layerId, distributor) => {
+      edit(`distributor:${layerId}`, (s) =>
+        patchTrack(s.composition, layerId, (tr) => {
+          const layer = { ...tr.layer };
+          if (distributor) layer.distributor = distributor;
+          else delete layer.distributor;
+          return { ...tr, layer };
+        }),
+      );
+    },
+
+    attachModule: (layerId, assetId, replaceDistributor = false) => {
+      const asset = get().moduleLibrary.find((a) => a.id === assetId);
+      if (!asset) return;
+      edit(null, (s) =>
+        patchTrack(s.composition, layerId, (tr) => {
+          // A module's distributor is the shape it was written for, so it lands on
+          // the element rather than on the stack — a cloner is not a behaviour.
+          const takes = asset.distributor && (replaceDistributor || !tr.layer.distributor);
+          const link: LinkedModule = { kind: "linked", ref: assetId, overrides: {} };
+          return {
+            ...tr,
+            layer: takes ? { ...tr.layer, distributor: asset.distributor } : tr.layer,
+            modules: [...tr.modules, link],
+          };
+        }),
+      );
+    },
+
+    setLinkedOverride: (layerId, index, entry, patch) => {
+      edit(`override:${layerId}:${index}:${entry}`, (s) =>
+        patchTrack(s.composition, layerId, (tr) => ({
+          ...tr,
+          modules: patchModule(tr.modules, index, (md) =>
+            isLinked(md)
+              ? {
+                  ...md,
+                  overrides: {
+                    ...md.overrides,
+                    [entry]: { ...md.overrides[entry], ...patch },
+                  },
+                }
+              : md,
+          ),
+        })),
+      );
+    },
+
+    detachModule: (layerId, index) => {
+      edit(null, (s) => {
+        const library = s.moduleLibrary;
+        return patchTrack(s.composition, layerId, (tr) => {
+          const em = tr.modules[index];
+          if (!em || !isLinked(em)) return tr;
+          // What it was running becomes what it holds, so the element carries on
+          // looking exactly as it did a moment ago.
+          const raw = resolveModule(em, library);
+          return {
+            ...tr,
+            modules: [...tr.modules.slice(0, index), ...raw, ...tr.modules.slice(index + 1)],
+          };
+        });
+      });
+    },
+
+    saveStackAsModule: (layerId, name) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      edit(null, (s) => {
+        const track = s.composition.tracks.find((tr) => tr.layer.id === layerId);
+        if (!track) return {};
+        const stack = track.modules.filter((em): em is ModuleData => !isLinked(em));
+        if (stack.length === 0) return {};
+        const asset: ModuleAsset = {
+          id: crypto.randomUUID(),
+          name: trimmed,
+          stack,
+          createdAt: Date.now(),
+          ...(track.layer.distributor ? { distributor: track.layer.distributor } : {}),
+        };
+        const link: LinkedModule = { kind: "linked", ref: asset.id, overrides: {} };
+        return {
+          moduleLibrary: [...s.moduleLibrary, asset],
+          // The raw entries are gone; a selection pointing into them has nothing left.
+          selectedPart: null,
+          ...patchTrack(s.composition, layerId, (tr) => ({
+            ...tr,
+            modules: [...tr.modules.filter(isLinked), link],
+          })),
+        };
+      });
+    },
+
+    moduleUses: (assetId) =>
+      get().composition.tracks.filter((tr) =>
+        tr.modules.some((em) => isLinked(em) && em.ref === assetId),
+      ).length,
+
+    deleteModuleAsset: (assetId) => {
+      edit(null, (s) => {
+        const library = s.moduleLibrary;
+        return {
+          moduleLibrary: library.filter((a) => a.id !== assetId),
+          selectedPart: null,
+          composition: {
+            ...s.composition,
+            // Every use is cut loose first: an element should lose the link, not
+            // the motion it was running.
+            tracks: s.composition.tracks.map((tr) => ({
+              ...tr,
+              modules: tr.modules.flatMap((em) =>
+                isLinked(em) && em.ref === assetId ? resolveModule(em, library) : [em],
+              ),
+            })),
+          },
+        };
+      });
+    },
+
+    renameModuleAsset: (assetId, name) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      edit(`rename-module:${assetId}`, (s) => ({
+        moduleLibrary: s.moduleLibrary.map((a) =>
+          a.id === assetId ? { ...a, name: trimmed } : a,
+        ),
+      }));
+    },
+
+    openBench: (assetId) => {
+      const asset = assetId ? get().moduleLibrary.find((a) => a.id === assetId) : undefined;
+      set({
+        bench: asset
+          ? {
+              editing: asset.id,
+              name: asset.name,
+              distributor: asset.distributor ?? null,
+              stack: asset.stack,
+              nameMissing: false,
+            }
+          : emptyBench(),
+      });
+    },
+
+    closeBench: () => set({ bench: null }),
+
+    setBenchName: (name) =>
+      set((s) => (s.bench ? { bench: { ...s.bench, name, nameMissing: false } } : {})),
+
+    setBenchDistributor: (distributor) =>
+      set((s) => (s.bench ? { bench: { ...s.bench, distributor } } : {})),
+
+    addBenchModule: (type) =>
+      set((s) =>
+        s.bench
+          ? {
+              bench: {
+                ...s.bench,
+                stack: [...s.bench.stack, newModule(type, proxyBase(s.frame))],
+              },
+            }
+          : {},
+      ),
+
+    setBenchModuleParams: (index, patch) =>
+      set((s) =>
+        s.bench
+          ? {
+              bench: {
+                ...s.bench,
+                stack: s.bench.stack.map((md, i) =>
+                  i === index ? { ...md, params: { ...md.params, ...patch } } : md,
+                ),
+              },
+            }
+          : {},
+      ),
+
+    setBenchModuleRange: (index, range) =>
+      set((s) =>
+        s.bench
+          ? {
+              bench: {
+                ...s.bench,
+                stack: s.bench.stack.map((md, i) => (i === index ? { ...md, range } : md)),
+              },
+            }
+          : {},
+      ),
+
+    removeBenchModule: (index) =>
+      set((s) =>
+        s.bench
+          ? { bench: { ...s.bench, stack: s.bench.stack.filter((_, i) => i !== index) } }
+          : {},
+      ),
+
+    moveBenchModule: (index, to) =>
+      set((s) => {
+        if (!s.bench) return {};
+        const at = clamp(to, 0, s.bench.stack.length - 1);
+        if (at === index) return {};
+        const stack = [...s.bench.stack];
+        const [held] = stack.splice(index, 1);
+        stack.splice(at, 0, held);
+        return { bench: { ...s.bench, stack } };
+      }),
+
+    saveBench: () => {
+      const bench = get().bench;
+      if (!bench) return;
+      const name = bench.name.trim();
+      // Nothing is saved without a name: the shelf lists modules by it, and an
+      // unnamed row is a module nobody will find again.
+      if (!name) {
+        set({ bench: { ...bench, nameMissing: true } });
+        return;
+      }
+      edit(null, (s) => {
+        const distributor = bench.distributor ?? undefined;
+        if (bench.editing) {
+          return {
+            moduleLibrary: s.moduleLibrary.map((a) =>
+              a.id === bench.editing ? { ...a, name, distributor, stack: bench.stack } : a,
+            ),
+            bench: null,
+          };
+        }
+        const asset: ModuleAsset = {
+          id: crypto.randomUUID(),
+          name,
+          stack: bench.stack,
+          createdAt: Date.now(),
+          ...(distributor ? { distributor } : {}),
+        };
+        return { moduleLibrary: [...s.moduleLibrary, asset], bench: null };
+      });
     },
 
     slideTrack: (layerId, from, delta) => {
@@ -1096,11 +1486,12 @@ export const useStudio = create<StudioState>((set, get) => {
           const base = { ...tr.layer.base };
           if (!driven.has("x")) base.x = anchor.base.x + dx;
           if (!driven.has("y")) base.y = anchor.base.y + dy;
+          // `driven` never names a borrowed module, so every index here owns its curve.
           const modules = tr.modules.map((md, i) => {
             const drive = anchor.driven.find(
               (d) => d.part.kind === "module" && d.part.index === i,
             );
-            if (!drive) return md;
+            if (!drive || isLinked(md)) return md;
             return {
               ...md,
               params: { ...md.params, stops: shiftStops(drive.stops, by[drive.axis]) },
@@ -1149,8 +1540,8 @@ export const useStudio = create<StudioState>((set, get) => {
      * left them. Without that a resize would compound itself frame by frame.
      */
     selectionStarts: () => {
-      const { selectedIds, composition, moveAnchor, t } = get();
-      const scene = renderState(composition, t);
+      const { selectedIds, composition, moduleLibrary, moveAnchor, t } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       const out: SelectionStart[] = [];
       for (const id of selectedIds) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
@@ -1205,8 +1596,8 @@ export const useStudio = create<StudioState>((set, get) => {
      * one step to undo however many elements it moved.
      */
     moveSelection: (anchors, dx, dy) => {
-      const { composition, assets, frame, moveLayer, t } = get();
-      const scene = renderState(composition, t);
+      const { composition, moduleLibrary, assets, frame, moveLayer, t } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       const held: { id: string; anchor: MoveAnchor; from: Point; half: Point | null }[] = [];
       for (const { id, anchor } of anchors) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
@@ -1258,8 +1649,8 @@ export const useStudio = create<StudioState>((set, get) => {
      */
     nudgeOpacity: (ids, by) => {
       if (by === 0) return;
-      const { composition, t, captureTransform } = get();
-      const scene = renderState(composition, t);
+      const { composition, moduleLibrary, t, captureTransform } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       // One key for the run, so dragging the dial is one step to undo.
       for (const id of ids) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
@@ -1294,8 +1685,8 @@ export const useStudio = create<StudioState>((set, get) => {
      */
     sharedOpacity: (ids) => {
       if (ids.length === 0) return null;
-      const { composition, t } = get();
-      const scene = renderState(composition, t);
+      const { composition, moduleLibrary, t } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       let shared: number | null = null;
       for (const id of ids) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
@@ -1315,8 +1706,8 @@ export const useStudio = create<StudioState>((set, get) => {
      */
     sharedTransform: (ids, prop) => {
       if (ids.length === 0) return null;
-      const { composition, t } = get();
-      const scene = renderState(composition, t);
+      const { composition, moduleLibrary, t } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       let shared: number | null = null;
       for (const id of ids) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
@@ -1339,8 +1730,8 @@ export const useStudio = create<StudioState>((set, get) => {
      * `captureTransform` so a keyed element takes it in the stop under the playhead.
      */
     setSelectionTransform: (ids, prop, v) => {
-      const { composition, t, moveAnchor, moveLayer, captureTransform } = get();
-      const scene = renderState(composition, t);
+      const { composition, moduleLibrary, t, moveAnchor, moveLayer, captureTransform } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       const key = `${prop}:selection`;
       for (const id of ids) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
@@ -1364,8 +1755,8 @@ export const useStudio = create<StudioState>((set, get) => {
      */
     nudgeSelectionTransform: (ids, prop, by) => {
       if (by === 0) return;
-      const { composition, t, moveAnchor, moveLayer, captureTransform } = get();
-      const scene = renderState(composition, t);
+      const { composition, moduleLibrary, t, moveAnchor, moveLayer, captureTransform } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       const key = `${prop}:selection`;
       for (const id of ids) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
@@ -1406,7 +1797,7 @@ export const useStudio = create<StudioState>((set, get) => {
       });
 
       edit(key, (s) => {
-        const scene = renderState(s.composition, s.t);
+        const scene = renderState(s.composition, s.t, s.moduleLibrary);
         let composition = s.composition;
         const opened: string[] = [];
         for (const id of ids) {
@@ -1433,8 +1824,8 @@ export const useStudio = create<StudioState>((set, get) => {
 
       // Everything that already had motion takes a stop where the playhead is, at the
       // value it reads there. Filed under the same key, so the press is one step.
-      const { composition, t, captureTransform } = get();
-      const scene = renderState(composition, t);
+      const { composition, moduleLibrary, t, captureTransform } = get();
+      const scene = renderState(composition, t, moduleLibrary);
       for (const id of keyed) {
         const track = composition.tracks.find((tr) => tr.layer.id === id);
         if (!track) continue;
@@ -1459,13 +1850,13 @@ export const useStudio = create<StudioState>((set, get) => {
      * element part-way through its animation centres the frame you can see.
      */
     centreLayer: (layerId, axis) => {
-      const { composition, frame, moveAnchor, moveLayer, t, sealHistory } = get();
+      const { composition, moduleLibrary, frame, moveAnchor, moveLayer, t, sealHistory } = get();
       const track = composition.tracks.find((tr) => tr.layer.id === layerId);
       if (!track) return;
       const anchor = moveAnchor(layerId);
       if (!anchor) return;
       const at =
-        renderState(composition, t).find((it) => it.id === layerId)?.state ??
+        renderState(composition, t, moduleLibrary).find((it) => it.id === layerId)?.state ??
         track.layer.base;
       const middle = axis === "x" ? frame.width / 2 : frame.height / 2;
       const by = middle - at[axis];
@@ -1488,7 +1879,7 @@ export const useStudio = create<StudioState>((set, get) => {
      * both halves are elements. Nothing here is a group.
      */
     detachPart: async (layerId, at) => {
-      const { composition, assets, t } = get();
+      const { composition, moduleLibrary, assets, t } = get();
       const track = composition.tracks.find((tr) => tr.layer.id === layerId);
       if (!track || track.layer.source.kind !== "image") return null;
       const asset = assets.find((a) => a.id === track.layer.source.value);
@@ -1496,7 +1887,7 @@ export const useStudio = create<StudioState>((set, get) => {
       if (!asset || !isSvg(asset) || asset.nodes.length < 2) return null;
 
       const state =
-        renderState(composition, t).find((it) => it.id === layerId)?.state ??
+        renderState(composition, t, moduleLibrary).find((it) => it.id === layerId)?.state ??
         track.layer.base;
       const part = nodeAt(asset.nodes, worldToDoc(at, asset.crop, state));
       if (!part) return null;
@@ -1679,4 +2070,21 @@ export const useStudio = create<StudioState>((set, get) => {
 
     sealHistory: () => set((s) => ({ history: seal(s.history) })),
   };
-});
+};
+
+export const useStudio = create<StudioState>()(
+  persist(createStudio, {
+    name: STORE_KEY,
+    /**
+     * The work, and nothing about looking at it. The playhead, the zoom, the
+     * selection and the undo stack all describe this sitting rather than the
+     * composition, and the bench is explicitly a scratch surface.
+     *
+     * Assets stay out because they cannot come back: an imported picture is held as
+     * an object URL, which dies with the page. Elements placed from one reload into
+     * a composition that still knows where they are and how they move, and draws
+     * nothing for them until the picture is imported again.
+     */
+    partialize: (s) => ({ composition: s.composition, moduleLibrary: s.moduleLibrary }),
+  }),
+);

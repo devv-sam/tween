@@ -17,6 +17,7 @@ const block = (
   range,
   stops,
   standalone,
+  linked: false,
 });
 
 const slide = (to: number): Stop[] => [
