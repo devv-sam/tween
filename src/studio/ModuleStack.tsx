@@ -7,6 +7,7 @@ import {
   MODULE_TYPES,
   PROPS,
   baseValue,
+  cloneCount,
   defaultDistributor,
   moduleProp,
   moduleStops,
@@ -177,11 +178,6 @@ function DistributorParams({
     </div>
   );
 }
-
-/** How many copies of a thing a module is running against. One means no stagger to
- *  configure, so the delay field stays away. */
-export const cloneCount = (d: Distributor | undefined): number =>
-  d && d.type !== "none" ? d.count : 1;
 
 /**
  * One module's own controls: what it drives, how it staggers across clones, and its

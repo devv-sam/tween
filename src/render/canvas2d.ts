@@ -1,7 +1,9 @@
 import type { Scene, Composition } from "../core/types";
 import { fieldCenter } from "../core/fields";
 
-const SIZE = 140;
+/** The box a shape layer draws at, before its own scale. */
+export const SHAPE_SIZE = 140;
+const SIZE = SHAPE_SIZE;
 
 export type ImageLookup = (id: string) => { source: CanvasImageSource; width: number; height: number } | undefined;
 

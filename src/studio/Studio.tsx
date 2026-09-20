@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Inspector } from "./Inspector";
 import { StudioCanvas } from "./StudioCanvas";
 import { Timeline } from "./Timeline";
@@ -6,12 +13,17 @@ import { shelfAssets, useStudio, type StudioAsset } from "./store";
 import { IMAGE_ACCEPT, baseName, extensionOf } from "./files";
 import { contentScale } from "./view";
 import { readAssetsCollapsed, writeAssetsCollapsed } from "./prefs";
+import { ModuleShelf } from "./ModuleShelf";
 
 export function Studio() {
   const assets = useStudio((s) => s.assets);
   // Read once on mount so the drawer opens in the state it was left in, without a
   // frame of the wrong width first.
   const [collapsed, setCollapsed] = useState(readAssetsCollapsed);
+  /** Which drawer panel the rail is showing. Pictures and behaviours are two
+   *  different things to go looking for, so they are two tabs rather than two
+   *  stacked shelves in one scroller. */
+  const [tab, setTab] = useState<"assets" | "modules">("assets");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => writeAssetsCollapsed(collapsed), [collapsed]);
@@ -34,27 +46,24 @@ export function Studio() {
                 <PanelToggle collapsed onToggle={() => setCollapsed(false)} />
               </div>
             ) : null}
-            <button
-              type="button"
-              className={`flex w-full flex-col items-center gap-1 rounded-[7px] px-0.5 pt-[5px] pb-1.5 text-[10px] leading-tight focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[#111] ${
-                collapsed ? "text-[#888]" : "font-medium text-[#111]"
-              }`}
-              aria-pressed={!collapsed}
-              aria-controls="assets-drawer"
-              title="Assets"
-              onClick={() => setCollapsed(false)}
-            >
-              <span
-                className={`grid h-7 w-7 place-items-center rounded-[7px] ${
-                  collapsed
-                    ? "text-[#555] hover:bg-[#f5f5f5]"
-                    : "bg-[#e8f4ff] text-[#0d99ff]"
-                }`}
-              >
-                <ImageIcon />
-              </span>
-              <span className="leading-tight">Assets</span>
-            </button>
+            <RailTab
+              label="Assets"
+              icon={<ImageIcon />}
+              active={!collapsed && tab === "assets"}
+              onClick={() => {
+                setCollapsed(false);
+                setTab("assets");
+              }}
+            />
+            <RailTab
+              label="Modules"
+              icon={<BoxesIcon />}
+              active={!collapsed && tab === "modules"}
+              onClick={() => {
+                setCollapsed(false);
+                setTab("modules");
+              }}
+            />
           </div>
           {collapsed ? null : (
             <div className="flex w-[236px] shrink-0 flex-col" id="assets-drawer">
@@ -64,46 +73,11 @@ export function Studio() {
                 <PanelToggle collapsed={false} onToggle={() => setCollapsed(true)} />
               </div>
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-width:none]">
-              <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-white px-3 pt-3 pb-2">
-                <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888]">
-                  Assets
-                </span>
-                <button
-                  type="button"
-                  className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
-                  aria-label="Import images"
-                  title="Import images"
-                  onClick={() => inputRef.current?.click()}
-                >
-                  <PlusIcon />
-                </button>
-              </div>
-              <input
-                ref={inputRef}
-                className="elements-file"
-                type="file"
-                accept={IMAGE_ACCEPT}
-                multiple
-                onChange={(e) => {
-                  if (e.currentTarget.files?.length) {
-                    void useStudio
-                      .getState()
-                      .importImages([...e.currentTarget.files]);
-                  }
-                  e.currentTarget.value = "";
-                }}
-              />
-              {assets.length === 0 ? (
-                <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-[#b0b0b0]">
-                  Nothing here yet. Import png, jpg, webp, or svg.
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 px-3 pt-1 pb-3.5">
-                  {shelfAssets(assets).map((asset) => (
-                    <AssetCard key={asset.id} asset={asset} />
-                  ))}
-                </div>
-              )}
+                {tab === "assets" ? (
+                  <AssetShelf assets={assets} inputRef={inputRef} />
+                ) : (
+                  <ModuleShelf />
+                )}
               </div>
             </div>
           )}
@@ -115,6 +89,93 @@ export function Studio() {
         <Inspector />
       </div>
     </div>
+  );
+}
+
+/** The drawer's first panel: every picture the studio holds. */
+function AssetShelf({
+  assets,
+  inputRef,
+}: {
+  assets: StudioAsset[];
+  inputRef: RefObject<HTMLInputElement | null>;
+}) {
+  return (
+    <>
+      <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-white px-3 pt-3 pb-2">
+        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888]">
+          Assets
+        </span>
+        <button
+          type="button"
+          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+          aria-label="Import images"
+          title="Import images"
+          onClick={() => inputRef.current?.click()}
+        >
+          <PlusIcon />
+        </button>
+      </div>
+      <input
+        ref={inputRef}
+        className="elements-file"
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        onChange={(e) => {
+          if (e.currentTarget.files?.length) {
+            void useStudio.getState().importImages([...e.currentTarget.files]);
+          }
+          e.currentTarget.value = "";
+        }}
+      />
+      {assets.length === 0 ? (
+        <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-[#b0b0b0]">
+          Nothing here yet. Import png, jpg, webp, or svg.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 px-3 pt-1 pb-3.5">
+          {shelfAssets(assets).map((asset) => (
+            <AssetCard key={asset.id} asset={asset} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** One tab on the rail: what the drawer is showing, and how to ask for it. */
+function RailTab({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`flex w-full flex-col items-center gap-1 rounded-[7px] px-0.5 pt-[5px] pb-1.5 text-[10px] leading-tight focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[#111] ${
+        active ? "font-medium text-[#111]" : "text-[#888]"
+      }`}
+      aria-pressed={active}
+      aria-controls="assets-drawer"
+      title={label}
+      onClick={onClick}
+    >
+      <span
+        className={`grid h-7 w-7 place-items-center rounded-[7px] ${
+          active ? "bg-[#e8f4ff] text-[#0d99ff]" : "text-[#555] hover:bg-[#f5f5f5]"
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="leading-tight">{label}</span>
+    </button>
   );
 }
 
@@ -267,6 +328,36 @@ function PanelLeftIcon() {
     >
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <path d="M9 3v18" />
+    </svg>
+  );
+}
+
+/** Lucide `boxes` — several of a thing, which is what a module makes. */
+function BoxesIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z" />
+      <path d="m7 16.5-4.74-2.85" />
+      <path d="m7 16.5 5-3" />
+      <path d="M7 16.5v5.17" />
+      <path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z" />
+      <path d="m17 16.5-5-3" />
+      <path d="m17 16.5 4.74-2.85" />
+      <path d="M17 16.5v5.17" />
+      <path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z" />
+      <path d="M12 8 7.26 5.15" />
+      <path d="m12 8 4.74-2.85" />
+      <path d="M12 13.5V8" />
     </svg>
   );
 }

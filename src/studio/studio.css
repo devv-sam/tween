@@ -48,6 +48,23 @@ body {
   min-height: 0;
 }
 
+/* The bench's name field, asked to save with nothing in it. */
+.bench-shake {
+  animation: bench-shake 220ms ease;
+}
+
+@keyframes bench-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bench-shake {
+    animation: none;
+  }
+}
+
 /* Offscreen stand-in handed to setDragImage; the browser snapshots it at drag start.
    Stays in CSS: it is attached to a bare `new Image()` outside React, where there is
    no className the build could see to generate utilities from. */
@@ -260,6 +277,12 @@ body {
 
 .timeline-property-label.is-selected {
   background: #f2f9ff;
+}
+
+/* A module is over this row and will land on it. */
+.timeline-track-label.is-drop {
+  background: #e8f4ff;
+  box-shadow: inset 0 0 0 1px #0d99ff;
 }
 
 /* Which element is being worked on, said quietly. The property row's own blue is

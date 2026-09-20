@@ -9,7 +9,8 @@ import {
 import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
-import { LockIcon, LockOpenIcon } from "./fields";
+import { GHOST_BTN, LockIcon, LockOpenIcon } from "./fields";
+import { MODULE_DRAG } from "./ModuleShelf";
 import { alignmentFor, type Alignment, type Box } from "./guides";
 import {
   angleAt,
@@ -21,7 +22,13 @@ import {
   type Box as GroupBox,
 } from "./group";
 import { paintComposition } from "../render/paint";
-import { useStudio, type MoveAnchor, type SelectionStart } from "./store";
+import {
+  PROXY_SIZE,
+  benchComposition,
+  useStudio,
+  type MoveAnchor,
+  type SelectionStart,
+} from "./store";
 import {
   CORNERS,
   HANDLES,
@@ -149,6 +156,8 @@ export function StudioCanvas() {
 
   const composition = useStudio((s) => s.composition);
   const moduleLibrary = useStudio((s) => s.moduleLibrary);
+  const bench = useStudio((s) => s.bench);
+  const pendingAttach = useStudio((s) => s.pendingAttach);
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
   const t = useStudio((s) => s.t);
@@ -176,10 +185,19 @@ export function StudioCanvas() {
   const size = frameSize(frame, view.scale);
   const scale = contentScale(view);
 
+  /**
+   * What the frame is showing. The bench borrows it: a module is written against its
+   * proxy, and the composition underneath is not what is being worked on.
+   */
+  const painted = useMemo(
+    () => (bench ? benchComposition(bench, composition, frame) : composition),
+    [bench, composition, frame],
+  );
+
   /** Evaluated scene, for hit testing and selection chrome. Painting evaluates its own. */
   const scene = useMemo(
-    () => renderState(composition, t, moduleLibrary),
-    [composition, t, moduleLibrary],
+    () => renderState(painted, t, moduleLibrary),
+    [painted, t, moduleLibrary],
   );
 
   const sizeOf = useMemo(() => {
@@ -354,11 +372,17 @@ export function StudioCanvas() {
 
     const onDrop = (e: DragEvent) => {
       const { importImages, placeElement } = useStudio.getState();
+      const moduleId = e.dataTransfer?.getData(MODULE_DRAG);
       const assetId = e.dataTransfer?.getData("application/x-tween-asset");
       const files = e.dataTransfer?.files;
-      if (!assetId && !files?.length) return;
+      if (!moduleId && !assetId && !files?.length) return;
       e.preventDefault();
       const at = mapPoint(e);
+      if (moduleId) {
+        const layerId = pickRef.current(at);
+        if (layerId) useStudio.getState().dropModule(layerId, moduleId);
+        return;
+      }
       if (assetId) {
         placeElement(assetId, at);
         return;
@@ -515,7 +539,7 @@ export function StudioCanvas() {
     ctx.beginPath();
     ctx.rect(0, 0, frame.width, frame.height);
     ctx.clip();
-    paintComposition(ctx, composition, t, frame.width, frame.height, moduleLibrary, (id) => {
+    paintComposition(ctx, painted, t, frame.width, frame.height, moduleLibrary, (id) => {
       const img = getCachedImage(id);
       if (!img || img.naturalWidth < 1) return undefined;
       return {
@@ -526,7 +550,7 @@ export function StudioCanvas() {
     });
     ctx.restore();
   }, [
-    composition,
+    painted,
     assets,
     t,
     frame,
@@ -538,6 +562,11 @@ export function StudioCanvas() {
     scale,
     imagesReady,
   ]);
+
+  /** The listener below is attached once; this keeps it looking at the scene as it
+   *  is now rather than the one it closed over. */
+  const pickRef = useRef<(p: Point) => string | null>(() => null);
+  pickRef.current = (p) => hitTest(scene, sizeOf, p);
 
   const screenAt = (e: ReactPointerEvent<HTMLDivElement>): Point => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1004,6 +1033,41 @@ export function StudioCanvas() {
         </div>
       ) : null}
       <canvas ref={canvasRef} className="studio-render" />
+      {/* Says what the square is, so nobody mistakes the bench's stand-in for an
+          element they have somehow acquired. */}
+      {bench ? (
+        <div
+          className="pointer-events-none absolute rounded bg-[#111] px-1.5 py-0.5 text-[10px] leading-[1.4] text-white"
+          style={{
+            transform: `translate(${
+              origin.x + view.panX + (frame.width / 2) * scale
+            }px, ${
+              origin.y + view.panY + (frame.height / 2 + PROXY_SIZE / 2 + 8) * scale
+            }px) translateX(-50%)`,
+          }}
+        >
+          proxy
+        </div>
+      ) : null}
+      {pendingAttach ? (
+        <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-[#e0e0e0] bg-white px-2.5 py-2 text-[11px] shadow-[0_2px_8px_rgba(0,0,0,.1)]">
+          <span className="text-[#555]">replace existing distributor?</span>
+          <button
+            type="button"
+            className={GHOST_BTN}
+            onClick={() => useStudio.getState().resolveAttach(true)}
+          >
+            replace
+          </button>
+          <button
+            type="button"
+            className={GHOST_BTN}
+            onClick={() => useStudio.getState().resolveAttach(false)}
+          >
+            keep
+          </button>
+        </div>
+      ) : null}
       {/* Guides live here rather than in the painted frame: they are something the
           author is shown while dragging, not something the composition contains, so
           nothing that renders or exports a frame can ever see them. */}

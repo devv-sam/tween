@@ -17,6 +17,7 @@ import type {
 } from "../core/types";
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
+import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
 import {
   cropFor,
@@ -459,12 +460,13 @@ const emptyBench = (): Bench => ({
   nameMissing: false,
 });
 
-/** The transform the bench's proxy sits at, centred on the frame. */
+/** The transform the bench's proxy sits at: centred, and scaled from the box a shape
+ *  layer draws at to the square the bench advertises. */
 export const proxyBase = (frame: Size): Transform => ({
   x: frame.width / 2,
   y: frame.height / 2,
-  scaleX: 1,
-  scaleY: 1,
+  scaleX: PROXY_SIZE / SHAPE_SIZE,
+  scaleY: PROXY_SIZE / SHAPE_SIZE,
   rotation: 0,
   opacity: 1,
 });
@@ -481,7 +483,9 @@ export function benchComposition(bench: Bench, comp: Composition, frame: Size): 
       {
         layer: {
           id: PROXY_ID,
-          source: { kind: "shape", value: "#ffffff" },
+          // Grey rather than the white the bench is nominally a square of: the frame
+          // behind it is usually white too, and a proxy nobody can see is no proxy.
+          source: { kind: "shape", value: "#c8c8c8" },
           base: proxyBase(frame),
           ...(bench.distributor ? { distributor: bench.distributor } : {}),
         },
@@ -502,6 +506,9 @@ type StudioState = {
   moduleLibrary: ModuleAsset[];
   /** Open only while a module is being written. Never part of the composition. */
   bench: Bench | null;
+  /** A module dropped on an element that already clones. Two cloners cannot both be
+   *  the element's, so nothing is written until the author settles it. */
+  pendingAttach: { assetId: string; layerId: string } | null;
   assets: StudioAsset[];
   importError: string | null;
   frame: Size;
@@ -590,6 +597,10 @@ type StudioState = {
    * element already has one, and the caller has asked before setting it.
    */
   attachModule: (layerId: string, assetId: string, replaceDistributor?: boolean) => void;
+  /** Attach, unless both the module and the element bring a cloner — then ask. */
+  dropModule: (layerId: string, assetId: string) => void;
+  /** Answer the question `dropModule` raised. */
+  resolveAttach: (replaceDistributor: boolean) => void;
   /** Write a param on one entry of a linked instance. Lands in the element's own
    *  overrides — the master is never touched from here. */
   setLinkedOverride: (
@@ -762,6 +773,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     composition: emptyComposition(),
     moduleLibrary: [],
     bench: null,
+    pendingAttach: null,
     assets: [],
     importError: null,
     frame: DEFAULT_FRAME,
@@ -1171,6 +1183,27 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
           };
         }),
       );
+    },
+
+    dropModule: (layerId, assetId) => {
+      const { moduleLibrary, composition, attachModule, select } = get();
+      const asset = moduleLibrary.find((a) => a.id === assetId);
+      if (!asset) return;
+      const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (asset.distributor && track?.layer.distributor) {
+        set({ pendingAttach: { assetId, layerId } });
+        return;
+      }
+      attachModule(layerId, assetId);
+      select(layerId);
+    },
+
+    resolveAttach: (replaceDistributor) => {
+      const pending = get().pendingAttach;
+      if (!pending) return;
+      set({ pendingAttach: null });
+      get().attachModule(pending.layerId, pending.assetId, replaceDistributor);
+      get().select(pending.layerId);
     },
 
     setLinkedOverride: (layerId, index, entry, patch) => {

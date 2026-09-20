@@ -12,6 +12,7 @@ import type { Stop } from "../core/curve";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
+import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
 import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
 import { entryId } from "./keyframeLog";
@@ -503,6 +504,8 @@ function TrackLabel({
   rail: RailCap | null;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+  /** A module hovering over the row, so the drop target is visible before release. */
+  const [over, setOver] = useState(false);
 
   const commit = () => {
     if (draft === null) return;
@@ -514,10 +517,26 @@ function TrackLabel({
 
   return (
     <div
-      className={`timeline-track-label${selected ? " is-selected" : ""}`}
+      className={`timeline-track-label${selected ? " is-selected" : ""}${
+        over ? " is-drop" : ""
+      }`}
       style={{ height: TRACK_HEIGHT }}
       title={draft === null ? `${name} — double-click to rename` : undefined}
       onDoubleClick={() => setDraft(given)}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(MODULE_DRAG)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        const assetId = e.dataTransfer.getData(MODULE_DRAG);
+        setOver(false);
+        if (!assetId) return;
+        e.preventDefault();
+        useStudio.getState().dropModule(layerId, assetId);
+      }}
     >
       <Rail cap={rail} />
       <button

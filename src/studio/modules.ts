@@ -418,6 +418,11 @@ export function newModule(type: ModuleType, base: Transform, range: Range = [0, 
   };
 }
 
+/** How many copies of a thing a module is running against. One means no stagger to
+ *  configure, so the delay field stays away. */
+export const cloneCount = (d: Distributor | undefined): number =>
+  d && d.type !== "none" ? d.count : 1;
+
 /** A cloner to start from: a straight run through where the element already stands,
  *  so turning one on spreads the element rather than piling every clone on the origin. */
 export function defaultDistributor(base: Transform): Distributor {

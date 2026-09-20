@@ -30,6 +30,7 @@ import {
   type Range,
 } from "./modules";
 import { DistributorSection, ModuleInspector, ModuleStackSection } from "./ModuleStack";
+import { BenchPanel } from "./ModuleShelf";
 import {
   BOX,
   DiamondIcon,
@@ -55,25 +56,49 @@ export function Inspector() {
   const composition = useStudio((s) => s.composition);
   const selectedId = useStudio((s) => s.selectedId);
   const selectedIds = useStudio((s) => s.selectedIds);
+  const bench = useStudio((s) => s.bench);
   const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
   const track = index < 0 ? null : composition.tracks[index];
 
   return (
     <aside
       className="flex h-full w-[260px] shrink-0 flex-col border-l border-[#e0e0e0] bg-white"
-      aria-label="inspector"
+      aria-label={bench ? "module bench" : "inspector"}
     >
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* The composition is always there to edit, so it stays put and the element's
-            own panel stacks under it rather than replacing it. */}
-        <CompositionPanel />
-        {/* One element opens its own panel; several open the little that can honestly
-            be said about several at once. `selectedId` is null while more than one is
-            picked, so the two are never both on screen. */}
-        {track ? <ElementPanel track={track} index={index} /> : null}
-        {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
+        {/* The bench takes the panel rather than floating over it: a module is being
+            written against the proxy on the frame, and the element that happened to
+            be picked has nothing to do with it. */}
+        {bench ? (
+          <BenchPanel bench={bench} />
+        ) : (
+          <ElementPanels track={track} index={index} selectedIds={selectedIds} />
+        )}
       </div>
     </aside>
+  );
+}
+
+function ElementPanels({
+  track,
+  index,
+  selectedIds,
+}: {
+  track: Track | null;
+  index: number;
+  selectedIds: string[];
+}) {
+  return (
+    <>
+      {/* The composition is always there to edit, so it stays put and the element's
+          own panel stacks under it rather than replacing it. */}
+      <CompositionPanel />
+      {/* One element opens its own panel; several open the little that can honestly
+          be said about several at once. `selectedId` is null while more than one is
+          picked, so the two are never both on screen. */}
+      {track ? <ElementPanel track={track} index={index} /> : null}
+      {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
+    </>
   );
 }
 
