@@ -1,10 +1,13 @@
-import type { Composition } from "./types";
+import type { Composition, ModuleAsset } from "./types";
 import { getModule } from "./registry";
+import { resolveModules } from "./library";
 
-export function emitComposition(comp: Composition): string {
+export function emitComposition(comp: Composition, library: ModuleAsset[]): string {
   return comp.tracks
     .flatMap((tr) =>
-      tr.modules.map((md) => getModule(md.type).emit({ targetId: tr.layer.id }, md.params))
+      resolveModules(tr.modules, library).map((md) =>
+        getModule(md.type).emit({ targetId: tr.layer.id }, md.params),
+      ),
     )
     .join("\n");
 }

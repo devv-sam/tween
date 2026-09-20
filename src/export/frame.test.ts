@@ -45,7 +45,7 @@ function stub() {
 describe("renderFrame", () => {
   it("scales the composition to fill a smaller frame rather than cropping it", () => {
     const { ctx, calls } = stub();
-    renderFrame(ctx, comp, 0, 540, 540, undefined, { width: 1080, height: 1080 });
+    renderFrame(ctx, comp, 0, 540, 540, [], undefined, { width: 1080, height: 1080 });
     // The outer scale is the one renderFrame applies; the layer's own is 1:1.
     expect(calls.scale[0]).toEqual([0.5, 0.5]);
     // The background still covers the whole layout, which the scale maps onto the frame.
@@ -54,7 +54,7 @@ describe("renderFrame", () => {
 
   it("leaves the frame alone when the output is the size it was laid out at", () => {
     const { ctx, calls } = stub();
-    renderFrame(ctx, comp, 0, 800, 600);
+    renderFrame(ctx, comp, 0, 800, 600, []);
     expect(calls.scale[0]).toEqual([1, 1]);
     expect(calls.fillRect[0]).toEqual([0, 0, 800, 600]);
   });

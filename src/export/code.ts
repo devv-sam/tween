@@ -1,4 +1,4 @@
-import type { Composition, Transform } from "../core/types";
+import type { Composition, ModuleAsset, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 
 /**
@@ -13,6 +13,7 @@ export type LayerContent = { svgSource: string; width: number; height: number };
 
 export function exportCode(
   comp: Composition,
+  library: ModuleAsset[],
   samples = 60,
   /** Markup per layer id. A layer with no entry is drawn as the standing box. */
   content: Record<string, LayerContent> = {},
@@ -23,7 +24,7 @@ export function exportCode(
 
   for (let s = 0; s <= samples; s++) {
     const t = s / samples;
-    renderState(comp, t).forEach((item, i) => {
+    renderState(comp, t, library).forEach((item, i) => {
       perLayer[layers[i].id].push({ offset: t, state: item.state });
     });
   }

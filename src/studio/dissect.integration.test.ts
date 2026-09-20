@@ -62,7 +62,7 @@ describe("a house with its roof taken off", () => {
 const rest = assetFor(read, ["body", "window"], "file-1", "house.svg");
   const roof = assetFor(read, ["roof"], "file-1");
   const comp = compositionOf([rest, roof]);
-  const html = exportCode(comp, 8, exportContent(comp, [rest, roof]));
+  const html = exportCode(comp, [], 8, exportContent(comp, [rest, roof]));
 
   it("reads the parts the file was drawn from", () => {
     expect(read!.nodes.map((n) => n.label)).toEqual(["body", "roof", "window"]);

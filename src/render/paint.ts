@@ -1,4 +1,4 @@
-import type { Composition } from "../core/types";
+import type { Composition, ModuleAsset } from "../core/types";
 import { renderState } from "../core/renderState";
 import { drawScene, type ImageLookup } from "./canvas2d";
 
@@ -9,7 +9,8 @@ export function paintComposition(
   t: number,
   w: number,
   h: number,
+  library: ModuleAsset[],
   imageOf?: ImageLookup,
 ): void {
-  drawScene(ctx, renderState(comp, t), w, h, imageOf);
+  drawScene(ctx, renderState(comp, t, library), w, h, imageOf);
 }

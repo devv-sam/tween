@@ -34,7 +34,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("Preview as a clock", () => {
   it("advances t over the composition's duration", () => {
-    const p = new Preview(null, comp(2));
+    const p = new Preview(null, comp(2), []);
     const seen: number[] = [];
     p.onTick = (t) => seen.push(t);
     p.play();
@@ -45,7 +45,7 @@ describe("Preview as a clock", () => {
   });
 
   it("wraps back to the start while looping", () => {
-    const p = new Preview(null, comp(2));
+    const p = new Preview(null, comp(2), []);
     p.play();
     step(0);
     step(1500);
@@ -55,7 +55,7 @@ describe("Preview as a clock", () => {
   });
 
   it("stops on the last frame with loop off", () => {
-    const p = new Preview(null, comp(2));
+    const p = new Preview(null, comp(2), []);
     const ended = vi.fn();
     p.loop = false;
     p.onEnd = ended;
@@ -68,16 +68,16 @@ describe("Preview as a clock", () => {
   });
 
   it("takes a new duration mid-flight", () => {
-    const p = new Preview(null, comp(2));
+    const p = new Preview(null, comp(2), []);
     p.play();
     step(0);
-    p.setComposition(comp(4));
+    p.setComposition(comp(4), []);
     step(1000);
     expect(p.t).toBeCloseTo(0.25);
   });
 
   it("seeking reports the new time without a frame", () => {
-    const p = new Preview(null, comp(2));
+    const p = new Preview(null, comp(2), []);
     const seen: number[] = [];
     p.onTick = (t) => seen.push(t);
     p.seek(0.4);
@@ -86,7 +86,7 @@ describe("Preview as a clock", () => {
   });
 
   it("pausing leaves no frame pending", () => {
-    const p = new Preview(null, comp(2));
+    const p = new Preview(null, comp(2), []);
     p.play();
     step(0);
     p.pause();
@@ -116,7 +116,7 @@ describe("Preview loops at the end of the work", () => {
   });
 
   it("turns over once the work ends, not when the timeline does", () => {
-    const p = new Preview(null, trimmed(0.5));
+    const p = new Preview(null, trimmed(0.5), []);
     p.play();
     step(0);
     step(900); // 0.45 of a 2s comp — still inside the work
@@ -127,7 +127,7 @@ describe("Preview loops at the end of the work", () => {
   });
 
   it("stops at the end of the work with loop off", () => {
-    const p = new Preview(null, trimmed(0.5));
+    const p = new Preview(null, trimmed(0.5), []);
     const ended = vi.fn();
     p.loop = false;
     p.onEnd = ended;
@@ -144,7 +144,7 @@ describe("Preview loops at the end of the work", () => {
     c.tracks[0].modules = [
       { type: "keyframes", range: [0, 0.8], params: { property: "x", stops: [] } },
     ];
-    const p = new Preview(null, c);
+    const p = new Preview(null, c, []);
     p.play();
     step(0);
     step(1400); // 0.7 — inside the further block, so no wrap yet
@@ -152,7 +152,7 @@ describe("Preview loops at the end of the work", () => {
   });
 
   it("plays its whole length when there is nothing on it", () => {
-    const p = new Preview(null, comp(2));
+    const p = new Preview(null, comp(2), []);
     p.play();
     step(0);
     step(1800);

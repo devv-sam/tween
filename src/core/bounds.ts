@@ -1,4 +1,5 @@
-import type { Composition } from "./types";
+import type { Composition, ModuleAsset } from "./types";
+import { resolveModules } from "./library";
 
 /**
  * Where the composition's work actually ends, as normalized time.
@@ -8,13 +9,13 @@ import type { Composition } from "./types";
  * than running out the empty tail. An empty composition has no work to measure, so
  * it plays its whole length.
  */
-export function contentEnd(comp: Composition): number {
+export function contentEnd(comp: Composition, library: ModuleAsset[]): number {
   let end = 0;
   for (const track of comp.tracks) {
     for (const set of Object.values(track.keyframes ?? {})) {
       end = Math.max(end, set.range[1]);
     }
-    for (const md of track.modules) {
+    for (const md of resolveModules(track.modules, library)) {
       end = Math.max(end, md.range[1]);
     }
   }

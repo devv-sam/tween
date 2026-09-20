@@ -12,6 +12,7 @@ import type { Stop } from "../core/curve";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
+import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
 import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
 import { entryId } from "./keyframeLog";
@@ -93,12 +94,17 @@ export function Timeline() {
   const leaveLink = (key: string) =>
     setHotLink((lit) => (lit === key ? null : lit));
 
+  const moduleLibrary = useStudio((s) => s.moduleLibrary);
   const { duration } = composition;
 
   // One clock for the whole studio: `Preview` owns the rAF loop and writes every
   // tick into the store, which is what the canvas renders from.
   useEffect(() => {
-    const preview = new Preview(null, useStudio.getState().composition);
+    const preview = new Preview(
+      null,
+      useStudio.getState().composition,
+      useStudio.getState().moduleLibrary,
+    );
     preview.t = useStudio.getState().t;
     preview.loop = useStudio.getState().loop;
     preview.onTick = (next) => useStudio.getState().setT(next);
@@ -113,8 +119,8 @@ export function Timeline() {
   }, []);
 
   useEffect(() => {
-    previewRef.current?.setComposition(composition);
-  }, [composition]);
+    previewRef.current?.setComposition(composition, moduleLibrary);
+  }, [composition, moduleLibrary]);
 
   useEffect(() => {
     if (previewRef.current) previewRef.current.loop = loop;
@@ -223,9 +229,10 @@ export function Timeline() {
   // strip rather than per property row.
   const states = useMemo(() => {
     const out = new Map<string, Transform>();
-    for (const item of renderState(composition, t)) out.set(item.id, item.state);
+    for (const item of renderState(composition, t, moduleLibrary))
+      out.set(item.id, item.state);
     return out;
-  }, [composition, t]);
+  }, [composition, t, moduleLibrary]);
 
   // Only what animates: being on the canvas is not a reason to hold a lane here.
   const rows = composition.tracks
@@ -234,7 +241,7 @@ export function Timeline() {
         track.layer.source.kind === "image"
           ? assets.find((a) => a.id === track.layer.source.value)
           : undefined;
-      const blocks = trackBlocks(track);
+      const blocks = trackBlocks(track, moduleLibrary);
       return {
         track,
         id: track.layer.id,
@@ -497,6 +504,8 @@ function TrackLabel({
   rail: RailCap | null;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+  /** A module hovering over the row, so the drop target is visible before release. */
+  const [over, setOver] = useState(false);
 
   const commit = () => {
     if (draft === null) return;
@@ -508,10 +517,26 @@ function TrackLabel({
 
   return (
     <div
-      className={`timeline-track-label${selected ? " is-selected" : ""}`}
+      className={`timeline-track-label${selected ? " is-selected" : ""}${
+        over ? " is-drop" : ""
+      }`}
       style={{ height: TRACK_HEIGHT }}
       title={draft === null ? `${name} — double-click to rename` : undefined}
       onDoubleClick={() => setDraft(given)}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(MODULE_DRAG)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        const assetId = e.dataTransfer.getData(MODULE_DRAG);
+        setOver(false);
+        if (!assetId) return;
+        e.preventDefault();
+        useStudio.getState().dropModule(layerId, assetId);
+      }}
     >
       <Rail cap={rail} />
       <button

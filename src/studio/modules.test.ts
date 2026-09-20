@@ -121,7 +121,7 @@ describe("trackBlocks", () => {
   };
 
   it("lists standalone sets before modules, matching evaluation order", () => {
-    expect(trackBlocks(built).map((b) => [b.label, b.standalone])).toEqual([
+    expect(trackBlocks(built, []).map((b) => [b.label, b.standalone])).toEqual([
       ["width", true],
       ["opacity", true],
       ["x", false],
@@ -129,7 +129,7 @@ describe("trackBlocks", () => {
   });
 
   it("addresses each block by what selecting it means", () => {
-    expect(trackBlocks(built).map((b) => b.part)).toEqual([
+    expect(trackBlocks(built, []).map((b) => b.part)).toEqual([
       { kind: "keyframes", property: "scaleX" },
       { kind: "keyframes", property: "opacity" },
       { kind: "module", index: 0 },
@@ -137,14 +137,14 @@ describe("trackBlocks", () => {
   });
 
   it("carries each block's own window and stops", () => {
-    const blocks = trackBlocks(built);
+    const blocks = trackBlocks(built, []);
     expect(blocks[0].range).toEqual([0, 1]);
     expect(blocks[2].range).toEqual([0.25, 0.75]);
     expect(blocks[2].stops).toHaveLength(2);
   });
 
   it("has nothing to draw for a bare element", () => {
-    expect(trackBlocks({ layer: built.layer, modules: [] })).toEqual([]);
+    expect(trackBlocks({ layer: built.layer, modules: [] }, [])).toEqual([]);
   });
 });
 
@@ -373,13 +373,13 @@ describe("position", () => {
   it("is one property while both axes are held together", () => {
     const both = track({ x: set([{ t: 0, v: 0 }]), y: set([{ t: 0, v: 0 }]) });
     expect(positionSets(both)).not.toBeNull();
-    expect(trackBlocks(both).map((b) => b.label)).toEqual(["position"]);
+    expect(trackBlocks(both, []).map((b) => b.label)).toEqual(["position"]);
   });
 
   it("is two once the axes are separated, or when only one carries motion", () => {
     const apart = track({ x: set([{ t: 0, v: 0 }]), y: set([{ t: 0, v: 0 }]) }, true);
     expect(positionSets(apart)).toBeNull();
-    expect(trackBlocks(apart).map((b) => b.label)).toEqual(["x", "y"]);
+    expect(trackBlocks(apart, []).map((b) => b.label)).toEqual(["x", "y"]);
     expect(positionSets(track({ x: set([{ t: 0, v: 0 }]) }))).toBeNull();
   });
 
@@ -480,7 +480,7 @@ describe("width and height as the panel reads them", () => {
       keyframes: { scaleY: flat(1), scaleX: flat(1) },
       modules: [],
     };
-    expect(trackBlocks(track).map((b) => b.label)).toEqual(["width", "height"]);
+    expect(trackBlocks(track, []).map((b) => b.label)).toEqual(["width", "height"]);
   });
 });
 
@@ -492,6 +492,7 @@ describe("retiming an element as one set", () => {
     range: [0, 1],
     stops: ts.map((t) => ({ t, v: t })),
     standalone: true,
+    linked: false,
   });
 
   const mod = (index: number, range: Range): BlockView => ({
@@ -501,6 +502,7 @@ describe("retiming an element as one set", () => {
     range,
     stops: [],
     standalone: false,
+    linked: false,
   });
 
   const timesOf = (edit: TimeEdit) =>

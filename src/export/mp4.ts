@@ -1,5 +1,5 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
-import type { Composition } from "../core/types";
+import type { Composition, ModuleAsset } from "../core/types";
 import { renderFrame, type Size } from "./frame";
 import type { ImageLookup } from "../render/canvas2d";
 
@@ -18,7 +18,7 @@ export function avcCodec(w: number, h: number): string {
   return "avc1.420034"; // 5.2
 }
 
-export async function exportMp4(comp: Composition, w = 800, h = 600, imageOf?: ImageLookup, source?: Size): Promise<Blob> {
+export async function exportMp4(comp: Composition, library: ModuleAsset[], w = 800, h = 600, imageOf?: ImageLookup, source?: Size): Promise<Blob> {
   if (typeof VideoEncoder === "undefined") throw new Error("webcodecs not supported in this browser (use chrome or edge)");
 
   const canvas = new OffscreenCanvas(w, h);
@@ -39,7 +39,7 @@ export async function exportMp4(comp: Composition, w = 800, h = 600, imageOf?: I
   const total = Math.max(1, Math.round(comp.duration * comp.fps));
   for (let f = 0; f < total; f++) {
     const t = f / total;
-    renderFrame(ctx, comp, t, w, h, imageOf, source);
+    renderFrame(ctx, comp, t, w, h, library, imageOf, source);
     const frame = new VideoFrame(canvas, { timestamp: Math.round((f * 1e6) / comp.fps) });
     encoder.encode(frame, { keyFrame: f % comp.fps === 0 });
     frame.close();
