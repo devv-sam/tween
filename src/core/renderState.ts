@@ -1,12 +1,18 @@
-import type { Composition, Prop, Scene, EvalCtx } from "./types";
+import type { Composition, ModuleAsset, Prop, Scene, EvalCtx } from "./types";
 import { getModule } from "./registry";
 import { clamp, remap } from "./math";
 import { sampleStops } from "./curve";
 import { apply } from "./blend";
 import { expand } from "./distribute";
 import { fieldValue } from "./fields";
+import { resolveModules } from "./library";
 
-export function renderState(comp: Composition, t: number): Scene {
+/**
+ * `library` is not optional: a composition holding linked modules does not describe
+ * itself, and a caller that forgot to bring the library would render a scene quietly
+ * missing half its motion.
+ */
+export function renderState(comp: Composition, t: number, library: ModuleAsset[]): Scene {
   const scene: Scene = [];
   const fields = comp.fields ?? [];
   const sample = (id: string, x: number, y: number): number => {
@@ -22,7 +28,7 @@ export function renderState(comp: Composition, t: number): Scene {
         if (t < set.range[0] || t > set.range[1]) continue;
         state = apply(state, prop as Prop, sampleStops(set.stops, remap(t, set.range)), "set");
       }
-      for (const md of track.modules) {
+      for (const md of resolveModules(track.modules, library)) {
         if (t < md.range[0] || t > md.range[1]) continue;
         // Each clone reads the module a little later than the one before it, so a
         // cloner staggers instead of moving as one block.

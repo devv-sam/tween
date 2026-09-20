@@ -22,6 +22,38 @@ export interface ModuleData {
   params: Record<string, unknown>;
 }
 
+/**
+ * One use of a saved module on an element. The behaviour itself lives in the
+ * library; what the element owns is the reference and whatever it has said
+ * differently about it.
+ *
+ * Overrides are keyed by the entry's index in the asset's stack, so a two-entry
+ * module can carry a delay on one half and nothing on the other. Keying them by
+ * anything coarser reads the same until the first stack with two of the same type
+ * in it, and then quietly stops.
+ */
+export interface LinkedModule {
+  kind: "linked";
+  ref: string;
+  overrides: Record<number, Record<string, unknown>>;
+}
+
+/** What an element carries on its stack: behaviour it owns, or behaviour it borrows. */
+export type ElementModule = ModuleData | LinkedModule;
+
+/**
+ * A named behaviour, kept apart from any element that runs it. It holds a stack and
+ * optionally the distributor the stack was written for — never an element, never an
+ * image, nothing about how the thing it drives looks.
+ */
+export interface ModuleAsset {
+  id: string;
+  name: string;
+  distributor?: Distributor;
+  stack: ModuleData[];
+  createdAt: number;
+}
+
 // Runtime implementation resolved from the registry by type
 export interface ModuleImpl {
   evaluate(state: Transform, ctx: EvalCtx, params: Record<string, unknown>): Transform;
@@ -35,8 +67,10 @@ export type FieldMotion =
 
 export interface FieldDef { id: string; radius: number; falloff: number; motion: FieldMotion; }
 
+export type DistributorType = "none" | "path" | "grid" | "radial";
+
 export interface Distributor {
-  type: "path" | "none";
+  type: DistributorType;
   count: number;
   params?: Record<string, unknown>;
 }
@@ -68,7 +102,7 @@ export interface Track {
   layer: Layer;
   /** Standalone keyframed properties, keyed by the `Prop` they drive. */
   keyframes?: Record<string, KeyframeSet>;
-  modules: ModuleData[];
+  modules: ElementModule[];
 }
 
 /** `input` is declared but not yet evaluated — the module increment gives it meaning. */

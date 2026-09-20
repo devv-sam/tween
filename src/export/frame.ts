@@ -1,4 +1,4 @@
-import type { Composition } from "../core/types";
+import type { Composition, ModuleAsset } from "../core/types";
 import { renderState } from "../core/renderState";
 import { drawScene, type ImageLookup } from "../render/canvas2d";
 
@@ -20,6 +20,7 @@ export function renderFrame(
   t: number,
   w: number,
   h: number,
+  library: ModuleAsset[],
   imageOf?: ImageLookup,
   source?: Size,
 ): void {
@@ -27,6 +28,6 @@ export function renderFrame(
   const paint = ctx as CanvasRenderingContext2D;
   paint.save();
   paint.scale(w / from.width, h / from.height);
-  drawScene(paint, renderState(comp, t), from.width, from.height, imageOf, comp.background);
+  drawScene(paint, renderState(comp, t, library), from.width, from.height, imageOf, comp.background);
   paint.restore();
 }

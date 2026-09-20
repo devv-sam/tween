@@ -1,4 +1,4 @@
-import type { Composition } from "../core/types";
+import type { Composition, ModuleAsset } from "../core/types";
 import { contentEnd } from "../core/bounds";
 import { drawFieldMarkers } from "./canvas2d";
 import { paintComposition } from "./paint";
@@ -16,13 +16,19 @@ export class Preview {
   /** Null when the preview is only a clock — the timeline drives its own canvas. */
   private canvas: HTMLCanvasElement | null;
   private comp: Composition;
+  private library: ModuleAsset[];
   private ctx: CanvasRenderingContext2D | null = null;
   private raf = 0;
   private last = 0;
 
-  constructor(canvas: HTMLCanvasElement | null, comp: Composition) {
+  constructor(
+    canvas: HTMLCanvasElement | null,
+    comp: Composition,
+    library: ModuleAsset[],
+  ) {
     this.canvas = canvas;
     this.comp = comp;
+    this.library = library;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context");
@@ -32,8 +38,9 @@ export class Preview {
   }
 
   /** The composition is immutable upstream, so playback is handed the new one. */
-  setComposition(comp: Composition): void {
+  setComposition(comp: Composition, library: ModuleAsset[]): void {
     this.comp = comp;
+    this.library = library;
     this.render();
   }
 
@@ -50,7 +57,7 @@ export class Preview {
   render(): void {
     if (!this.canvas || !this.ctx) return;
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    paintComposition(this.ctx, this.comp, this.t, w, h);
+    paintComposition(this.ctx, this.comp, this.t, w, h, this.library);
     drawFieldMarkers(this.ctx, this.comp, this.t);
   }
 
@@ -79,7 +86,7 @@ export class Preview {
     this.last = ts;
     // The loop turns over where the work ends, not where the timeline does — an
     // empty tail is time the composition owns but has nothing to show in.
-    const end = contentEnd(this.comp);
+    const end = contentEnd(this.comp, this.library);
     const next = this.t + dt / this.comp.duration;
     if (next >= end && !this.loop) {
       this.pause();

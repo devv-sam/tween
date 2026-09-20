@@ -1,5 +1,6 @@
 import { clamp } from "../core/math";
-import type { Composition, KeyframeSet } from "../core/types";
+import type { Composition, KeyframeSet, ModuleAsset } from "../core/types";
+import { isLinked, resolveModules } from "../core/library";
 import type { Stop } from "../core/curve";
 import type { Range } from "./modules";
 import type { Size } from "./view";
@@ -50,7 +51,7 @@ export function normalizeHex(input: string): string | undefined {
  * set ends at its last stop rather than at the block's edge; a module has no stops to
  * read and ends where its block does.
  */
-export function contentEnd(comp: Composition): number | null {
+export function contentEnd(comp: Composition, library: ModuleAsset[]): number | null {
   let end: number | null = null;
   const reach = (at: number) => {
     if (end === null || at > end) end = at;
@@ -60,7 +61,7 @@ export function contentEnd(comp: Composition): number | null {
       const last = set.stops.reduce((m, s) => Math.max(m, s.t), 0);
       reach(set.range[0] + last * (set.range[1] - set.range[0]));
     }
-    for (const md of track.modules) reach(md.range[1]);
+    for (const md of resolveModules(track.modules, library)) reach(md.range[1]);
   }
   return end;
 }
@@ -110,7 +111,10 @@ export function retimed(comp: Composition, duration: number): Composition {
             Object.entries(track.keyframes).map(([prop, set]) => [prop, reset(set)]),
           )
         : track.keyframes,
+      // A borrowed module's window belongs to the master, which is shared: the
+      // composition's own retime has no business rewriting it.
       modules: track.modules.map((md) => {
+        if (isLinked(md)) return md;
         const range = shift(md.range);
         const stops = md.params.stops;
         return {

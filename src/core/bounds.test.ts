@@ -22,12 +22,12 @@ const kf = (end: number) => ({
 
 describe("contentEnd", () => {
   it("plays the whole length when there is no work to measure", () => {
-    expect(contentEnd(comp([]))).toBe(1);
-    expect(contentEnd(comp([{ layer, modules: [] }]))).toBe(1);
+    expect(contentEnd(comp([]), [])).toBe(1);
+    expect(contentEnd(comp([{ layer, modules: [] }]), [])).toBe(1);
   });
 
   it("reaches the furthest standalone set", () => {
-    expect(contentEnd(comp([{ layer, keyframes: { x: kf(0.4), y: kf(0.75) }, modules: [] }]))).toBe(
+    expect(contentEnd(comp([{ layer, keyframes: { x: kf(0.4), y: kf(0.75) }, modules: [] }]), [])).toBe(
       0.75,
     );
   });
@@ -38,7 +38,7 @@ describe("contentEnd", () => {
       keyframes: { x: kf(0.3) },
       modules: [{ type: "keyframes", range: [0.1, 0.9], params: {} }],
     };
-    expect(contentEnd(comp([track]))).toBe(0.9);
+    expect(contentEnd(comp([track]), [])).toBe(0.9);
   });
 
   it("reaches across every element, not just the first", () => {
@@ -48,11 +48,12 @@ describe("contentEnd", () => {
           { layer, keyframes: { x: kf(0.2) }, modules: [] },
           { layer: { ...layer, id: "b" }, keyframes: { y: kf(0.65) }, modules: [] },
         ]),
+        [],
       ),
     ).toBe(0.65);
   });
 
   it("never reports past the end of the timeline", () => {
-    expect(contentEnd(comp([{ layer, keyframes: { x: kf(1) }, modules: [] }]))).toBe(1);
+    expect(contentEnd(comp([{ layer, keyframes: { x: kf(1) }, modules: [] }]), [])).toBe(1);
   });
 });
