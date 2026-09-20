@@ -442,17 +442,6 @@ body {
   border-right-color: #0d99ff;
 }
 
-/* A folded element's reach. Muted and unclickable: a summary, not a block. */
-.timeline-folded-span {
-  position: absolute;
-  top: 50%;
-  height: 4px;
-  transform: translateY(-50%);
-  border-radius: 2px;
-  background: #d4d4d4;
-  pointer-events: none;
-}
-
 .timeline-lane {
   position: relative;
   border-bottom: 1px solid #f0f0f0;

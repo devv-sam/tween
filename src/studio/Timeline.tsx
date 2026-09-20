@@ -9,7 +9,6 @@ import {
 } from "react";
 import type { Transform } from "../core/types";
 import type { Stop } from "../core/curve";
-import { sampleStops } from "../core/curve";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
@@ -23,6 +22,7 @@ import {
   SAME_STOP,
   baseValue,
   fromDisplay,
+  hasSpan,
   layerName,
   positionSets,
   samePart,
@@ -33,6 +33,7 @@ import {
   toDisplay,
   stretchStops,
   trackBlocks,
+  trackSpan,
   trimRange,
   type BlockView,
   type DesignSize,
@@ -137,6 +138,8 @@ export function Timeline() {
   }, []);
 
   const marks = useMemo(() => ticks(duration, width, unit), [duration, width, unit]);
+  /** One frame as a share of the composition, which is the step a retime moves by. */
+  const frameT = 1 / Math.max(1, Math.round(duration * composition.fps));
   const playheadX = timeToX(t, width);
 
   /** Every seek goes through the preview, so its clock and the store never diverge. */
@@ -405,16 +408,22 @@ export function Timeline() {
             <div className="timeline-lanes">
               {rows.map((row) => (
                 <Fragment key={row.id}>
-                  {/* An element has no motion of its own, only the rows underneath. */}
+                  {/* An element has no motion of its own — what it has is the rows
+                      underneath, and this is the handle for all of them at once. */}
                   <div
                     className={`timeline-lane is-track${
                       selectedIds.includes(row.id) ? " is-selected" : ""
                     }`}
                     style={{ height: TRACK_HEIGHT }}
                   >
-                    {row.open ? null : (
-                      <FoldedSpan blocks={row.blocks} width={width} />
-                    )}
+                    <MainBar
+                      layerId={row.id}
+                      blocks={row.blocks}
+                      width={width}
+                      selected={selectedIds.includes(row.id)}
+                      name={row.name}
+                      frame={frameT}
+                    />
                   </div>
                   {row.open
                     ? row.blocks.map((block, i) => (
@@ -690,20 +699,137 @@ function PropertyLabel({
   );
 }
 
-/** How far a folded element's motion reaches. Not a control — unfold to touch it. */
-function FoldedSpan({ blocks, width }: { blocks: BlockView[]; width: number }) {
-  if (blocks.length === 0) return null;
-  const from = Math.min(...blocks.map((b) => b.range[0]));
-  const to = Math.max(...blocks.map((b) => b.range[1]));
-  const left = timeToX(from, width);
+/**
+ * The element's own bar: every curve under it, held as one thing.
+ *
+ * The rows below are a single performance, so the handle for retiming all of it
+ * belongs on the element rather than on any one property. Dragging the body slides
+ * every curve by the same amount and leaves the spread between them untouched;
+ * dragging an end stretches the whole performance about the other end. The property
+ * rows stay editable on their own — this is the coarse handle, not the only one.
+ *
+ * It is drawn folded or open. Folded it is the only thing left saying when the
+ * element moves, and open it is still the thing you reach for first.
+ */
+function MainBar({
+  layerId,
+  blocks,
+  width,
+  selected,
+  name,
+  frame,
+}: {
+  layerId: string;
+  blocks: BlockView[];
+  width: number;
+  selected: boolean;
+  name: string;
+  /** One frame, as a share of the composition — what a retime steps by. */
+  frame: number;
+}) {
+  const dragRef = useRef<MainDrag | null>(null);
+  const span = trackSpan(blocks);
+  // Nothing under the element has a span yet, so there is nothing for this to be the
+  // handle of. It appears with the first skeleton, not with the first keyframe.
+  if (span === null || !hasSpan(blocks)) return null;
+  const left = timeToX(span[0], width);
+  const right = timeToX(span[1], width);
+
+  const edgeAt = (e: ReactPointerEvent<HTMLElement>): "start" | "end" | null => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width < EDGE_GRAB * 3) return null;
+    if (e.clientX - rect.left <= EDGE_GRAB) return "start";
+    if (rect.right - e.clientX <= EDGE_GRAB) return "end";
+    return null;
+  };
+
+  const onDown = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const store = useStudio.getState();
+    if (e.shiftKey) store.toggleSelectedId(layerId);
+    else store.setSelectedIds([layerId]);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      return;
+    }
+    // The span is read once: it moves as the drag writes, and re-reading it would
+    // feed the result back into the next frame's delta.
+    dragRef.current = {
+      pointerId: e.pointerId,
+      fromX: e.clientX,
+      span,
+      edge: edgeAt(e),
+      from: blocks,
+    };
+  };
+
+  const onMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag) {
+      e.currentTarget.style.cursor = edgeAt(e) ? "ew-resize" : "grab";
+      return;
+    }
+    if (drag.pointerId !== e.pointerId || spanPx(width) < 1) return;
+    // Retiming lands on frames. Nothing finer survives the export — frames are
+    // sampled at whole steps — so the sub-frame precision only costs control.
+    const snap = (v: number) => Math.round(v / frame) * frame;
+    const delta = (e.clientX - drag.fromX) / spanPx(width);
+    const store = useStudio.getState();
+    if (drag.edge === null) {
+      store.slideTrack(layerId, drag.from, snap(delta));
+      return;
+    }
+    const held = drag.edge === "start" ? drag.span[0] : drag.span[1];
+    const anchor = drag.edge === "start" ? drag.span[1] : drag.span[0];
+    store.stretchTrack(layerId, drag.from, anchor, held, snap(held + delta));
+  };
+
+  const onUp = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    useStudio.getState().sealHistory();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
   return (
-    <span
-      className="timeline-folded-span"
-      aria-hidden="true"
-      style={{ left, width: Math.max(2, timeToX(to, width) - left) }}
-    />
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${name} timing — drag to move every property, drag an end to stretch them`}
+      aria-pressed={selected}
+      className={`absolute top-1/2 flex -translate-y-1/2 touch-none items-center justify-between rounded-[5px] px-1.5 ${
+        selected ? "bg-[#1f78cf] ring-2 ring-[#9dcaf2]" : "bg-[#3186d6]"
+      } hover:bg-[#2b7ecd]`}
+      style={{ left, width: Math.max(4, right - left), height: MAIN_HEIGHT }}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
+      {/* The two ends, said plainly — this bar can be stretched as well as moved. */}
+      <span className="pointer-events-none h-[11px] w-[2px] rounded-full bg-white/85" />
+      <span className="pointer-events-none h-[11px] w-[2px] rounded-full bg-white/85" />
+    </div>
   );
 }
+
+/** What a press on the element's bar grabbed, and the state it started from. The
+ *  blocks are frozen here: a drag says how far it has come from where it began, so
+ *  every frame has to be measured against that and not against what the last frame
+ *  already wrote. */
+type MainDrag = {
+  pointerId: number;
+  fromX: number;
+  span: Range;
+  edge: "start" | "end" | null;
+  from: BlockView[];
+};
 
 /**
  * The bracket down the left of the gutter, tying together the elements that are
@@ -767,18 +893,21 @@ const EMPTY_KEYS: string[] = [];
  *  landed on. */
 const DRAG_SLOP = 3;
 
-/** The bar between the first keyframe and the last, and the diamonds riding it. */
-const BAR_HEIGHT = 10;
+/** The line between the first keyframe and the last, and the diamonds riding it.
+ *  A property is drawn as a skeleton: the element's own bar is the handle for the
+ *  set, so a single curve only has to show where its moments are. */
+const RAIL_HEIGHT = 2;
 const DIAMOND = 9;
+/** The element's own bar — the one that moves every curve under it. */
+const MAIN_HEIGHT = 22;
 
 /**
  * An element's property, drawn as what it actually is: a row of moments.
  *
  * One keyframe is a diamond and nothing else — there is no span yet, because nothing
- * has been animated. A second keyframe is what makes a span, so that is when the bar
- * between them is drawn, and from then on the bar is the motion: drag its body to
- * move the whole thing in time, drag an end to stretch it. A block spanning the whole
- * composition from a single keyframe said an animation was there before one was.
+ * has been animated. A second keyframe makes a span, and the hairline between them
+ * says so. Retiming one property on its own still happens here; retiming the
+ * element's whole performance is the bar on the row above.
  */
 function KeyframeTrack({
   layerId,
@@ -899,43 +1028,40 @@ function KeyframeTrack({
     useStudio.getState().sealHistory();
   };
 
-  /** A keyframe holding what the property already reads, at the time double-clicked.
-   *  The one way to write a pause into a curve without touching its values. */
-  const addAt = (clientX: number, lane: HTMLElement) => {
-    const store = useStudio.getState();
-    const rect = lane.getBoundingClientRect();
-    const t = xToTime(clientX - rect.left, rect.width);
-    const local = clamp(span <= 0 ? 0 : (t - from) / span, 0, 1);
-    writeStops(stopAtTime(stops, local, sampleStops(stops, local)));
-    store.sealHistory();
-  };
+  // TODO revisit: double-click on a lane used to drop a keyframe holding whatever
+  // the property already read there. Taken out for now — it fired on the way to
+  // other things and there was no way to see it coming. Adding a keyframe at the
+  // playhead still works from the inspector's diamond.
 
   return (
-    <div
-      className="absolute inset-0"
-      onDoubleClick={(e) => addAt(e.clientX, e.currentTarget)}
-    >
-      {/* Only once there are two: a bar is the span between keyframes, and one
-          keyframe has no span. */}
+    <div className="absolute inset-0">
+      {/* Only once there are two: a line is the span between keyframes, and one
+          keyframe has no span. Grabbable, but kept to a hairline — the weight on
+          this row belongs to the diamonds. */}
       {stretched ? (
         <div
           role="button"
           tabIndex={0}
           aria-label={`${block.label} keyframes`}
           aria-pressed={selected}
-          className={`absolute top-1/2 -translate-y-1/2 touch-none rounded-full border ${
-            PROP_TEXT[prop]
-          } ${selected ? "border-current bg-current" : "border-current bg-transparent"}`}
+          className={`absolute top-1/2 flex -translate-y-1/2 touch-none items-center ${PROP_TEXT[prop]}`}
           style={{
             left: xOf(stops[0].t),
             width: Math.max(2, xOf(stops[last].t) - xOf(stops[0].t)),
-            height: BAR_HEIGHT,
+            height: DIAMOND + 4,
           }}
           onPointerDown={(e) => beginDrag(e, { kind: "body", index: -1 })}
           onPointerMove={onDragMove}
           onPointerUp={onDragEnd}
           onPointerCancel={onDragEnd}
-        />
+        >
+          <span
+            className={`pointer-events-none w-full rounded-full bg-current ${
+              selected ? "opacity-100" : "opacity-55"
+            }`}
+            style={{ height: RAIL_HEIGHT }}
+          />
+        </div>
       ) : null}
 
       {stops.map((stop, i) => {
@@ -1076,7 +1202,7 @@ function ModuleBlock({
       style={{
         left,
         width: Math.max(2, right - left),
-        height: BAR_HEIGHT + 6,
+        height: MAIN_HEIGHT - 6,
       }}
       onPointerDown={onDown}
       onPointerMove={onMove}

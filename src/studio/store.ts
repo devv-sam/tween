@@ -33,14 +33,18 @@ import {
   positionDrivers,
   secondsToT,
   shiftStops,
+  slideTrackEdits,
   stopAtTime,
+  stretchTrackEdits,
   type DesignSize,
   type KeyProp,
   type KeyTarget,
   type TrackProp,
   type PositionDriver,
+  type BlockView,
   type Range,
   type SelectedPart,
+  type TimeEdit,
 } from "./modules";
 import { scaledAbout, turnedAbout } from "./group";
 import { clampFps, contentEnd, retimed } from "./composition";
@@ -484,6 +488,24 @@ type StudioState = {
   removeModule: (layerId: string, index: number) => void;
   setModuleParams: (layerId: string, index: number, patch: Record<string, unknown>) => void;
   setModuleRange: (layerId: string, index: number, range: Range) => void;
+  /**
+   * Move everything the element animates through time as one set.
+   *
+   * `from` is the element's blocks as they were when the drag began, not as they are
+   * now. A drag reports how far it has come from where it started, so measuring
+   * against live state would apply that distance again on every frame and the curves
+   * would run away from the pointer.
+   */
+  slideTrack: (layerId: string, from: BlockView[], delta: number) => void;
+  /** Stretch everything about one end of its span. `from` is the baseline, for the
+   *  same reason it is on `slideTrack`. */
+  stretchTrack: (
+    layerId: string,
+    from: BlockView[],
+    anchor: number,
+    held: number,
+    to: number,
+  ) => void;
   setLayerBase: (layerId: string, patch: Partial<Transform>) => void;
   /** The same patch, but landing in the keyframe under the playhead wherever the
    *  property carries its own motion. What a canvas gesture writes through. */
@@ -572,6 +594,35 @@ export const useStudio = create<StudioState>((set, get) => {
     ...pick(snap.selectedIds),
     view: snap.frame === s.frame ? s.view : refit(s.viewport, snap.frame, s.view),
   });
+
+  /** Every curve on one element retimed in a single step, so a drag that moves five
+   *  properties is one thing to undo rather than five. */
+  const applyTimeEdits = (layerId: string, edits: TimeEdit[], key: string): void => {
+    if (edits.length === 0) return;
+    edit(key, (s) =>
+      patchTrack(s.composition, layerId, (tr) => {
+        const keyframes: Record<string, KeyframeSet> = { ...(tr.keyframes ?? {}) };
+        let modules = tr.modules;
+        for (const e of edits) {
+          if (e.kind === "module") {
+            modules = patchModule(modules, e.index, (md) => ({ ...md, range: e.range }));
+            continue;
+          }
+          // Position is two sets on shared times: y takes x's times, keeps its values.
+          const axes = e.property === "position" ? ["x", "y"] : [e.property];
+          for (const axis of axes) {
+            const set = keyframes[axis];
+            if (!set) continue;
+            keyframes[axis] = {
+              ...set,
+              stops: e.stops.map((st, i) => ({ ...st, v: set.stops[i]?.v ?? st.v })),
+            };
+          }
+        }
+        return { ...tr, keyframes, modules };
+      }),
+    );
+  };
 
   return {
     composition: emptyComposition(),
@@ -940,6 +991,14 @@ export const useStudio = create<StudioState>((set, get) => {
         ...tr,
         modules: patchModule(tr.modules, index, (md) => ({ ...md, range })),
       })));
+    },
+
+    slideTrack: (layerId, from, delta) => {
+      applyTimeEdits(layerId, slideTrackEdits(from, delta), `slide:${layerId}`);
+    },
+
+    stretchTrack: (layerId, from, anchor, held, to) => {
+      applyTimeEdits(layerId, stretchTrackEdits(from, anchor, held, to), `stretch:${layerId}`);
     },
 
     setLayerBase: (layerId, patch) => {
