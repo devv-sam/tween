@@ -1,5 +1,7 @@
 import type { Distributor, Transform } from "../core/types";
+import { distanceToSegment } from "./selection";
 import { expand } from "../core/distribute";
+import { samplePath } from "../core/geometry";
 import type { PathNode, Pt } from "../core/geometry";
 
 /**
@@ -179,6 +181,47 @@ function facing(
   if (!partner || reach === 0) return {};
   const keep = Math.hypot(partner.x, partner.y);
   return { [other]: { x: (-arm.x / reach) * keep, y: (-arm.y / reach) * keep } };
+}
+
+/** How finely a run is flattened for hit testing. Fine enough that the slop around
+ *  the line is doing the work, rather than the chords. */
+const HIT_STEPS = 48;
+
+/**
+ * How far a point on the frame is from the shape a cloner spreads along, or null
+ * when the layout has no line to be near.
+ *
+ * This is what makes a cloned element clickable. Clones are spread out, so the gaps
+ * between them are not the element and a click there lands on nothing — but the run
+ * passing through them is the element, so aiming at the line hits it.
+ */
+export function runDistance(d: Distributor, base: Transform, p: Pt): number | null {
+  if (d.type === "path") {
+    const nodes = nodesOf(d);
+    if (nodes.length < 2) return null;
+    const on = (u: number): Pt => {
+      const s = samplePath(nodes, u);
+      return { x: base.x + s.x, y: base.y + s.y };
+    };
+    let best = Infinity;
+    let prev = on(0);
+    for (let i = 1; i <= HIT_STEPS; i++) {
+      const at = on(i / HIT_STEPS);
+      best = Math.min(best, distanceToSegment(p, prev, at));
+      prev = at;
+    }
+    return best;
+  }
+
+  // The ring itself, not the disc: the middle of a radial cloner is empty, and
+  // whatever is sitting in there should still be reachable.
+  if (d.type === "radial") {
+    const radius = num(d.params?.radius, 200);
+    return Math.abs(Math.hypot(p.x - base.x, p.y - base.y) - radius);
+  }
+
+  // A grid has no line to aim at. Its copies are the only thing to click.
+  return null;
 }
 
 /**

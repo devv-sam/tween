@@ -187,7 +187,7 @@ export function hitTest(scene: Scene, sizeOf: SizeLookup, p: Point): string | nu
 }
 
 /** Distance from `p` to the segment a-b. */
-function distanceToSegment(p: Point, a: Point, b: Point): number {
+export function distanceToSegment(p: Point, a: Point, b: Point): number {
   const vx = b.x - a.x;
   const vy = b.y - a.y;
   const len2 = vx * vx + vy * vy;

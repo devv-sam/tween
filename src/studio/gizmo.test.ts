@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Distributor, Transform } from "../core/types";
 import type { PathNode } from "../core/geometry";
-import { addNode, dragHandle, gizmoFor, nodesOf, removeNode, toggleSmooth } from "./gizmo";
+import {
+  addNode,
+  dragHandle,
+  gizmoFor,
+  nodesOf,
+  removeNode,
+  runDistance,
+  toggleSmooth,
+} from "./gizmo";
 
 const base: Transform = { x: 500, y: 300, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
 
@@ -158,6 +166,48 @@ describe("dragHandle", () => {
   it("never lets a gap go negative", () => {
     const d: Distributor = { type: "grid", count: 4, params: { cols: 2, gapX: 40, gapY: 60 } };
     expect(dragHandle(d, { kind: "gapX" }, { x: 100, y: 300 }, base).params?.gapX).toBe(0);
+  });
+});
+
+describe("runDistance", () => {
+  it("is nothing on the line and grows away from it", () => {
+    const d = line();
+    expect(runDistance(d, base, { x: 500, y: 300 })!).toBeCloseTo(0);
+    expect(runDistance(d, base, { x: 500, y: 310 })!).toBeCloseTo(10);
+  });
+
+  it("measures to the run wherever the element stands, not to the frame", () => {
+    const moved: Transform = { ...base, x: 900, y: 700 };
+    expect(runDistance(line(), moved, { x: 900, y: 700 })!).toBeCloseTo(0);
+    expect(runDistance(line(), moved, { x: 500, y: 300 })!).toBeGreaterThan(100);
+  });
+
+  it("is small in the gaps between clones, which is the whole point", () => {
+    // Three clones over 200px sit at 400, 500 and 600. Halfway between two of them
+    // there is no clone to click, but the run is still right there.
+    expect(runDistance(line(), base, { x: 450, y: 300 })!).toBeCloseTo(0);
+  });
+
+  it("follows a curve rather than the straight line under it", () => {
+    const K = 55.23;
+    const arc = path([
+      { x: -100, y: 0, out: { x: K, y: 0 } },
+      { x: 0, y: 100, in: { x: 0, y: -K } },
+    ]);
+    // The chord's midpoint is well off a curve that bows towards (0,0).
+    const onChord = runDistance(arc, base, { x: 450, y: 350 })!;
+    expect(onChord).toBeGreaterThan(10);
+  });
+
+  it("measures a radial cloner to its ring, leaving the middle clickable", () => {
+    const d: Distributor = { type: "radial", count: 6, params: { radius: 100 } };
+    expect(runDistance(d, base, { x: 600, y: 300 })!).toBeCloseTo(0);
+    expect(runDistance(d, base, { x: 500, y: 300 })!).toBeCloseTo(100);
+  });
+
+  it("has no line to offer for a grid", () => {
+    const d: Distributor = { type: "grid", count: 4, params: { cols: 2 } };
+    expect(runDistance(d, base, { x: 500, y: 300 })).toBeNull();
   });
 });
 

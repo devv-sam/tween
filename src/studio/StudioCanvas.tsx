@@ -10,6 +10,7 @@ import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
 import { ClonerGizmo } from "./ClonerGizmo";
+import { runDistance } from "./gizmo";
 import { GHOST_BTN, LockIcon, LockOpenIcon } from "./fields";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { alignmentFor, type Alignment, type Box } from "./guides";
@@ -146,6 +147,10 @@ const SNAP = 6;
  * so the distance is reported instead and nothing is drawn.
  */
 const MEASURE_REACH = 28;
+
+/** How near a cloner's run counts as on it, in screen pixels. A line is a hard
+ *  thing to hit dead on, so the band around it is what the pointer really aims at. */
+const RUN_HIT = 12;
 
 const NUDGE = 1;
 const NUDGE_COARSE = 10;
@@ -595,6 +600,29 @@ export function StudioCanvas() {
     imagesReady,
   ]);
 
+  /**
+   * The cloned element whose run passes under a point, or null.
+   *
+   * Only asked once nothing solid is there, so a copy you can see always wins over
+   * a line. It is what makes a cloned element reliably clickable: the copies are
+   * spread out, so the gaps between them are not the element and a click there
+   * would otherwise land on nothing — but the run threading through them is.
+   *
+   * The slop is in screen pixels, so the line stays as easy to hit zoomed out as
+   * zoomed in.
+   */
+  const runAt = (point: Point): string | null => {
+    const slop = RUN_HIT / Math.max(scale, 1e-6);
+    for (let i = composition.tracks.length - 1; i >= 0; i--) {
+      const { layer } = composition.tracks[i];
+      const d = layer.distributor;
+      if (!d || d.type === "none" || d.count <= 1) continue;
+      const away = runDistance(d, layer.base, point);
+      if (away !== null && away <= slop) return layer.id;
+    }
+    return null;
+  };
+
   /** The listener below is attached once; this keeps it looking at the scene as it
    *  is now rather than the one it closed over. */
   const pickRef = useRef<(p: Point) => string | null>(() => null);
@@ -715,7 +743,7 @@ export function StudioCanvas() {
 
     const store = useStudio.getState();
     const picked = store.selectedIds;
-    const id = hitTest(scene, sizeOf, point);
+    const id = hitTest(scene, sizeOf, point) ?? runAt(point);
 
     // Nothing under the pointer: this is a rectangle being drawn, not a move. The
     // selection is left alone until the release says what the rectangle caught — a
