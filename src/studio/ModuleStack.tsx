@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Distributor, DistributorType, ModuleData, Track, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { useStudio } from "./store";
@@ -20,6 +20,7 @@ import {
   type ModuleType,
   type StackRow,
 } from "./modules";
+import { Popover } from "./Popover";
 import { StopList } from "./StopList";
 import { BOX, GHOST_BTN, INPUT, LABEL, NumberField, SECTION, SUBLABEL } from "./fields";
 
@@ -30,6 +31,10 @@ import { BOX, GHOST_BTN, INPUT, LABEL, NumberField, SECTION, SUBLABEL } from "./
  * stand, and nothing about how any of them behaves over time. So it gets its own
  * section above the stack, and its types are picked from a menu rather than typed
  * into a field on something else.
+ *
+ * The section lists them and nothing else. A layout's own numbers live in a card
+ * that opens beside the row, because a panel this narrow cannot hold five fields per
+ * cloner and still read as a list of what the element has.
  *
  * One at a time for now — `expand` lays out a single distributor, so a second would
  * be a control with nothing behind it. The section is named for what it will hold.
@@ -42,12 +47,14 @@ export function DistributorSection({
   onChange: (d: Distributor | null) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const addRef = useRef<HTMLButtonElement>(null);
 
   return (
     <section className={SECTION}>
-      <div className="relative mb-2 flex items-center justify-between">
+      <div className={`flex items-center justify-between${d ? " mb-2" : ""}`}>
         <p className={LABEL}>cloners</p>
         <button
+          ref={addRef}
           type="button"
           aria-label="add cloner"
           aria-expanded={adding}
@@ -58,96 +65,192 @@ export function DistributorSection({
         >
           <PlusIcon />
         </button>
-        {adding ? (
+      </div>
+
+      {adding ? (
+        <Popover
+          anchorRef={addRef}
+          placement="below"
+          label="add cloner"
+          onClose={() => setAdding(false)}
+        >
           <ClonerMenu
             onPick={(type) => {
               setAdding(false);
               onChange(defaultDistributor(type));
             }}
-            onClose={() => setAdding(false)}
           />
-        ) : null}
-      </div>
+        </Popover>
+      ) : null}
 
-      {d ? (
-        <>
-          <div className="mb-1.5 flex items-center gap-1">
-            <span className="flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border border-[#e0e0e0] px-2 text-[11px] text-[#555]">
-              <span className="shrink-0 text-[#888]">
-                <ClonerIcon type={d.type} />
-              </span>
-              <span className="truncate">{d.type}</span>
-            </span>
-            <button
-              type="button"
-              aria-label="remove cloner"
-              title="remove cloner"
-              className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
-              onClick={() => onChange(null)}
-            >
-              ×
-            </button>
-          </div>
-          <NumberField
-            label="count"
-            value={d.count}
-            step={1}
-            min={1}
-            max={200}
-            precision={0}
-            onChange={(v) => onChange({ ...d, count: Math.max(1, Math.round(v)) })}
-          />
-          <DistributorParams distributor={d} onChange={onChange} />
-        </>
-      ) : (
-        <p className="text-[11px] text-[#b0b0b0]">one of this element, so far</p>
-      )}
+      {d ? <ClonerRow distributor={d} onChange={onChange} /> : null}
     </section>
   );
 }
 
-/** The layouts, as a menu over the panel rather than a field inside it — picking one
- *  is adding a thing, and a select would read as changing a setting on nothing. */
-function ClonerMenu({
-  onPick,
+/** One cloner, as the section lists it: what it is, and a way to open the rest. */
+function ClonerRow({
+  distributor: d,
+  onChange,
+}: {
+  distributor: Distributor;
+  onChange: (d: Distributor | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <div ref={rowRef} className="flex items-center gap-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${d.type} cloner settings`}
+        className={`flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-left text-[11px] ${
+          open
+            ? "border-[#0d99ff] bg-[#e8f4ff] text-[#111]"
+            : "border-[#e0e0e0] text-[#555] hover:bg-[#f5f5f5]"
+        }`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="shrink-0 opacity-70">
+          <ClonerIcon type={d.type} />
+        </span>
+        <span className="truncate">{d.type}</span>
+      </button>
+      <button
+        type="button"
+        aria-label="remove cloner"
+        title="remove cloner"
+        className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+        onClick={() => onChange(null)}
+      >
+        ×
+      </button>
+      {open ? (
+        <Popover
+          anchorRef={rowRef}
+          placement="left"
+          label={`${d.type} cloner`}
+          onClose={() => setOpen(false)}
+        >
+          <ClonerSettings
+            distributor={d}
+            onChange={onChange}
+            onClose={() => setOpen(false)}
+          />
+        </Popover>
+      ) : null}
+    </div>
+  );
+}
+
+/** Everything about one cloner, in the card beside its row. */
+function ClonerSettings({
+  distributor: d,
+  onChange,
   onClose,
 }: {
-  onPick: (type: ClonerType) => void;
+  distributor: Distributor;
+  onChange: (d: Distributor) => void;
   onClose: () => void;
 }) {
+  const [switching, setSwitching] = useState(false);
+
   return (
-    <>
-      {/* Anywhere else closes it, which is what a menu over a panel has to do and
-          what a blur on the button alone cannot. */}
-      <div className="fixed inset-0 z-20" onClick={onClose} />
-      <ul
-        className="absolute right-0 top-[26px] z-30 w-[170px] rounded-[7px] border border-[#e0e0e0] bg-white p-1 shadow-[0_4px_14px_rgba(0,0,0,.12)]"
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
-        }}
-      >
-        {CLONER_TYPES.map((type, i) => (
-          <li key={type}>
-            <button
-              type="button"
-              autoFocus={i === 0}
-              className="flex w-full items-center gap-2 rounded-[5px] px-1.5 py-1.5 text-left text-[11px] text-[#111] hover:bg-[#0d99ff] hover:text-white focus-visible:bg-[#0d99ff] focus-visible:text-white focus-visible:outline-none"
-              onClick={() => onPick(type)}
-            >
-              <span className="shrink-0 opacity-70">
-                <ClonerIcon type={type} />
-              </span>
-              <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
-                <span>{type}</span>
+    <div className="w-[214px]">
+      <div className="relative flex items-center gap-1 px-2 py-1.5">
+        <button
+          type="button"
+          aria-expanded={switching}
+          title="change layout"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[5px] px-1 py-0.5 text-left text-[11px] text-[#111] hover:bg-[#f5f5f5]"
+          onClick={() => setSwitching((v) => !v)}
+        >
+          <span className="shrink-0 opacity-70">
+            <ClonerIcon type={d.type} />
+          </span>
+          <span className="truncate">{d.type}</span>
+          <span className="shrink-0 text-[#888]">
+            <ChevronDownIcon />
+          </span>
+        </button>
+        <button
+          type="button"
+          aria-label="close"
+          title="close"
+          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        {switching ? (
+          // Inside the card, so plain absolute placement is safe — nothing here
+          // scrolls or clips the way the panel behind it does.
+          <div className="absolute left-1 right-1 top-[30px] z-10 rounded-[7px] border border-[#e0e0e0] bg-white p-1 shadow-[0_4px_14px_rgba(0,0,0,.12)]">
+            <ClonerMenu
+              compact
+              onPick={(type) => {
+                setSwitching(false);
+                // The count is the author's; the rest belongs to the old layout and
+                // means nothing to the new one.
+                onChange({ ...defaultDistributor(type), count: d.count });
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      <div className="border-t border-[#ededed] p-2">
+        <NumberField
+          label="count"
+          value={d.count}
+          step={1}
+          min={1}
+          max={200}
+          precision={0}
+          onChange={(v) => onChange({ ...d, count: Math.max(1, Math.round(v)) })}
+        />
+        <DistributorParams distributor={d} onChange={onChange} />
+      </div>
+    </div>
+  );
+}
+
+/** The layouts, as a menu — picking one is adding a thing, and a select would read
+ *  as changing a setting on nothing. */
+function ClonerMenu({
+  onPick,
+  compact,
+}: {
+  onPick: (type: ClonerType) => void;
+  /** Inside another card, where the blurbs would be a second column too many. */
+  compact?: boolean;
+}) {
+  return (
+    <ul className={compact ? "" : "w-[186px] p-1"}>
+      {CLONER_TYPES.map((type, i) => (
+        <li key={type}>
+          <button
+            type="button"
+            autoFocus={i === 0}
+            className="flex w-full items-center gap-2 rounded-[5px] px-1.5 py-1.5 text-left text-[11px] text-[#111] hover:bg-[#0d99ff] hover:text-white focus-visible:bg-[#0d99ff] focus-visible:text-white focus-visible:outline-none"
+            onClick={() => onPick(type)}
+          >
+            <span className="shrink-0 opacity-70">
+              <ClonerIcon type={type} />
+            </span>
+            <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
+              <span>{type}</span>
+              {compact ? null : (
                 <span className="shrink-0 text-[9px] opacity-60">
                   {CLONER_BLURB[type]}
                 </span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </>
+              )}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -155,34 +258,10 @@ function ClonerMenu({
 function ClonerIcon({ type }: { type: DistributorType }) {
   const dots =
     type === "grid"
-      ? [
-          [4, 4],
-          [10, 4],
-          [16, 4],
-          [4, 10],
-          [10, 10],
-          [16, 10],
-          [4, 16],
-          [10, 16],
-          [16, 16],
-        ]
+      ? [[4, 4], [10, 4], [16, 4], [4, 10], [10, 10], [16, 10], [4, 16], [10, 16], [16, 16]]
       : type === "radial"
-        ? [
-            [10, 3],
-            [15, 5],
-            [17, 10],
-            [15, 15],
-            [10, 17],
-            [5, 15],
-            [3, 10],
-            [5, 5],
-          ]
-        : [
-            [3, 10],
-            [7, 10],
-            [11, 10],
-            [15, 10],
-          ];
+        ? [[10, 3], [15, 5], [17, 10], [15, 15], [10, 17], [5, 15], [3, 10], [5, 5]]
+        : [[3, 10], [7, 10], [11, 10], [15, 10]];
   return (
     <svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true">
       {dots.map(([cx, cy], i) => (
@@ -208,6 +287,25 @@ function PlusIcon() {
     >
       <path d="M5 12h14" />
       <path d="M12 5v14" />
+    </svg>
+  );
+}
+
+/** Lucide `chevron-down` — the layout can be swapped from the card's own header. */
+function ChevronDownIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="11"
+      height="11"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }
