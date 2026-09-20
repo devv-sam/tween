@@ -1,8 +1,9 @@
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import type { Composition } from "../core/types";
-import { renderFrame } from "./frame";
+import { renderFrame, type Size } from "./frame";
+import type { ImageLookup } from "../render/canvas2d";
 
-export function exportGif(comp: Composition, w = 800, h = 600): Blob {
+export function exportGif(comp: Composition, w = 800, h = 600, imageOf?: ImageLookup, source?: Size): Blob {
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d")!;
   const gif = GIFEncoder();
@@ -10,7 +11,7 @@ export function exportGif(comp: Composition, w = 800, h = 600): Blob {
   const delay = Math.round(1000 / comp.fps);
 
   for (let f = 0; f < total; f++) {
-    renderFrame(ctx, comp, f / total, w, h);
+    renderFrame(ctx, comp, f / total, w, h, imageOf, source);
     const { data } = ctx.getImageData(0, 0, w, h);
     const palette = quantize(data, 256);
     const index = applyPalette(data, palette);
