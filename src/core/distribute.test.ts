@@ -17,6 +17,42 @@ describe("path distributor", () => {
   });
 });
 
+describe("a cloner leaves the element free to move", () => {
+  // Cloning spreads an element; it does not take its position away. Every layout is
+  // measured from wherever the element stands, so a drag still reads on the frame —
+  // the arrangement travels with it rather than pinning it in place.
+  const spreadOf = (d: Layer["distributor"], at: { x: number; y: number }) =>
+    expand({
+      id: "c",
+      source: { kind: "shape", value: "#000" },
+      base: { ...at, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 },
+      distributor: d,
+    }).map((i) => [i.base.x, i.base.y]);
+
+  const cloners: Layer["distributor"][] = [
+    { type: "path", count: 3, params: { points: [{ x: -50, y: 0 }, { x: 50, y: 0 }] } },
+    { type: "grid", count: 4, params: { cols: 2, gapX: 10, gapY: 10 } },
+    { type: "radial", count: 4, params: { radius: 10 } },
+  ];
+
+  for (const d of cloners) {
+    it(`moves every ${d!.type} clone with the element`, () => {
+      const here = spreadOf(d, { x: 0, y: 0 });
+      const moved = spreadOf(d, { x: 300, y: 200 });
+      expect(moved).toEqual(here.map(([x, y]) => [x + 300, y + 200]));
+    });
+  }
+
+  it("spreads a path around the element rather than at the frame's origin", () => {
+    const at = spreadOf(cloners[0], { x: 400, y: 100 });
+    expect(at).toEqual([
+      [350, 100],
+      [400, 100],
+      [450, 100],
+    ]);
+  });
+});
+
 describe("grid distributor", () => {
   const grid = (count: number, params: Record<string, unknown>) =>
     expand({

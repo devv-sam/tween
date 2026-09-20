@@ -198,7 +198,6 @@ export function BenchPanel({ bench }: { bench: Bench }) {
 
       <DistributorSection
         distributor={bench.distributor ?? undefined}
-        base={base}
         onChange={(d) => store.setBenchDistributor(d)}
       />
 

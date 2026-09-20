@@ -58,8 +58,7 @@ describe("adding modules to an element", () => {
 
   it("turns a cloner on spread along a path, and off again without a trace", () => {
     const id = seed();
-    const base = useStudio.getState().composition.tracks[0].layer.base;
-    useStudio.getState().setDistributor(id, defaultDistributor("path", base));
+    useStudio.getState().setDistributor(id, defaultDistributor("path"));
 
     const d = useStudio.getState().composition.tracks[0].layer.distributor;
     expect(d?.type).toBe("path");

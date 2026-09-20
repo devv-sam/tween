@@ -36,11 +36,9 @@ import { BOX, GHOST_BTN, INPUT, LABEL, NumberField, SECTION, SUBLABEL } from "./
  */
 export function DistributorSection({
   distributor: d,
-  base,
   onChange,
 }: {
   distributor: Distributor | undefined;
-  base: Transform;
   onChange: (d: Distributor | null) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -64,7 +62,7 @@ export function DistributorSection({
           <ClonerMenu
             onPick={(type) => {
               setAdding(false);
-              onChange(defaultDistributor(type, base));
+              onChange(defaultDistributor(type));
             }}
             onClose={() => setAdding(false)}
           />
@@ -271,8 +269,9 @@ function DistributorParams({
     );
   }
 
-  // A path is two ends and the straight run between them — the shape an author drags
-  // on the canvas is a later increment, and these are the numbers behind it.
+  // A path is two ends and the straight run between them, both measured from the
+  // element rather than from the frame — the shape an author drags on the canvas is
+  // a later increment, and these are the numbers behind it.
   const points = Array.isArray(p.points) ? (p.points as { x: number; y: number }[]) : [];
   const at = (i: number, axis: "x" | "y") => points[i]?.[axis] ?? 0;
   const movePoint = (i: number, axis: "x" | "y", v: number) => {
@@ -281,13 +280,16 @@ function DistributorParams({
     set({ points: next });
   };
   return (
-    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-      <NumberField label="x₁" value={at(0, "x")} step={1} onChange={(v) => movePoint(0, "x", v)} />
-      <NumberField label="y₁" value={at(0, "y")} step={1} onChange={(v) => movePoint(0, "y", v)} />
-      <NumberField label="x₂" value={at(1, "x")} step={1} onChange={(v) => movePoint(1, "x", v)} />
-      <NumberField label="y₂" value={at(1, "y")} step={1} onChange={(v) => movePoint(1, "y", v)} />
-      {align}
-    </div>
+    <>
+      <p className={`${SUBLABEL} mt-2 mb-1`}>from · to</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        <NumberField label="x₁" title="start, from the element" value={at(0, "x")} step={1} onChange={(v) => movePoint(0, "x", v)} />
+        <NumberField label="y₁" title="start, from the element" value={at(0, "y")} step={1} onChange={(v) => movePoint(0, "y", v)} />
+        <NumberField label="x₂" title="end, from the element" value={at(1, "x")} step={1} onChange={(v) => movePoint(1, "x", v)} />
+        <NumberField label="y₂" title="end, from the element" value={at(1, "y")} step={1} onChange={(v) => movePoint(1, "y", v)} />
+        {align}
+      </div>
+    </>
   );
 }
 

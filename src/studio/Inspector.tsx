@@ -270,7 +270,6 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
 
       <DistributorSection
         distributor={layer.distributor}
-        base={layer.base}
         onChange={(d) => useStudio.getState().setDistributor(layer.id, d)}
       />
 

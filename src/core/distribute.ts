@@ -9,6 +9,15 @@ const spread = (i: number, count: number): number => (count > 1 ? i / (count - 1
 const num = (v: unknown, fallback: number): number =>
   typeof v === "number" && Number.isFinite(v) ? v : fallback;
 
+/**
+ * Where each copy of an element stands.
+ *
+ * A cloner spreads an element; it does not animate it. Every layout is measured from
+ * wherever the element currently is, so adding one leaves the element as free to be
+ * moved, keyed and driven as it was — the arrangement travels with it. A layout that
+ * pinned its copies to the frame would quietly take the element's own position away
+ * from it, and dragging it would do nothing.
+ */
 export function expand(layer: Layer): Instance[] {
   const d = layer.distributor;
   if (!d || d.type === "none" || d.count <= 1) {
@@ -17,13 +26,25 @@ export function expand(layer: Layer): Instance[] {
   const count = d.count;
   const p = d.params ?? {};
 
+  // Points are offsets from the element, not places on the frame — the run is a
+  // shape the element is spread along, and it goes where the element goes.
   if (d.type === "path") {
     const points = (p.points as Pt[]) ?? [];
     const align = Boolean(p.align);
     return Array.from({ length: count }, (_, i) => {
       const u = spread(i, count);
       const s = samplePath(points, u);
-      return { base: { ...layer.base, x: s.x, y: s.y, rotation: align ? s.angle : layer.base.rotation }, u, i, count };
+      return {
+        base: {
+          ...layer.base,
+          x: layer.base.x + s.x,
+          y: layer.base.y + s.y,
+          rotation: align ? layer.base.rotation + s.angle : layer.base.rotation,
+        },
+        u,
+        i,
+        count,
+      };
     });
   }
 

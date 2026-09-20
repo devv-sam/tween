@@ -437,10 +437,11 @@ export const CLONER_BLURB: Record<ClonerType, string> = {
 };
 
 /**
- * A cloner to start from, laid out around where the element already stands — so
- * adding one spreads the element rather than piling every clone on the origin.
+ * A cloner to start from. Every layout is measured from the element, so none of
+ * these needs to know where it stands — a cloner is a shape to spread along, not a
+ * place on the frame.
  */
-export function defaultDistributor(type: ClonerType, base: Transform): Distributor {
+export function defaultDistributor(type: ClonerType): Distributor {
   if (type === "grid") {
     return { type, count: 9, params: { cols: 3, gapX: 220, gapY: 220 } };
   }
@@ -456,8 +457,8 @@ export function defaultDistributor(type: ClonerType, base: Transform): Distribut
     count: 6,
     params: {
       points: [
-        { x: base.x - 200, y: base.y },
-        { x: base.x + 200, y: base.y },
+        { x: -200, y: 0 },
+        { x: 200, y: 0 },
       ],
       align: false,
     },
