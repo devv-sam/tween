@@ -12,32 +12,54 @@ export function ModuleShelf() {
 
   return (
     <>
+      {/* The same header the Assets shelf has, so the way you add a module is the
+          way you add a picture. */}
       <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-white px-3 pt-3 pb-2">
         <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888]">
           Modules
         </span>
+        <button
+          type="button"
+          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+          aria-label="New module"
+          title="New module"
+          onClick={() => useStudio.getState().openBench()}
+        >
+          <PlusIcon />
+        </button>
       </div>
       {library.length === 0 ? (
-        <p className="m-0 px-3 pt-1 pb-2 text-xs leading-normal text-[#b0b0b0]">
+        <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-[#b0b0b0]">
           no modules yet
         </p>
       ) : (
-        <ul className="flex flex-col gap-1 px-3 pt-1 pb-2">
+        <ul className="flex flex-col gap-1 px-3 pt-1 pb-3.5">
           {library.map((asset) => (
             <ModuleCard key={asset.id} id={asset.id} />
           ))}
         </ul>
       )}
-      <div className="px-3 pb-3.5">
-        <button
-          type="button"
-          className={`${GHOST_BTN} w-full text-left`}
-          onClick={() => useStudio.getState().openBench()}
-        >
-          + new module
-        </button>
-      </div>
     </>
+  );
+}
+
+/** Lucide `plus`, matched to the Assets header's own. */
+function PlusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
   );
 }
 

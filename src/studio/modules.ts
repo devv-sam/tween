@@ -4,6 +4,7 @@ import type { Easing } from "../core/easing";
 import { isLinked, resolveModule } from "../core/library";
 import type {
   Distributor,
+  DistributorType,
   ElementModule,
   KeyframeSet,
   Layer,
@@ -423,11 +424,35 @@ export function newModule(type: ModuleType, base: Transform, range: Range = [0, 
 export const cloneCount = (d: Distributor | undefined): number =>
   d && d.type !== "none" ? d.count : 1;
 
-/** A cloner to start from: a straight run through where the element already stands,
- *  so turning one on spreads the element rather than piling every clone on the origin. */
-export function defaultDistributor(base: Transform): Distributor {
+/** A cloner an author can actually pick. `none` is the absence of one, which is
+ *  what no distributor at all already says. */
+export type ClonerType = Exclude<DistributorType, "none">;
+
+export const CLONER_TYPES: ClonerType[] = ["path", "grid", "radial"];
+
+export const CLONER_BLURB: Record<ClonerType, string> = {
+  path: "along a line",
+  grid: "in rows and columns",
+  radial: "around a ring",
+};
+
+/**
+ * A cloner to start from, laid out around where the element already stands — so
+ * adding one spreads the element rather than piling every clone on the origin.
+ */
+export function defaultDistributor(type: ClonerType, base: Transform): Distributor {
+  if (type === "grid") {
+    return { type, count: 9, params: { cols: 3, gapX: 220, gapY: 220 } };
+  }
+  if (type === "radial") {
+    return {
+      type,
+      count: 8,
+      params: { radius: 260, startAngle: -90, sweep: 360, align: false },
+    };
+  }
   return {
-    type: "path",
+    type,
     count: 6,
     params: {
       points: [

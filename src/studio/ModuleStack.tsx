@@ -7,12 +7,15 @@ import {
   MODULE_TYPES,
   PROPS,
   baseValue,
+  CLONER_BLURB,
+  CLONER_TYPES,
   cloneCount,
   defaultDistributor,
   moduleProp,
   moduleStops,
   stackRows,
   stackSummary,
+  type ClonerType,
   type KeyProp,
   type ModuleType,
   type StackRow,
@@ -20,20 +23,19 @@ import {
 import { StopList } from "./StopList";
 import { BOX, GHOST_BTN, INPUT, LABEL, NumberField, SECTION, SUBLABEL } from "./fields";
 
-const DISTRIBUTORS: { value: DistributorType; label: string }[] = [
-  { value: "path", label: "path" },
-  { value: "grid", label: "grid" },
-  { value: "radial", label: "radial" },
-];
-
 /**
- * The cloner on an element: how many of it there are, and how they are laid out.
+ * The cloners on an element.
  *
- * Off is the absence of a distributor rather than one set to nothing, so an element
- * that was never cloned carries no trace of the control.
+ * A cloner is not a module: it says how many of the element there are and where they
+ * stand, and nothing about how any of them behaves over time. So it gets its own
+ * section above the stack, and its types are picked from a menu rather than typed
+ * into a field on something else.
+ *
+ * One at a time for now — `expand` lays out a single distributor, so a second would
+ * be a control with nothing behind it. The section is named for what it will hold.
  */
 export function DistributorSection({
-  distributor,
+  distributor: d,
   base,
   onChange,
 }: {
@@ -41,64 +43,174 @@ export function DistributorSection({
   base: Transform;
   onChange: (d: Distributor | null) => void;
 }) {
-  const on = Boolean(distributor);
-  const d = distributor;
+  const [adding, setAdding] = useState(false);
 
   return (
     <section className={SECTION}>
-      <div className="mb-2 flex items-center justify-between">
-        <p className={LABEL}>cloner</p>
+      <div className="relative mb-2 flex items-center justify-between">
+        <p className={LABEL}>cloners</p>
         <button
           type="button"
-          role="switch"
-          aria-checked={on}
-          aria-label="cloner"
-          className={`h-[18px] w-[30px] shrink-0 rounded-full border transition-colors ${
-            on ? "border-[#0d99ff] bg-[#0d99ff]" : "border-[#e0e0e0] bg-[#f0f0f0]"
-          }`}
-          onClick={() => onChange(on ? null : defaultDistributor(base))}
+          aria-label="add cloner"
+          aria-expanded={adding}
+          title={d ? "one cloner at a time" : "add cloner"}
+          disabled={Boolean(d)}
+          className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+          onClick={() => setAdding((v) => !v)}
         >
-          <span
-            className={`block h-[14px] w-[14px] rounded-full bg-white transition-transform ${
-              on ? "translate-x-[14px]" : "translate-x-[2px]"
-            }`}
-          />
+          <PlusIcon />
         </button>
+        {adding ? (
+          <ClonerMenu
+            onPick={(type) => {
+              setAdding(false);
+              onChange(defaultDistributor(type, base));
+            }}
+            onClose={() => setAdding(false)}
+          />
+        ) : null}
       </div>
 
       {d ? (
         <>
-          <div className="grid grid-cols-2 gap-1.5">
-            <label className={`${BOX} justify-between`} title="layout">
-              <span className={LABEL}>type</span>
-              <select
-                className="min-w-0 bg-transparent text-[11px] text-[#111] outline-none"
-                value={d.type === "none" ? "path" : d.type}
-                onChange={(e) =>
-                  onChange({ ...d, type: e.target.value as DistributorType, params: {} })
-                }
-              >
-                {DISTRIBUTORS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <NumberField
-              label="count"
-              value={d.count}
-              step={1}
-              min={1}
-              max={200}
-              precision={0}
-              onChange={(v) => onChange({ ...d, count: Math.max(1, Math.round(v)) })}
-            />
+          <div className="mb-1.5 flex items-center gap-1">
+            <span className="flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border border-[#e0e0e0] px-2 text-[11px] text-[#555]">
+              <span className="shrink-0 text-[#888]">
+                <ClonerIcon type={d.type} />
+              </span>
+              <span className="truncate">{d.type}</span>
+            </span>
+            <button
+              type="button"
+              aria-label="remove cloner"
+              title="remove cloner"
+              className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+              onClick={() => onChange(null)}
+            >
+              ×
+            </button>
           </div>
+          <NumberField
+            label="count"
+            value={d.count}
+            step={1}
+            min={1}
+            max={200}
+            precision={0}
+            onChange={(v) => onChange({ ...d, count: Math.max(1, Math.round(v)) })}
+          />
           <DistributorParams distributor={d} onChange={onChange} />
         </>
-      ) : null}
+      ) : (
+        <p className="text-[11px] text-[#b0b0b0]">one of this element, so far</p>
+      )}
     </section>
+  );
+}
+
+/** The layouts, as a menu over the panel rather than a field inside it — picking one
+ *  is adding a thing, and a select would read as changing a setting on nothing. */
+function ClonerMenu({
+  onPick,
+  onClose,
+}: {
+  onPick: (type: ClonerType) => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {/* Anywhere else closes it, which is what a menu over a panel has to do and
+          what a blur on the button alone cannot. */}
+      <div className="fixed inset-0 z-20" onClick={onClose} />
+      <ul
+        className="absolute right-0 top-[26px] z-30 w-[170px] rounded-[7px] border border-[#e0e0e0] bg-white p-1 shadow-[0_4px_14px_rgba(0,0,0,.12)]"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
+      >
+        {CLONER_TYPES.map((type, i) => (
+          <li key={type}>
+            <button
+              type="button"
+              autoFocus={i === 0}
+              className="flex w-full items-center gap-2 rounded-[5px] px-1.5 py-1.5 text-left text-[11px] text-[#111] hover:bg-[#0d99ff] hover:text-white focus-visible:bg-[#0d99ff] focus-visible:text-white focus-visible:outline-none"
+              onClick={() => onPick(type)}
+            >
+              <span className="shrink-0 opacity-70">
+                <ClonerIcon type={type} />
+              </span>
+              <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
+                <span>{type}</span>
+                <span className="shrink-0 text-[9px] opacity-60">
+                  {CLONER_BLURB[type]}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** A glyph per layout: the shape the clones land in. */
+function ClonerIcon({ type }: { type: DistributorType }) {
+  const dots =
+    type === "grid"
+      ? [
+          [4, 4],
+          [10, 4],
+          [16, 4],
+          [4, 10],
+          [10, 10],
+          [16, 10],
+          [4, 16],
+          [10, 16],
+          [16, 16],
+        ]
+      : type === "radial"
+        ? [
+            [10, 3],
+            [15, 5],
+            [17, 10],
+            [15, 15],
+            [10, 17],
+            [5, 15],
+            [3, 10],
+            [5, 5],
+          ]
+        : [
+            [3, 10],
+            [7, 10],
+            [11, 10],
+            [15, 10],
+          ];
+  return (
+    <svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true">
+      {dots.map(([cx, cy], i) => (
+        <circle key={i} cx={cx} cy={cy} r="1.6" fill="currentColor" />
+      ))}
+    </svg>
+  );
+}
+
+/** Lucide `plus`, at the size the section headers use. */
+function PlusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
   );
 }
 

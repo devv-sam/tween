@@ -81,6 +81,9 @@ import {
 /** Where the work is kept between visits. */
 const STORE_KEY = "tween:store";
 
+/** Bumped when what is kept there changes shape. */
+const STORE_VERSION = 1;
+
 /** A move's starting point, captured before the first pointer move. */
 export type MoveAnchor = {
   base: { x: number; y: number };
@@ -2108,16 +2111,24 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
 export const useStudio = create<StudioState>()(
   persist(createStudio, {
     name: STORE_KEY,
+    version: STORE_VERSION,
     /**
-     * The work, and nothing about looking at it. The playhead, the zoom, the
-     * selection and the undo stack all describe this sitting rather than the
-     * composition, and the bench is explicitly a scratch surface.
+     * The library, and only the library.
      *
-     * Assets stay out because they cannot come back: an imported picture is held as
-     * an object URL, which dies with the page. Elements placed from one reload into
-     * a composition that still knows where they are and how they move, and draws
-     * nothing for them until the picture is imported again.
+     * A saved module is worth keeping because it is about no element in particular —
+     * it survives the composition it was written against, which is the whole point
+     * of having saved it. What it was *used on* does not survive, because the
+     * pictures underneath cannot: an imported image is held as an object URL, which
+     * dies with the page. A restored composition would be elements that know how
+     * they move and have nothing left to draw, and a timeline full of rows for
+     * motion nobody can see is worse than an empty frame.
      */
-    partialize: (s) => ({ composition: s.composition, moduleLibrary: s.moduleLibrary }),
+    partialize: (s) => ({ moduleLibrary: s.moduleLibrary }),
+    /** Version 0 kept the composition too. Whatever it saved is dropped rather than
+     *  restored onto assets that are already gone. */
+    migrate: (persisted) => ({
+      moduleLibrary:
+        (persisted as { moduleLibrary?: ModuleAsset[] } | null)?.moduleLibrary ?? [],
+    }),
   }),
 );
