@@ -452,6 +452,9 @@ export function defaultDistributor(type: ClonerType): Distributor {
       params: { radius: 260, startAngle: -90, sweep: 360, align: false },
     };
   }
+  // Facing along by default: a run is a direction of travel, and clones that ignore
+  // it read as a row of things that happen to sit on a curve rather than as
+  // something moving down one.
   return {
     type,
     count: 6,
@@ -460,7 +463,7 @@ export function defaultDistributor(type: ClonerType): Distributor {
         { x: -200, y: 0 },
         { x: 200, y: 0 },
       ],
-      align: false,
+      align: true,
     },
   };
 }

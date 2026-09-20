@@ -717,8 +717,26 @@ body {
   pointer-events: none;
 }
 
-/* The cloner gizmo: the run, the ghosts, and what can be dragged. Chrome over the
-   render like the guides — nothing that paints or exports a frame can see it. */
+/*
+ * The cloner gizmo.
+ *
+ * Its own palette, not the selection's blue. A cloner sits inside a selection and
+ * has to be told apart from the box around it at a glance — and the parts of it do
+ * different jobs, so they are not all one colour either:
+ *
+ *   violet   the arrangement itself, and every handle that places a point
+ *   amber    the handles that shape an angle or a curve, and their arms
+ *   green    which way the clones travel
+ *
+ * The shapes carry the same split, so the colours are a second reading rather than
+ * the only one: a square places something, a circle bends it.
+ */
+:root {
+  --gizmo-place: #7b5cff;
+  --gizmo-shape: #e07b00;
+  --gizmo-flow: #0ca678;
+}
+
 .studio-gizmo {
   position: absolute;
   top: 0;
@@ -729,50 +747,73 @@ body {
   overflow: visible;
 }
 
-/* Where a clone lands, before anything animates it. Quiet enough to read as a
-   plan rather than as content. */
+/* Chrome over a frame that can be any colour, including the gizmo's own. A hairline
+   of white under every line keeps it legible without a second drawn copy of it. */
+.studio-gizmo-line,
+.studio-gizmo-stem,
+.studio-gizmo-arrow,
 .studio-ghost {
-  fill: none;
-  stroke: #0d99ff;
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-  opacity: 0.45;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.95));
 }
 
+/* Where a clone lands, before anything animates it. Faint: it is the plan, and the
+   clones themselves are usually sitting right on top of it. */
+.studio-ghost {
+  fill: none;
+  stroke: var(--gizmo-place);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.32;
+}
+
+/* The run, or the ring — the shape the clones are spread along. */
 .studio-gizmo-line {
   fill: none;
-  stroke: #0d99ff;
+  stroke: var(--gizmo-place);
   stroke-width: 1.5;
-  opacity: 0.9;
 }
 
 /* A bezier arm, tying a steering handle to the anchor it belongs to. */
 .studio-gizmo-stem {
-  stroke: #0d99ff;
+  stroke: var(--gizmo-shape);
   stroke-width: 1;
-  opacity: 0.5;
+  opacity: 0.65;
 }
 
 .studio-gizmo-arrow {
   fill: none;
-  stroke: #0d99ff;
-  stroke-width: 1.5;
+  stroke: var(--gizmo-flow);
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-/* The only part of the overlay the pointer can reach. */
+/* The only part of the overlay the pointer can reach. White-filled so a handle reads
+   against whatever it is sitting on, and filled with its own colour once it is the
+   one being held. */
 .studio-gizmo-handle {
   fill: #fff;
-  stroke: #0d99ff;
   stroke-width: 1.5;
   pointer-events: auto;
   cursor: grab;
 }
 
-.studio-gizmo-handle:hover,
-.studio-gizmo-handle.is-on {
-  fill: #0d99ff;
+rect.studio-gizmo-handle {
+  stroke: var(--gizmo-place);
+}
+
+circle.studio-gizmo-handle {
+  stroke: var(--gizmo-shape);
+}
+
+rect.studio-gizmo-handle:hover,
+rect.studio-gizmo-handle.is-on {
+  fill: var(--gizmo-place);
+}
+
+circle.studio-gizmo-handle:hover,
+circle.studio-gizmo-handle.is-on {
+  fill: var(--gizmo-shape);
 }
 
 .studio-gizmo-handle.is-on {
