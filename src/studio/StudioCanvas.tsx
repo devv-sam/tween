@@ -9,6 +9,7 @@ import {
 import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
+import { ClonerGizmo } from "./ClonerGizmo";
 import { GHOST_BTN, LockIcon, LockOpenIcon } from "./fields";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { alignmentFor, type Alignment, type Box } from "./guides";
@@ -25,6 +26,7 @@ import { paintComposition } from "../render/paint";
 import {
   PROXY_SIZE,
   benchComposition,
+  designSizeOf,
   useStudio,
   type MoveAnchor,
   type SelectionStart,
@@ -284,9 +286,39 @@ export function StudioCanvas() {
     };
   }, [group, viewport, frame, view]);
 
+  /** The picked element's cloner, if it has one. Drawn only while it is picked:
+   *  a gizmo for every cloner on the frame at once would be a thicket. */
+  const cloner = useMemo(() => {
+    if (!selectedId || bench) return null;
+    const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
+    const d = track?.layer.distributor;
+    if (!track || !d || d.type === "none" || d.count <= 1) return null;
+    return {
+      distributor: d,
+      base: track.layer.base,
+      size: designSizeOf(assets, track.layer),
+    };
+  }, [selectedId, bench, composition, assets]);
+
+  /**
+   * The picked element itself, apart from any copies of it.
+   *
+   * A cloned element appears in the scene once per clone, and the first of those is
+   * whichever copy the layout happens to put first — an end of the run, not the
+   * element. The box and its handles belong on the element, which is what a drag
+   * moves and what the cloner is arranged around; the copies are drawn as ghosts.
+   */
+  const solo = useMemo(() => {
+    if (!cloner || !selectedId) return null;
+    const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
+    if (!track) return null;
+    const alone = { ...track, layer: { ...track.layer, distributor: undefined } };
+    return renderState({ ...composition, tracks: [alone] }, t, moduleLibrary)[0] ?? null;
+  }, [cloner, selectedId, composition, t, moduleLibrary]);
+
   const selected = useMemo(() => {
     if (!selectedId) return null;
-    const item = scene.find((it) => it.id === selectedId);
+    const item = solo ?? scene.find((it) => it.id === selectedId);
     if (!item) return null;
     const intrinsic = sizeOf(item);
     if (!intrinsic) return null;
@@ -296,7 +328,7 @@ export function StudioCanvas() {
       size: intrinsic,
       lockAspect: Boolean(track?.layer.lockAspect),
     };
-  }, [scene, selectedId, sizeOf, composition]);
+  }, [scene, solo, selectedId, sizeOf, composition]);
 
   /**
    * Every other element on the frame, as a box to line up against.
@@ -1033,6 +1065,17 @@ export function StudioCanvas() {
         </div>
       ) : null}
       <canvas ref={canvasRef} className="studio-render" />
+      {cloner ? (
+        <ClonerGizmo
+          layerId={selectedId!}
+          distributor={cloner.distributor}
+          base={cloner.base}
+          size={cloner.size}
+          viewport={viewport}
+          frame={frame}
+          view={view}
+        />
+      ) : null}
       {/* Says what the square is, so nobody mistakes the bench's stand-in for an
           element they have somehow acquired. */}
       {bench ? (

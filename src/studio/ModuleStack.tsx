@@ -20,6 +20,7 @@ import {
   type ModuleType,
   type StackRow,
 } from "./modules";
+import { addNode } from "./gizmo";
 import { Popover } from "./Popover";
 import { StopList } from "./StopList";
 import { BOX, GHOST_BTN, INPUT, LABEL, NumberField, SECTION, SUBLABEL } from "./fields";
@@ -367,26 +368,23 @@ function DistributorParams({
     );
   }
 
-  // A path is two ends and the straight run between them, both measured from the
-  // element rather than from the frame — the shape an author drags on the canvas is
-  // a later increment, and these are the numbers behind it.
-  const points = Array.isArray(p.points) ? (p.points as { x: number; y: number }[]) : [];
-  const at = (i: number, axis: "x" | "y") => points[i]?.[axis] ?? 0;
-  const movePoint = (i: number, axis: "x" | "y", v: number) => {
-    const next = [points[0] ?? { x: 0, y: 0 }, points[1] ?? { x: 0, y: 0 }];
-    next[i] = { ...next[i], [axis]: v };
-    set({ points: next });
-  };
+  // A path is shaped on the frame, not typed in here: the run, its anchors and the
+  // ghosts of every clone are on the canvas while the element is picked. What is
+  // left for the panel is the one thing the gizmo has nowhere to put.
   return (
     <>
-      <p className={`${SUBLABEL} mt-2 mb-1`}>from · to</p>
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumberField label="x₁" title="start, from the element" value={at(0, "x")} step={1} onChange={(v) => movePoint(0, "x", v)} />
-        <NumberField label="y₁" title="start, from the element" value={at(0, "y")} step={1} onChange={(v) => movePoint(0, "y", v)} />
-        <NumberField label="x₂" title="end, from the element" value={at(1, "x")} step={1} onChange={(v) => movePoint(1, "x", v)} />
-        <NumberField label="y₂" title="end, from the element" value={at(1, "y")} step={1} onChange={(v) => movePoint(1, "y", v)} />
-        {align}
-      </div>
+      <div className="mt-1.5">{align}</div>
+      <button
+        type="button"
+        className={`${GHOST_BTN} mt-1.5 w-full text-left`}
+        onClick={() => onChange(addNode(d))}
+      >
+        + add anchor
+      </button>
+      <p className="mt-1 text-[10px] leading-snug text-[#b0b0b0]">
+        drag the anchors on the frame. double-click one to round it off, alt-click to
+        take it out.
+      </p>
     </>
   );
 }

@@ -717,6 +717,68 @@ body {
   pointer-events: none;
 }
 
+/* The cloner gizmo: the run, the ghosts, and what can be dragged. Chrome over the
+   render like the guides — nothing that paints or exports a frame can see it. */
+.studio-gizmo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: block;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Where a clone lands, before anything animates it. Quiet enough to read as a
+   plan rather than as content. */
+.studio-ghost {
+  fill: none;
+  stroke: #0d99ff;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.45;
+}
+
+.studio-gizmo-line {
+  fill: none;
+  stroke: #0d99ff;
+  stroke-width: 1.5;
+  opacity: 0.9;
+}
+
+/* A bezier arm, tying a steering handle to the anchor it belongs to. */
+.studio-gizmo-stem {
+  stroke: #0d99ff;
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+.studio-gizmo-arrow {
+  fill: none;
+  stroke: #0d99ff;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The only part of the overlay the pointer can reach. */
+.studio-gizmo-handle {
+  fill: #fff;
+  stroke: #0d99ff;
+  stroke-width: 1.5;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.studio-gizmo-handle:hover,
+.studio-gizmo-handle.is-on {
+  fill: #0d99ff;
+}
+
+.studio-gizmo-handle.is-on {
+  cursor: grabbing;
+}
+
 /* One picked element inside a group box. Quieter than the box around them: it says
    what is in the selection without competing with the thing being dragged. */
 .studio-group-member {
