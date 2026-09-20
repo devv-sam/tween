@@ -169,6 +169,79 @@ describe("dragHandle", () => {
   });
 });
 
+describe("holding a drag straight", () => {
+  const origin = { x: 600, y: 300 };
+
+  it("pulls an anchor onto the nearest axis through where it started", () => {
+    // Dragged right and a little up: held, it should come out perfectly level.
+    const next = dragHandle(
+      line(),
+      { kind: "node", index: 1 },
+      { x: 760, y: 318 },
+      base,
+      { origin },
+    );
+    expect(nodesOf(next)[1]).toEqual({ x: 260, y: 0 });
+  });
+
+  it("takes the diagonal when the drag is nearer one", () => {
+    const next = dragHandle(
+      line(),
+      { kind: "node", index: 1 },
+      { x: 700, y: 404 },
+      base,
+      { origin },
+    );
+    const node = nodesOf(next)[1];
+    expect(node.x - 100).toBeCloseTo(node.y, 6);
+  });
+
+  it("follows the pointer along the axis rather than sliding down it", () => {
+    // Off-axis distance is dropped; the along-axis reach is kept.
+    const near = dragHandle(line(), { kind: "node", index: 1 }, { x: 650, y: 310 }, base, { origin });
+    const far = dragHandle(line(), { kind: "node", index: 1 }, { x: 750, y: 310 }, base, { origin });
+    expect(nodesOf(near)[1].x).toBeCloseTo(150);
+    expect(nodesOf(far)[1].x).toBeCloseTo(250);
+  });
+
+  it("runs an arm off its anchor, not off where the arm was", () => {
+    const steered = path([{ x: -100, y: 0, out: { x: 50, y: 0 } }, { x: 100, y: 0 }]);
+    const node = nodesOf(
+      dragHandle(steered, { kind: "out", index: 0 }, { x: 400, y: 244 }, base, {
+        origin: { x: 450, y: 300 },
+      }),
+    )[0];
+    // The anchor is at (400,300), so straight up is a vertical arm.
+    expect(node.out!.x).toBeCloseTo(0);
+    expect(node.out!.y).toBeCloseTo(-56);
+  });
+
+  it("holds a start angle to fifteens", () => {
+    const d: Distributor = { type: "radial", count: 4, params: { radius: 80 } };
+    const at = { x: 500 + Math.cos((52 * Math.PI) / 180) * 80, y: 300 + Math.sin((52 * Math.PI) / 180) * 80 };
+    expect(dragHandle(d, { kind: "start" }, at, base, { origin: at }).params?.startAngle).toBe(45);
+  });
+
+  it("holds a radius and a gap to round numbers", () => {
+    const ring: Distributor = { type: "radial", count: 4, params: { radius: 80 } };
+    expect(
+      dragHandle(ring, { kind: "radius" }, { x: 617, y: 300 }, base, { origin: { x: 580, y: 300 } })
+        .params?.radius,
+    ).toBe(120);
+
+    const grid: Distributor = { type: "grid", count: 4, params: { cols: 2, gapX: 40 } };
+    expect(
+      dragHandle(grid, { kind: "gapX" }, { x: 557, y: 300 }, base, { origin: { x: 520, y: 300 } })
+        .params?.gapX,
+    ).toBe(110);
+  });
+
+  it("leaves a drag alone when nothing is held", () => {
+    const next = dragHandle(line(), { kind: "node", index: 1 }, { x: 760, y: 318 }, base);
+    expect(nodesOf(next)[1]).toEqual({ x: 260, y: 18 });
+  });
+});
+
 describe("runDistance", () => {
   it("is nothing on the line and grows away from it", () => {
     const d = line();

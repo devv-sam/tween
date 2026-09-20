@@ -1,5 +1,5 @@
 import type { Distributor, Transform } from "../core/types";
-import { distanceToSegment } from "./selection";
+import { ROTATE_SNAP, distanceToSegment } from "./selection";
 import { expand } from "../core/distribute";
 import { samplePath } from "../core/geometry";
 import type { PathNode, Pt } from "../core/geometry";
@@ -224,17 +224,52 @@ export function runDistance(d: Distributor, base: Transform, p: Pt): number | nu
   return null;
 }
 
+/** Round numbers to land on when a distance is being snapped. */
+const SNAP_STEP = 10;
+
+const round = (v: number, step: number): number => Math.round(v / step) * step;
+
+/**
+ * `to`, pulled onto the nearest line through `from` at a multiple of 45°.
+ *
+ * Projected rather than held at arm's length, so the point keeps following the
+ * pointer along the axis instead of sliding away down it.
+ */
+function onAxis(from: Pt, to: Pt): Pt {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx === 0 && dy === 0) return to;
+  const step = Math.PI / 4;
+  const angle = Math.round(Math.atan2(dy, dx) / step) * step;
+  const unit = { x: Math.cos(angle), y: Math.sin(angle) };
+  const along = dx * unit.x + dy * unit.y;
+  return { x: from.x + unit.x * along, y: from.y + unit.y * along };
+}
+
+/** What a drag is being held to, while shift is down. */
+export type Snap = {
+  /** Where the handle was when the drag began. An axis has to run through
+   *  something, and the thing being dragged is the only honest origin for it. */
+  origin: Pt;
+};
+
 /**
  * The distributor after a handle has been dragged to a point on the frame.
  *
  * Offsets, so the drag is read back against the element rather than against the
  * frame — which is what keeps a cloner something the element carries.
+ *
+ * `snap` is shift being held: a point goes to the nearest 45° from where it
+ * started, an angle to the nearest 15°, and a distance to a round number. Each in
+ * the units the thing is actually measured in, rather than one rule applied to
+ * values that mean different things.
  */
 export function dragHandle(
   d: Distributor,
   id: HandleId,
   to: Pt,
   base: Transform,
+  snap?: Snap,
 ): Distributor {
   const local = { x: to.x - base.x, y: to.y - base.y };
   const params = d.params ?? {};
@@ -245,42 +280,57 @@ export function dragHandle(
     if (!node) return d;
     const next = nodes.map((n, i) => {
       if (i !== id.index) return n;
-      if (id.kind === "node") return { ...n, x: local.x, y: local.y };
+      if (id.kind === "node") {
+        const at = snap ? onAxis(snap.origin, to) : to;
+        return { ...n, x: at.x - base.x, y: at.y - base.y };
+      }
       // A handle is stored against its own anchor, so dragging the anchor takes
-      // both arms with it and dragging an arm leaves the anchor where it is.
-      const arm = { x: local.x - n.x, y: local.y - n.y };
+      // both arms with it and dragging an arm leaves the anchor where it is. Held,
+      // it runs off the anchor rather than off where the arm happened to be.
+      const anchor = { x: base.x + n.x, y: base.y + n.y };
+      const at = snap ? onAxis(anchor, to) : to;
+      const arm = { x: at.x - anchor.x, y: at.y - anchor.y };
       return { ...n, [id.kind]: arm, ...facing(n, id.kind, arm) };
     });
     return { ...d, params: { ...params, points: next } };
   }
 
   if (id.kind === "radius") {
+    const reach = Math.hypot(local.x, local.y);
     return {
       ...d,
-      params: { ...params, radius: Math.max(1, Math.round(Math.hypot(local.x, local.y))) },
+      params: {
+        ...params,
+        radius: Math.max(1, Math.round(snap ? round(reach, SNAP_STEP) : reach)),
+      },
     };
   }
 
   if (id.kind === "start") {
     const deg = (Math.atan2(local.y, local.x) * 180) / Math.PI;
-    return { ...d, params: { ...params, startAngle: Math.round(deg) } };
+    return {
+      ...d,
+      params: { ...params, startAngle: Math.round(snap ? round(deg, ROTATE_SNAP) : deg) },
+    };
   }
 
   if (id.kind === "gapX") {
     const cols = Math.max(1, Math.round(num(params.cols, Math.ceil(Math.sqrt(d.count)))));
     const span = Math.max(1, cols - 1);
+    const gap = (local.x * 2) / span;
     return {
       ...d,
-      params: { ...params, gapX: Math.max(0, Math.round((local.x * 2) / span)) },
+      params: { ...params, gapX: Math.max(0, Math.round(snap ? round(gap, SNAP_STEP) : gap)) },
     };
   }
 
   if (id.kind === "gapY") {
     const cols = Math.max(1, Math.round(num(params.cols, Math.ceil(Math.sqrt(d.count)))));
     const rows = Math.max(1, Math.ceil(d.count / cols) - 1);
+    const gap = (local.y * 2) / rows;
     return {
       ...d,
-      params: { ...params, gapY: Math.max(0, Math.round((local.y * 2) / rows)) },
+      params: { ...params, gapY: Math.max(0, Math.round(snap ? round(gap, SNAP_STEP) : gap)) },
     };
   }
 

@@ -13,6 +13,7 @@ import {
   removeNode,
   sameHandle,
   toggleSmooth,
+  type Handle,
   type HandleId,
 } from "./gizmo";
 
@@ -49,22 +50,24 @@ export function ClonerGizmo({
   frame: Size;
   view: View;
 }) {
-  const [dragging, setDragging] = useState<HandleId | null>(null);
+  /** The handle being held, and where it was when the drag began — shift needs an
+   *  origin to hold the drag against, and the handle has moved by then. */
+  const [dragging, setDragging] = useState<{ id: HandleId; origin: Pt } | null>(null);
   const gizmo = gizmoFor(distributor, base);
 
   const toScreen = (p: Pt) => compositionToScreen(p, viewport, frame, view);
   const scale = view.scale * view.zoom;
 
-  const grab = (id: HandleId) => (e: ReactPointerEvent<SVGElement>) => {
+  const grab = (h: Handle) => (e: ReactPointerEvent<SVGElement>) => {
     e.stopPropagation();
     // Alt-click takes an anchor out rather than moving it — the same gesture a pen
     // tool uses, and the only one left on a handle this small.
-    if (e.altKey && id.kind === "node") {
-      useStudio.getState().setDistributor(layerId, removeNode(distributor, id.index));
+    if (e.altKey && h.id.kind === "node") {
+      useStudio.getState().setDistributor(layerId, removeNode(distributor, h.id.index));
       return;
     }
     e.currentTarget.setPointerCapture(e.pointerId);
-    setDragging(id);
+    setDragging({ id: h.id, origin: h.at });
   };
 
   const move = (e: ReactPointerEvent<SVGElement>) => {
@@ -78,7 +81,9 @@ export function ClonerGizmo({
       view,
     );
     const { setDistributor } = useStudio.getState();
-    setDistributor(layerId, dragHandle(distributor, dragging, at, base));
+    // Read live, so shift can be pressed or let go part way through a drag.
+    const snap = e.shiftKey ? { origin: dragging.origin } : undefined;
+    setDistributor(layerId, dragHandle(distributor, dragging.id, at, base, snap));
   };
 
   /** A corner becomes a bend and back. The anchor stays where it is either way, so
@@ -162,10 +167,10 @@ export function ClonerGizmo({
 
       {gizmo.handles.map((h) => {
         const at = toScreen(h.at);
-        const on = sameHandle(dragging, h.id);
+        const on = sameHandle(dragging?.id ?? null, h.id);
         const common = {
           className: `studio-gizmo-handle${on ? " is-on" : ""}`,
-          onPointerDown: grab(h.id),
+          onPointerDown: grab(h),
           onPointerMove: move,
           onPointerUp: drop,
           onPointerCancel: drop,
