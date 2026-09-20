@@ -1,6 +1,6 @@
 import type { Composition, Prop, Scene, EvalCtx } from "./types";
 import { getModule } from "./registry";
-import { remap } from "./math";
+import { clamp, remap } from "./math";
 import { sampleStops } from "./curve";
 import { apply } from "./blend";
 import { expand } from "./distribute";
@@ -24,7 +24,11 @@ export function renderState(comp: Composition, t: number): Scene {
       }
       for (const md of track.modules) {
         if (t < md.range[0] || t > md.range[1]) continue;
-        const ctx: EvalCtx = { t, localT: remap(t, md.range), u: inst.u, i: inst.i, count: inst.count, field: sample };
+        // Each clone reads the module a little later than the one before it, so a
+        // cloner staggers instead of moving as one block.
+        const delay = typeof md.params.delay === "number" ? md.params.delay : 0;
+        const localT = clamp(remap(t, md.range) - inst.u * delay, 0, 1);
+        const ctx: EvalCtx = { t, localT, u: inst.u, i: inst.i, count: inst.count, field: sample };
         state = getModule(md.type).evaluate(state, ctx, md.params);
       }
       scene.push({ id: track.layer.id, source: track.layer.source, state });

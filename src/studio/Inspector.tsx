@@ -912,6 +912,11 @@ function KeyframeInspector({
 }) {
   const prop = moduleProp(md);
   const stops = moduleStops(md);
+  const clones = useStudio((s) => {
+    const d = s.composition.tracks.find((tr) => tr.layer.id === layerId)?.layer.distributor;
+    return d && d.type !== "none" ? d.count : 1;
+  });
+  const delay = typeof md.params.delay === "number" ? md.params.delay : 0;
   const params = (patch: Record<string, unknown>) =>
     useStudio.getState().setModuleParams(layerId, index, patch);
 
@@ -944,6 +949,27 @@ function KeyframeInspector({
           ))}
         </select>
       </label>
+
+      {/* Only a cloner has anything to stagger — on a single element the field would
+          be a control with nothing on the other end of it. */}
+      {clones > 1 ? (
+        <>
+          <div className="mt-1.5">
+            <NumberField
+              label="delay"
+              title="clone delay"
+              value={delay}
+              step={0.01}
+              min={0}
+              max={1}
+              onChange={(v) => params({ delay: v })}
+            />
+          </div>
+          <p className="mt-1 text-[10px] text-[#b0b0b0]">
+            staggers clones across time. 0 = simultaneous
+          </p>
+        </>
+      ) : null}
 
       <StopList
         layerId={layerId}

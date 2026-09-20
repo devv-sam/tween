@@ -99,3 +99,44 @@ describe("standalone keyframes", () => {
     expect(renderState(c, 1)[0].state.opacity).toBe(1);
   });
 });
+
+describe("clone delay", () => {
+  // A linear 0→1 curve on opacity reads back as the clone's own localT, and the path
+  // distributor leaves opacity alone.
+  const staggered = (delay: number): Composition => ({
+    fps: 30,
+    duration: 1,
+    driver: { kind: "time" },
+    tracks: [
+      {
+        layer: {
+          id: "el",
+          source: { kind: "shape", value: "rect" },
+          base,
+          distributor: {
+            type: "path",
+            count: 3,
+            params: { points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] },
+          },
+        },
+        modules: [
+          {
+            type: "keyframes",
+            range: [0, 1],
+            params: { property: "opacity", stops: [{ t: 0, v: 0 }, { t: 1, v: 1 }], delay },
+          },
+        ],
+      },
+    ],
+  });
+
+  it("walks each clone back through the module's window", () => {
+    const clones = renderState(staggered(0.5), 0.25).map((it) => it.state.opacity);
+    expect(clones).toEqual([0.25, 0, 0]);
+  });
+
+  it("moves every clone as one when there is no delay", () => {
+    const clones = renderState(staggered(0), 0.25).map((it) => it.state.opacity);
+    expect(clones).toEqual([0.25, 0.25, 0.25]);
+  });
+});
