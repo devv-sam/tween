@@ -1,10 +1,9 @@
 import type { Stop } from "../core/curve";
-import type { Easing } from "../core/easing";
 import type { Transform } from "../core/types";
 import { clamp } from "../core/math";
 import { useStudio } from "./store";
+import { EaseSelect } from "./EasingControls";
 import {
-  EASINGS,
   PROP_STEP,
   baseValue,
   patchStop,
@@ -107,22 +106,11 @@ export function StopList({
                 />
               </div>
               {axes.length === 1 ? values : null}
-              <select
-                className="h-[26px] w-[74px] shrink-0 rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none"
-                aria-label="easing"
-                value={stop.ease ?? "linear"}
-                onChange={(e) =>
-                  all((axis) =>
-                    patchStop(axis.stops, i, { ease: e.target.value as Easing }),
-                  )
-                }
-              >
-                {EASINGS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+              <EaseSelect
+                className="w-[86px] shrink-0"
+                ease={stop.ease}
+                onChange={(ease) => all((axis) => patchStop(axis.stops, i, { ease }))}
+              />
               <button
                 type="button"
                 aria-label="remove keyframe"

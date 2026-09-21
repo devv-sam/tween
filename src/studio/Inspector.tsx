@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Driver, Track, Transform } from "../core/types";
+import type { Blend, Driver, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
-import type { Easing } from "../core/easing";
+import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
 import {
@@ -13,7 +13,6 @@ import {
   resolutionKey,
 } from "./composition";
 import {
-  EASINGS,
   PROP_STEP,
   PROP_TEXT,
   fromDisplay,
@@ -30,6 +29,16 @@ import {
   type Range,
 } from "./modules";
 import { DistributorSection, ModuleInspector, ModuleStackSection } from "./ModuleStack";
+import { EaseSelect, EasingSection } from "./EasingControls";
+import {
+  MIN_SEGMENT,
+  easesAgree,
+  findSegments,
+  sharedBlend,
+  sharedEase,
+  sharedLabel,
+  type SegmentView,
+} from "./segments";
 import { BenchPanel } from "./ModuleShelf";
 import {
   BOX,
@@ -88,6 +97,7 @@ function ElementPanels({
   index: number;
   selectedIds: string[];
 }) {
+  const segments = useStudio((s) => s.selectedSegments);
   return (
     <>
       {/* The composition is always there to edit, so it stays put and the element's
@@ -98,7 +108,160 @@ function ElementPanels({
           picked, so the two are never both on screen. */}
       {track ? <ElementPanel track={track} index={index} /> : null}
       {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
+      {/* Exclusive with the element panels above: picking a span clears the element,
+          so at most one of the two is ever standing. */}
+      {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
     </>
+  );
+}
+
+/**
+ * The span between two keyframes, opened up.
+ *
+ * A stop is a moment and a segment is the motion between two of them, which is where
+ * the duration, the curve and the destination actually live — so this is where they
+ * are edited. Several at once shows only what is honestly shared: one curve written
+ * to all of them, and the blend when they are all the same property.
+ */
+function SegmentPanel({ ids }: { ids: string[] }) {
+  const composition = useStudio((s) => s.composition);
+  const assets = useStudio((s) => s.assets);
+  const picked = findSegments(composition.tracks, ids, composition.duration);
+  const one = picked.length === 1 ? picked[0] : null;
+  const layer = one
+    ? composition.tracks.find((tr) => tr.layer.id === one.ref.layerId)?.layer
+    : undefined;
+  const label = sharedLabel(picked);
+  const blend = sharedBlend(picked);
+  const sameProp = picked.every((seg) => seg.property === picked[0]?.property);
+
+  if (picked.length === 0) return null;
+
+  const write = (ease: EasingDef) =>
+    useStudio.getState().setSegmentEasing(ids, ease);
+
+  return (
+    <section className={SECTION}>
+      <div className="flex items-baseline gap-1.5">
+        <p className={LABEL}>{one ? "segment" : `${picked.length} segments`}</p>
+        <span className="min-w-0 flex-1 truncate text-[10px] lowercase text-[#b0b0b0]">
+          {label}
+        </span>
+        <button
+          type="button"
+          className="rounded px-1 text-[10px] text-[#b0b0b0] hover:bg-[#f0f0f0] hover:text-[#555]"
+          title="clear the selection"
+          onClick={() => useStudio.getState().setSelectedSegments([])}
+        >
+          clear
+        </button>
+      </div>
+
+      {one ? (
+        <SegmentDuration segment={one} />
+      ) : null}
+
+      <EasingSection
+        ease={sharedEase(picked)}
+        mixed={!easesAgree(picked)}
+        onChange={write}
+        note={one ? undefined : `applying to ${picked.length} segments`}
+      />
+
+      {one && layer ? (
+        <SegmentValue segment={one} size={designSizeOf(assets, layer)} />
+      ) : null}
+
+      {sameProp ? <SegmentBlend blend={blend} ids={ids} /> : null}
+    </section>
+  );
+}
+
+function SegmentDuration({ segment }: { segment: SegmentView }) {
+  return (
+    <div className="mt-2">
+      <p className={LABEL}>duration</p>
+      <div className="mt-1.5 w-[86px]">
+        <NumberField
+          label="s"
+          title="time between the two keyframes"
+          value={segment.to - segment.from}
+          step={0.05}
+          min={MIN_SEGMENT}
+          onChange={(v) => useStudio.getState().setSegmentDuration(segment.id, v)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SegmentValue({
+  segment,
+  size,
+}: {
+  segment: SegmentView;
+  size: DesignSize | undefined;
+}) {
+  const axes: ("x" | "y")[] = typeof segment.value === "number" ? ["x"] : ["x", "y"];
+  const at = (axis: "x" | "y") =>
+    toDisplay(
+      segment.property,
+      typeof segment.value === "number" ? segment.value : segment.value[axis],
+      size,
+    );
+
+  return (
+    <div className="mt-2">
+      <p className={LABEL}>value at destination</p>
+      <div className="mt-1.5 flex items-center gap-1">
+        {axes.map((axis) => (
+          <div key={axis} className="min-w-0 flex-1">
+            <NumberField
+              label={axes.length > 1 ? axis : "v"}
+              title={`value the segment arrives at${axes.length > 1 ? ` (${axis})` : ""}`}
+              value={at(axis)}
+              step={PROP_STEP[segment.property]}
+              onChange={(v) =>
+                useStudio
+                  .getState()
+                  .setSegmentValue(segment.id, axis, fromDisplay(segment.property, v, size))
+              }
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const BLENDS: Blend[] = ["set", "add", "mul"];
+
+/** How the segment writes over whatever is already on the property. `null` is what
+ *  a spread of them reads as — nothing to show until one is picked. */
+function SegmentBlend({ blend, ids }: { blend: Blend | null; ids: string[] }) {
+  return (
+    <div className="mt-2">
+      <p className={LABEL}>blend</p>
+      <div className="mt-1.5 flex overflow-hidden rounded-md border border-[#e0e0e0]">
+        {BLENDS.map((mode, i) => (
+          <button
+            key={mode}
+            type="button"
+            aria-pressed={blend === mode}
+            className={`h-[26px] min-w-0 flex-1 text-[10px] ${
+              i > 0 ? "border-l border-[#e0e0e0]" : ""
+            } ${
+              blend === mode
+                ? "bg-[#0d99ff] text-white"
+                : "text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]"
+            }`}
+            onClick={() => useStudio.getState().setSegmentBlend(ids, mode)}
+          >
+            {mode}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -937,7 +1100,7 @@ function KeyframeEditor({ track }: { track: Track }) {
     followMove(entry.property, entry.index, indexAfterMove(stopsOf(entry.property), entry.index, t));
   };
 
-  const setEntryEase = (entry: LogEntry, ease: Easing) =>
+  const setEntryEase = (entry: LogEntry, ease: EasingDef) =>
     writeStops(entry.property, (stops) => patchStop(stops, entry.index, { ease }));
 
   /** A value on one side of the arrow: `to` is the keyframe itself, `from` is the one
@@ -1067,7 +1230,7 @@ function KeyframeFields({
   /** The property's only keyframe, so removing it is removing the motion. */
   last: boolean;
   onTime: (seconds: number) => void;
-  onEase: (ease: Easing) => void;
+  onEase: (ease: EasingDef) => void;
   onValue: (side: "from" | "to", axis: "x" | "y", v: number) => void;
   onRemove: () => void;
 }) {
@@ -1097,19 +1260,7 @@ function KeyframeFields({
             onChange={onTime}
           />
         </div>
-        <select
-          className="h-[26px] min-w-0 flex-1 rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none"
-          aria-label="easing"
-          title="easing into this keyframe"
-          value={entry.ease ?? "linear"}
-          onChange={(e) => onEase(e.target.value as Easing)}
-        >
-          {EASINGS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <EaseSelect className="min-w-0 flex-1" ease={entry.ease} onChange={onEase} />
       </div>
 
       {axes.map((axis) => (

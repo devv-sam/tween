@@ -65,6 +65,13 @@ body {
   }
 }
 
+/* The spring preview's dot, crossing its strip. Only the run is here — what the
+   sliders change is the timing function, which is computed and set inline. */
+@keyframes spring-dot {
+  from { left: 0; }
+  to { left: calc(100% - 10px); }
+}
+
 /* Offscreen stand-in handed to setDragImage; the browser snapshots it at drag start.
    Stays in CSS: it is attached to a bare `new Image()` outside React, where there is
    no className the build could see to generate utilities from. */

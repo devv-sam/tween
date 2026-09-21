@@ -1,3 +1,4 @@
+import { easeKey } from "../core/easing";
 import type { BlockView, KeyTarget } from "./modules";
 
 /**
@@ -32,7 +33,7 @@ const at = (t: number): string => t.toFixed(TIME_DP);
  * the opposite of what happened.
  */
 export function motionKey(block: BlockView): string {
-  const stops = block.stops.map((s) => `${at(s.t)}${s.ease ?? ""}`).join(",");
+  const stops = block.stops.map((s) => `${at(s.t)}${easeKey(s.ease)}`).join(",");
   const kind = block.standalone ? "keys" : `module:${block.label}`;
   return `${kind}/${block.prop}@${at(block.range[0])}..${at(block.range[1])}[${stops}]`;
 }

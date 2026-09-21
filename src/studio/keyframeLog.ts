@@ -1,6 +1,6 @@
 import type { KeyframeSet, Track } from "../core/types";
 import type { Stop } from "../core/curve";
-import type { Easing } from "../core/easing";
+import type { StopEase } from "../core/easing";
 import {
   TRACK_PROPS,
   isSizeProp,
@@ -31,7 +31,7 @@ export type LogEntry = {
   to: LogValue;
   /** The easing carrying the property into this keyframe. A combined position shares
    *  one across both axes, so there is only ever one to read. */
-  ease?: Easing;
+  ease?: StopEase;
 };
 
 export type LogGroup = { property: KeyTarget; entries: LogEntry[] };
