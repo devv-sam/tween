@@ -197,13 +197,6 @@ export function sharedEase(segments: SegmentView[]): StopEase | undefined {
   return easesAgree(segments) ? segments[0].ease : undefined;
 }
 
-/** The blend every selected segment agrees on, or null. */
-export function sharedBlend(segments: SegmentView[]): Blend | null {
-  if (segments.length === 0) return null;
-  const first = segments[0].blend;
-  return segments.every((s) => s.blend === first) ? first : null;
-}
-
 /** The property beneath the header: the one they share, or that they do not share one. */
 export function sharedLabel(segments: SegmentView[]): string {
   if (segments.length === 0) return "";

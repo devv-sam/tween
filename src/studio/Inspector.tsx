@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Blend, Driver, Track, Transform } from "../core/types";
+import type { Driver, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
@@ -34,7 +34,6 @@ import {
   MIN_SEGMENT,
   easesAgree,
   findSegments,
-  sharedBlend,
   sharedEase,
   sharedLabel,
   type SegmentView,
@@ -125,15 +124,9 @@ function ElementPanels({
  */
 function SegmentPanel({ ids }: { ids: string[] }) {
   const composition = useStudio((s) => s.composition);
-  const assets = useStudio((s) => s.assets);
   const picked = findSegments(composition.tracks, ids, composition.duration);
   const one = picked.length === 1 ? picked[0] : null;
-  const layer = one
-    ? composition.tracks.find((tr) => tr.layer.id === one.ref.layerId)?.layer
-    : undefined;
   const label = sharedLabel(picked);
-  const blend = sharedBlend(picked);
-  const sameProp = picked.every((seg) => seg.property === picked[0]?.property);
 
   if (picked.length === 0) return null;
 
@@ -168,11 +161,6 @@ function SegmentPanel({ ids }: { ids: string[] }) {
         note={one ? undefined : `applying to ${picked.length} segments`}
       />
 
-      {one && layer ? (
-        <SegmentValue segment={one} size={designSizeOf(assets, layer)} />
-      ) : null}
-
-      {sameProp ? <SegmentBlend blend={blend} ids={ids} /> : null}
     </section>
   );
 }
@@ -190,76 +178,6 @@ function SegmentDuration({ segment }: { segment: SegmentView }) {
           min={MIN_SEGMENT}
           onChange={(v) => useStudio.getState().setSegmentDuration(segment.id, v)}
         />
-      </div>
-    </div>
-  );
-}
-
-function SegmentValue({
-  segment,
-  size,
-}: {
-  segment: SegmentView;
-  size: DesignSize | undefined;
-}) {
-  const axes: ("x" | "y")[] = typeof segment.value === "number" ? ["x"] : ["x", "y"];
-  const at = (axis: "x" | "y") =>
-    toDisplay(
-      segment.property,
-      typeof segment.value === "number" ? segment.value : segment.value[axis],
-      size,
-    );
-
-  return (
-    <div className="mt-2">
-      <p className={LABEL}>value at destination</p>
-      <div className="mt-1.5 flex items-center gap-1">
-        {axes.map((axis) => (
-          <div key={axis} className="min-w-0 flex-1">
-            <NumberField
-              label={axes.length > 1 ? axis : "v"}
-              title={`value the segment arrives at${axes.length > 1 ? ` (${axis})` : ""}`}
-              value={at(axis)}
-              step={PROP_STEP[segment.property]}
-              onChange={(v) =>
-                useStudio
-                  .getState()
-                  .setSegmentValue(segment.id, axis, fromDisplay(segment.property, v, size))
-              }
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const BLENDS: Blend[] = ["set", "add", "mul"];
-
-/** How the segment writes over whatever is already on the property. `null` is what
- *  a spread of them reads as — nothing to show until one is picked. */
-function SegmentBlend({ blend, ids }: { blend: Blend | null; ids: string[] }) {
-  return (
-    <div className="mt-2">
-      <p className={LABEL}>blend</p>
-      <div className="mt-1.5 flex overflow-hidden rounded-md border border-[#e0e0e0]">
-        {BLENDS.map((mode, i) => (
-          <button
-            key={mode}
-            type="button"
-            aria-pressed={blend === mode}
-            className={`h-[26px] min-w-0 flex-1 text-[10px] ${
-              i > 0 ? "border-l border-[#e0e0e0]" : ""
-            } ${
-              blend === mode
-                ? "bg-[#0d99ff] text-white"
-                : "text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]"
-            }`}
-            onClick={() => useStudio.getState().setSegmentBlend(ids, mode)}
-          >
-            {mode}
-          </button>
-        ))}
       </div>
     </div>
   );

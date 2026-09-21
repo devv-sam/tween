@@ -8,7 +8,6 @@ import {
   parseSegment,
   retimedStops,
   segmentId,
-  sharedBlend,
   sharedEase,
   sharedLabel,
   trackSegments,
@@ -143,11 +142,6 @@ describe("what several segments agree on", () => {
   it("names the property they share, or says they do not share one", () => {
     expect(sharedLabel([seg("x", undefined, "set"), seg("x", undefined, "set")])).toBe("x");
     expect(sharedLabel([seg("x", undefined, "set"), seg("rotation", undefined, "set")])).toBe("mixed");
-  });
-
-  it("shows a shared blend and nothing when they differ", () => {
-    expect(sharedBlend([seg("x", undefined, "add"), seg("x", undefined, "add")])).toBe("add");
-    expect(sharedBlend([seg("x", undefined, "add"), seg("x", undefined, "set")])).toBeNull();
   });
 });
 

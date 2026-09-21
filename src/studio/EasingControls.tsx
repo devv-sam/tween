@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   DEFAULT_SPRING,
   PRESETS,
@@ -11,33 +17,54 @@ import {
   type StopEase,
 } from "../core/easing";
 import { clamp } from "../core/math";
-import { LABEL, NumberField, SUBLABEL } from "./fields";
+import { BOX, INPUT, LABEL, SUBLABEL } from "./fields";
+import { Popover } from "./Popover";
 
-/** The chips, in the order they are offered. `custom` is not something to pick — it
- *  lights up on its own once the graph has been dragged off every preset. */
-const CHIPS = [...PRESET_NAMES, "spring", "custom"] as const;
-type Chip = (typeof CHIPS)[number];
+/** What the picker offers. `custom` is not something to choose — it names the curve
+ *  you are already on once the pad has been dragged off every preset. */
+const CHOICES = [...PRESET_NAMES, "spring"] as const;
+type Choice = (typeof CHOICES)[number] | "custom";
 
-/** Which chip a curve is standing on. */
-function chipOf(ease: StopEase | undefined): Chip | null {
+const CHOICE_LABEL: Record<Choice, string> = {
+  linear: "Linear",
+  "ease in": "Ease in",
+  "ease out": "Ease out",
+  "in-out": "In-out",
+  "ease in back": "Ease in back",
+  "ease out back": "Ease out back",
+  spring: "Spring",
+  custom: "Custom",
+};
+
+/** Which entry a curve is standing on. */
+function choiceOf(ease: StopEase | undefined): Choice {
   if (ease === undefined) return "linear";
   if (isSpring(ease)) return "spring";
   return presetOf(ease) ?? "custom";
 }
 
-const BEZIER_FALLBACK: EasingDef = PRESETS["in-out"];
+const curveOf = (choice: Choice, ease: StopEase | undefined): StopEase =>
+  choice === "custom"
+    ? (ease ?? PRESETS.linear)
+    : choice === "spring"
+      ? { ...DEFAULT_SPRING }
+      : PRESETS[choice];
 
-/** The bezier a curve reads as in the graph. A spring has no handles of its own, so
- *  switching back off it lands on the shape the graph was last able to show. */
-function asBezier(ease: StopEase | undefined): { x1: number; y1: number; x2: number; y2: number } {
-  if (ease === undefined) return PRESETS.linear as { x1: number; y1: number; x2: number; y2: number };
+const BEZIER_FALLBACK = PRESETS["in-out"] as EasingDef & { kind: "bezier" };
+
+type Bezier = { x1: number; y1: number; x2: number; y2: number };
+
+/** The four numbers a curve reads as on the pad. A spring has no handles of its own,
+ *  so coming back off one lands on the shape the pad was last able to show. */
+function asBezier(ease: StopEase | undefined): Bezier {
+  if (ease === undefined) return { x1: 0, y1: 0, x2: 1, y2: 1 };
   if (typeof ease === "string") {
     const preset = PRESETS[presetOf(ease) ?? "linear"];
-    return preset as { x1: number; y1: number; x2: number; y2: number };
+    return preset as Bezier;
   }
   if (ease.kind === "bezier") return ease;
   if (ease.kind === "linear") return { x1: 0, y1: 0, x2: 1, y2: 1 };
-  return BEZIER_FALLBACK as { x1: number; y1: number; x2: number; y2: number };
+  return BEZIER_FALLBACK;
 }
 
 function asSpring(ease: StopEase | undefined): {
@@ -47,11 +74,11 @@ function asSpring(ease: StopEase | undefined): {
 } {
   return typeof ease === "object" && ease !== null && ease.kind === "spring"
     ? { mass: ease.mass, stiffness: ease.stiffness, damping: ease.damping }
-    : { mass: DEFAULT_SPRING.mass, stiffness: DEFAULT_SPRING.stiffness, damping: DEFAULT_SPRING.damping };
+    : { ...DEFAULT_SPRING };
 }
 
 /**
- * The easing editor: the chips, and under them the graph or the spring's sliders.
+ * The easing editor: which curve, and the pad or the sliders that shape it.
  *
  * One curve, however many segments are being written — the panel shows a starting
  * state and every change goes out to all of them at once.
@@ -63,51 +90,40 @@ export function EasingSection({
   note,
 }: {
   ease: StopEase | undefined;
-  /** They do not agree on one curve, so there is nothing to open on: the graph is
-   *  drawn neutral and no chip is lit until something is chosen. */
+  /** They do not agree on one curve, so there is nothing to open on: the pad is
+   *  drawn neutral and the picker names nothing until something is chosen. */
   mixed?: boolean;
   onChange: (ease: EasingDef) => void;
   /** Said quietly under the section when more than one segment is being written. */
   note?: string;
 }) {
-  const chip = mixed ? null : chipOf(ease);
-  const spring = !mixed && isSpring(ease);
+  const shown = mixed ? undefined : ease;
+  const choice = mixed ? null : choiceOf(shown);
+  const bezier = asBezier(mixed ? PRESETS.linear : shown);
 
   return (
     <div className="mt-2">
       <p className={LABEL}>easing</p>
 
-      <div className="mt-1.5 flex flex-wrap gap-1">
-        {CHIPS.map((name) => {
-          const on = chip === name;
-          const pickable = name !== "custom";
-          return (
-            <button
-              key={name}
-              type="button"
-              aria-pressed={on}
-              disabled={!pickable}
-              title={name === "custom" ? "the graph has been dragged off every preset" : name}
-              className={`rounded-full border px-2 py-[3px] text-[10px] leading-none transition-colors ${
-                on
-                  ? "border-[#0d99ff] bg-[#0d99ff] text-white"
-                  : "border-[#e0e0e0] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]"
-              } ${pickable ? "" : on ? "cursor-default" : "cursor-default disabled:opacity-45"}`}
-              onClick={() => {
-                if (name === "spring") onChange({ ...DEFAULT_SPRING });
-                else if (name !== "custom") onChange({ ...PRESETS[name as PresetName] });
-              }}
-            >
-              {name}
-            </button>
-          );
-        })}
-      </div>
+      <PresetPicker
+        choice={choice}
+        ease={shown}
+        onPick={(next) => onChange(curveOf(next, shown) as EasingDef)}
+      />
 
-      {spring ? (
-        <SpringFields spring={asSpring(ease)} onChange={onChange} />
+      {choice === "spring" ? (
+        <SpringFields spring={asSpring(shown)} onChange={onChange} />
       ) : (
-        <BezierFields ease={mixed ? PRESETS.linear : ease} onChange={onChange} />
+        <>
+          <BezierPad
+            {...bezier}
+            onChange={(next) => onChange({ kind: "bezier", ...next })}
+          />
+          <BezierValue
+            {...bezier}
+            onChange={(next) => onChange({ kind: "bezier", ...next })}
+          />
+        </>
       )}
 
       {note ? <p className="mt-2 text-[10px] text-[#b0b0b0]">{note}</p> : null}
@@ -115,60 +131,127 @@ export function EasingSection({
   );
 }
 
-/** The graph's box, in its own units. Wide enough for the panel, and tall enough that
- *  an overshooting curve has somewhere to go before it runs off the top. */
-const GRAPH_W = 236;
-const GRAPH_H = 160;
-/** Room around the 0–1 square. The curve is clipped at the box; a handle dragged past
- *  it is still drawn at the edge, because a handle you cannot see is one you cannot
- *  drag back. */
-const PAD_X = 14;
-const PAD_Y = 26;
-
-const gx = (x: number): number => PAD_X + x * (GRAPH_W - PAD_X * 2);
-const gy = (y: number): number => GRAPH_H - PAD_Y - y * (GRAPH_H - PAD_Y * 2);
-const ungx = (px: number): number => (px - PAD_X) / (GRAPH_W - PAD_X * 2);
-const ungy = (py: number): number => (GRAPH_H - PAD_Y - py) / (GRAPH_H - PAD_Y * 2);
-
-const CURVE_STEPS = 48;
-
-function BezierFields({
+/** The curve in force, and a list of the ones you could have instead. */
+function PresetPicker({
+  choice,
   ease,
-  onChange,
+  onPick,
 }: {
+  choice: Choice | null;
   ease: StopEase | undefined;
-  onChange: (ease: EasingDef) => void;
+  onPick: (choice: Choice) => void;
 }) {
-  const b = asBezier(ease);
-  const write = (patch: Partial<typeof b>) =>
-    onChange({ kind: "bezier", ...b, ...patch });
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
 
   return (
     <>
-      <BezierGraph
-        x1={b.x1}
-        y1={b.y1}
-        x2={b.x2}
-        y2={b.y2}
-        onChange={(next) => onChange({ kind: "bezier", ...next })}
-      />
-      <div className="mt-1.5 flex items-center gap-1">
-        <div className="min-w-0 flex-1">
-          <NumberField label="x1" value={b.x1} step={0.01} min={0} max={1} onChange={(v) => write({ x1: v })} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <NumberField label="y1" value={b.y1} step={0.01} onChange={(v) => write({ y1: v })} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <NumberField label="x2" value={b.x2} step={0.01} min={0} max={1} onChange={(v) => write({ x2: v })} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <NumberField label="y2" value={b.y2} step={0.01} onChange={(v) => write({ y2: v })} />
-        </div>
-      </div>
+      <button
+        ref={anchorRef}
+        type="button"
+        aria-label="easing preset"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`${BOX} mt-1.5 w-full justify-between hover:border-[#c8c8c8]`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          <MiniCurve ease={choice === null ? PRESETS.linear : ease} />
+          <span className="truncate text-[11px] text-[#111]">
+            {choice === null ? "Mixed" : CHOICE_LABEL[choice]}
+          </span>
+        </span>
+        <ChevronDownIcon />
+      </button>
+
+      {open ? (
+        <Popover
+          anchorRef={anchorRef}
+          placement="below"
+          label="easing preset"
+          onClose={() => setOpen(false)}
+        >
+          <ul role="listbox" className="max-h-[260px] w-[226px] overflow-y-auto py-1">
+            {CHOICES.map((name) => (
+              <li key={name}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={choice === name}
+                  className={`flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] ${
+                    choice === name ? "bg-[#eef4fb] text-[#111]" : "text-[#555] hover:bg-[#f5f5f5]"
+                  }`}
+                  onClick={() => {
+                    onPick(name);
+                    setOpen(false);
+                  }}
+                >
+                  <MiniCurve
+                    ease={name === "spring" ? { ...DEFAULT_SPRING } : PRESETS[name as PresetName]}
+                  />
+                  {CHOICE_LABEL[name]}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Popover>
+      ) : null}
     </>
   );
 }
+
+/** The dotted ground the canvas is drawn on, at the size it uses there — so the pad
+ *  reads as a piece of the same surface rather than a window onto something else. */
+const DOTS =
+  "bg-[radial-gradient(circle,#e0e0e0_1px,transparent_1.15px)] bg-[length:20px_20px]";
+
+/** The same surface at glyph size. Twenty-pixel dots in a twenty-pixel tile would be
+ *  one dot, which reads as a speck rather than as ground. */
+const DOTS_MINI =
+  "bg-[radial-gradient(circle,#e4e4e4_0.5px,transparent_0.8px)] bg-[length:4px_4px]";
+
+const MINI_W = 22;
+const MINI_H = 22;
+const MINI_PAD = 4;
+const MINI_STEPS = 16;
+
+/** A curve at glyph size, for the picker and its list. */
+function MiniCurve({ ease }: { ease: StopEase | undefined }) {
+  const points = useMemo(() => {
+    const span = MINI_H - MINI_PAD * 2;
+    const out: string[] = [];
+    for (let i = 0; i <= MINI_STEPS; i++) {
+      const x = i / MINI_STEPS;
+      const y = clamp(easeValue(ease, x), -0.25, 1.25);
+      out.push(
+        `${(MINI_PAD + x * (MINI_W - MINI_PAD * 2)).toFixed(1)},${(
+          MINI_H - MINI_PAD - y * span
+        ).toFixed(1)}`,
+      );
+    }
+    return out.join(" ");
+  }, [ease]);
+
+  return (
+    <svg
+      width={MINI_W}
+      height={MINI_H}
+      viewBox={`0 0 ${MINI_W} ${MINI_H}`}
+      className={`shrink-0 rounded-[3px] border border-[#e8e8e8] ${DOTS_MINI}`}
+      aria-hidden="true"
+    >
+      <polyline points={points} fill="none" stroke="#111" strokeWidth="1.25" />
+    </svg>
+  );
+}
+
+/** Room around the 0–1 square. The curve is clipped at the pad's edge; a handle
+ *  dragged past it is still drawn at the edge, because a handle you cannot see is
+ *  one you cannot drag back. */
+const PAD_X = 16;
+const PAD_Y = 24;
+const PAD_HEIGHT = 170;
+const CURVE_STEPS = 48;
 
 type Handle = 1 | 2;
 
@@ -179,49 +262,57 @@ type Handle = 1 | 2;
  * arrives — so only the two control points move. They are free above and below the
  * box, which is the whole of how a curve overshoots its destination and comes back.
  */
-function BezierGraph({
+function BezierPad({
   x1,
   y1,
   x2,
   y2,
   onChange,
-}: {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  onChange: (next: { x1: number; y1: number; x2: number; y2: number }) => void;
-}) {
-  const svgRef = useRef<SVGSVGElement>(null);
+}: Bezier & { onChange: (next: Bezier) => void }) {
+  const padRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
   const [held, setHeld] = useState<Handle | null>(null);
 
+  // Measured rather than given a viewBox: the pad fills whatever width the panel
+  // has, and a viewBox stretched to fit would turn its handles into ellipses.
+  useEffect(() => {
+    const el = padRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setWidth(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const inner = Math.max(1, width - PAD_X * 2);
+  const gx = (x: number): number => PAD_X + x * inner;
+  const gy = (y: number): number => PAD_HEIGHT - PAD_Y - y * (PAD_HEIGHT - PAD_Y * 2);
+
   const path = useMemo(() => {
-    const points: string[] = [];
+    const out: string[] = [];
     for (let i = 0; i <= CURVE_STEPS; i++) {
       const x = i / CURVE_STEPS;
-      points.push(`${gx(x).toFixed(2)},${gy(easeValue({ kind: "bezier", x1, y1, x2, y2 }, x)).toFixed(2)}`);
+      const y = easeValue({ kind: "bezier", x1, y1, x2, y2 }, x);
+      out.push(`${gx(x).toFixed(2)},${gy(y).toFixed(2)}`);
     }
-    return points.join(" ");
-  }, [x1, y1, x2, y2]);
+    return out.join(" ");
+  }, [x1, y1, x2, y2, inner]);
 
-  /** Where a pointer is, in the graph's own units. The rendered box can be scaled by
-   *  the panel, so the reading goes through the element's measured size. */
-  const at = (e: ReactPointerEvent<SVGSVGElement>): { x: number; y: number } | null => {
-    const box = svgRef.current?.getBoundingClientRect();
-    if (!box || box.width < 1 || box.height < 1) return null;
-    const px = ((e.clientX - box.left) / box.width) * GRAPH_W;
-    const py = ((e.clientY - box.top) / box.height) * GRAPH_H;
-    return { x: clamp(ungx(px), 0, 1), y: ungy(py) };
+  const at = (e: ReactPointerEvent<HTMLElement>): Bezier | null => {
+    const box = padRef.current?.getBoundingClientRect();
+    if (!box) return null;
+    const x = clamp((e.clientX - box.left - PAD_X) / inner, 0, 1);
+    const y =
+      (PAD_HEIGHT - PAD_Y - (e.clientY - box.top)) / (PAD_HEIGHT - PAD_Y * 2);
+    return held === 1 ? { x1: x, y1: y, x2, y2 } : { x1, y1, x2: x, y2: y };
   };
 
-  const onMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+  const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!held) return;
-    const p = at(e);
-    if (!p) return;
-    onChange(held === 1 ? { x1: p.x, y1: p.y, x2, y2 } : { x1, y1, x2: p.x, y2: p.y });
+    const next = at(e);
+    if (next) onChange(next);
   };
 
-  const end = (e: ReactPointerEvent<SVGSVGElement>) => {
+  const end = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!held) return;
     setHeld(null);
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -233,12 +324,17 @@ function BezierGraph({
     // Drawn at the edge when the value has gone past it: the stored number keeps its
     // overshoot, and the grip stays somewhere a pointer can reach.
     const cx = gx(hx);
-    const cy = clamp(gy(hy), 6, GRAPH_H - 6);
-    const anchorX = n === 1 ? gx(0) : gx(1);
-    const anchorY = n === 1 ? gy(0) : gy(1);
+    const cy = clamp(gy(hy), 7, PAD_HEIGHT - 7);
     return (
       <g key={n}>
-        <line x1={anchorX} y1={anchorY} x2={cx} y2={cy} stroke="#6b7280" strokeWidth="1" />
+        <line
+          x1={n === 1 ? gx(0) : gx(1)}
+          y1={n === 1 ? gy(0) : gy(1)}
+          x2={cx}
+          y2={cy}
+          stroke="#c8c8c8"
+          strokeWidth="1"
+        />
         <circle
           cx={cx}
           cy={cy}
@@ -250,7 +346,7 @@ function BezierGraph({
           onPointerDown={(e) => {
             e.preventDefault();
             setHeld(n);
-            svgRef.current?.setPointerCapture(e.pointerId);
+            padRef.current?.setPointerCapture(e.pointerId);
           }}
         />
       </g>
@@ -258,34 +354,81 @@ function BezierGraph({
   };
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`}
-      className="mt-1.5 w-full touch-none overflow-hidden rounded-md bg-[#1b1b1f]"
-      style={{ aspectRatio: `${GRAPH_W} / ${GRAPH_H}` }}
-      aria-label="easing curve"
+    <div
+      ref={padRef}
+      className={`relative mt-1.5 w-full touch-none overflow-hidden rounded-md border border-[#e0e0e0] ${DOTS}`}
+      style={{ height: PAD_HEIGHT }}
       onPointerMove={onMove}
       onPointerUp={end}
       onPointerCancel={end}
     >
-      {/* The 0–1 square the curve is read against, so a handle past it reads as past
-          something rather than as floating. */}
-      <rect
-        x={gx(0)}
-        y={gy(1)}
-        width={gx(1) - gx(0)}
-        height={gy(0) - gy(1)}
-        fill="none"
-        stroke="#33343c"
-        strokeWidth="1"
+      <svg className="absolute inset-0 h-full w-full" aria-label="easing curve">
+        {/* The 0–1 square the curve is read against, so a handle past it reads as
+            past something rather than as floating. */}
+        <line x1={gx(0)} y1={gy(0)} x2={gx(1)} y2={gy(0)} stroke="#d8d8d8" strokeWidth="1" />
+        <line x1={gx(0)} y1={gy(1)} x2={gx(1)} y2={gy(1)} stroke="#d8d8d8" strokeWidth="1" />
+        <line
+          x1={gx(0)}
+          y1={gy(0)}
+          x2={gx(1)}
+          y2={gy(1)}
+          stroke="#d8d8d8"
+          strokeWidth="1"
+          strokeDasharray="3 3"
+        />
+        <polyline points={path} fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" />
+        <circle cx={gx(0)} cy={gy(0)} r="3" fill="#b0b0b0" />
+        <circle cx={gx(1)} cy={gy(1)} r="3" fill="#b0b0b0" />
+        {handle(1, x1, y1)}
+        {handle(2, x2, y2)}
+      </svg>
+    </div>
+  );
+}
+
+const trim = (v: number): string => String(Number(v.toFixed(3)));
+
+/** Four numbers separated by commas, or nothing this field can use. x is a share of
+ *  the segment so it cannot leave 0–1; y is the value, which overshoots freely. */
+function parseBezier(raw: string): Bezier | null {
+  const parts = raw.split(",").map((p) => Number(p.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+  return {
+    x1: clamp(parts[0], 0, 1),
+    y1: parts[1],
+    x2: clamp(parts[2], 0, 1),
+    y2: parts[3],
+  };
+}
+
+/** The curve as the four numbers it is, typed rather than dragged. */
+function BezierValue({ x1, y1, x2, y2, onChange }: Bezier & { onChange: (next: Bezier) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? [x1, y1, x2, y2].map(trim).join(", ");
+
+  return (
+    <label className={`${BOX} mt-1.5`} title="cubic bezier: x1, y1, x2, y2">
+      <span className="shrink-0 text-[#888]">
+        <SplineIcon />
+      </span>
+      <input
+        className={`${INPUT} w-full`}
+        aria-label="cubic bezier x1, y1, x2, y2"
+        value={shown}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const next = parseBezier(e.target.value);
+          if (next) onChange(next);
+        }}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Escape") {
+            setDraft(null);
+            e.currentTarget.blur();
+          }
+        }}
       />
-      <line x1={gx(0)} y1={gy(0)} x2={gx(1)} y2={gy(1)} stroke="#33343c" strokeWidth="1" strokeDasharray="3 3" />
-      <polyline points={path} fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
-      <circle cx={gx(0)} cy={gy(0)} r="3" fill="#6b7280" />
-      <circle cx={gx(1)} cy={gy(1)} r="3" fill="#6b7280" />
-      {handle(1, x1, y1)}
-      {handle(2, x2, y2)}
-    </svg>
+    </label>
   );
 }
 
@@ -315,8 +458,7 @@ function SpringFields({
   const timing = useMemo(() => {
     const out: string[] = [];
     for (let i = 0; i <= PREVIEW_SAMPLES; i++) {
-      const t = i / PREVIEW_SAMPLES;
-      out.push(easeValue({ kind: "spring", ...spring }, t).toFixed(4));
+      out.push(easeValue({ kind: "spring", ...spring }, i / PREVIEW_SAMPLES).toFixed(4));
     }
     return `linear(${out.join(",")})`;
   }, [spring.mass, spring.stiffness, spring.damping]);
@@ -344,9 +486,12 @@ function SpringFields({
         ))}
       </div>
 
-      <div className="relative mt-2 h-[26px] overflow-hidden rounded-md bg-[#f5f5f5]" aria-hidden="true">
+      <div
+        className={`relative mt-2 h-[26px] overflow-hidden rounded-md border border-[#e0e0e0] ${DOTS}`}
+        aria-hidden="true"
+      >
         <span
-          className="absolute top-1/2 h-[10px] w-[10px] -translate-y-1/2 rounded-full bg-[#0d99ff] animate-[spring-dot_1.4s_infinite]"
+          className="absolute top-1/2 h-[10px] w-[10px] -translate-y-1/2 animate-[spring-dot_1.4s_infinite] rounded-full bg-[#0d99ff]"
           style={{ animationTimingFunction: timing, animationDuration: `${PREVIEW_SECONDS}s` }}
         />
       </div>
@@ -354,12 +499,52 @@ function SpringFields({
   );
 }
 
+function ChevronDownIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0 text-[#888]"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+/** Lucide `spline` — a curve held at two ends, which is what the four numbers are. */
+function SplineIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="19" cy="5" r="2" />
+      <circle cx="5" cy="19" r="2" />
+      <path d="M5 17A12 12 0 0 1 17 5" />
+    </svg>
+  );
+}
+
 /**
  * The compact easing picker, for the places that edit one keyframe at a time: the
  * keyframe log and the module stop list.
  *
- * The presets are the vocabulary here — a curve shaped on the graph shows up as
- * `custom` and is left alone rather than being rounded to the nearest chip. Shaping
+ * The presets are the vocabulary here — a curve shaped on the pad shows up as
+ * `custom` and is left alone rather than being rounded to the nearest one. Shaping
  * one is what the segment panel is for.
  */
 export function EaseSelect({
@@ -373,28 +558,25 @@ export function EaseSelect({
   className?: string;
   title?: string;
 }) {
-  const chip = chipOf(ease) ?? "custom";
-  const offMenu = chip === "custom" || chip === "spring";
+  const choice = choiceOf(ease);
   return (
     <select
       className={`h-[26px] rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none ${className}`}
       aria-label="easing"
       title={title ?? "easing into this keyframe"}
-      value={chip}
+      value={choice}
       onChange={(e) => {
-        const name = e.target.value;
-        if (name === "spring") onChange({ ...DEFAULT_SPRING });
-        else if (name !== "custom") onChange({ ...PRESETS[name as PresetName] });
+        const next = e.target.value as Choice;
+        if (next !== "custom") onChange(curveOf(next, ease) as EasingDef);
       }}
     >
-      {PRESET_NAMES.map((name) => (
+      {CHOICES.map((name) => (
         <option key={name} value={name}>
-          {name}
+          {CHOICE_LABEL[name]}
         </option>
       ))}
-      <option value="spring">spring</option>
       {/* Only there to have something to show while a shaped curve is in force. */}
-      {offMenu && chip === "custom" ? <option value="custom">custom</option> : null}
+      {choice === "custom" ? <option value="custom">Custom</option> : null}
     </select>
   );
 }
