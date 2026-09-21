@@ -249,8 +249,8 @@ function MiniCurve({ ease }: { ease: StopEase | undefined }) {
  *  dragged past it is still drawn at the edge, because a handle you cannot see is
  *  one you cannot drag back. */
 const PAD_X = 16;
-const PAD_Y = 24;
-const PAD_HEIGHT = 170;
+const PAD_Y = 30;
+const PAD_HEIGHT = 220;
 const CURVE_STEPS = 48;
 
 type Handle = 1 | 2;
