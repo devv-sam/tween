@@ -1,7 +1,7 @@
 import type { Composition, ModuleAsset, Prop, Scene, EvalCtx } from "./types";
 import { getModule } from "./registry";
 import { clamp, remap } from "./math";
-import { sampleStops } from "./curve";
+import { blendAt, sampleStops } from "./curve";
 import { apply } from "./blend";
 import { expand } from "./distribute";
 import { fieldValue } from "./fields";
@@ -26,7 +26,9 @@ export function renderState(comp: Composition, t: number, library: ModuleAsset[]
       // first and modules layer over the result.
       for (const [prop, set] of Object.entries(track.keyframes ?? {})) {
         if (t < set.range[0] || t > set.range[1]) continue;
-        state = apply(state, prop as Prop, sampleStops(set.stops, remap(t, set.range)), "set");
+        const local = remap(t, set.range);
+        const value = sampleStops(set.stops, local);
+        state = apply(state, prop as Prop, value, blendAt(set.stops, local));
       }
       for (const md of resolveModules(track.modules, library)) {
         if (t < md.range[0] || t > md.range[1]) continue;

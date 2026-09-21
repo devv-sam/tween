@@ -16,6 +16,8 @@ import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
 import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
 import { entryId } from "./keyframeLog";
+import { easeSamples, segmentId, type SegmentRef } from "./segments";
+import { isLinearEase } from "../core/easing";
 import {
   PROP_COLOR,
   PROP_STEP,
@@ -281,6 +283,104 @@ export function Timeline() {
     families,
   );
 
+  /**
+   * Every segment's box in the strip's own space, so the marquee can be tested
+   * against all of them at once. Worked out here rather than in the rows because a
+   * marquee crosses rows, and only this level knows where one ends and the next
+   * begins.
+   */
+  const segmentBoxes = useMemo(() => {
+    const out: { id: string; x0: number; x1: number; top: number; bottom: number }[] = [];
+    let top = 0;
+    for (const row of rows) {
+      top += TRACK_HEIGHT;
+      if (!row.open) continue;
+      for (const block of row.blocks) {
+        if (block.standalone && block.part.kind === "keyframes") {
+          const [from, to] = block.range;
+          const span = to - from;
+          for (let i = 1; i < block.stops.length; i++) {
+            const ref: SegmentRef = {
+              layerId: row.id,
+              property: block.part.property,
+              index: i,
+            };
+            out.push({
+              id: segmentId(ref),
+              x0: timeToX(from + block.stops[i - 1].t * span, width),
+              x1: timeToX(from + block.stops[i].t * span, width),
+              top,
+              bottom: top + PROPERTY_HEIGHT,
+            });
+          }
+        }
+        top += PROPERTY_HEIGHT;
+      }
+    }
+    return out;
+  }, [rows, width]);
+
+  const lanesRef = useRef<HTMLDivElement>(null);
+  const marqueeRef = useRef<{ pointerId: number; x0: number; y0: number; moved: boolean } | null>(
+    null,
+  );
+  const [marquee, setMarquee] = useState<Box | null>(null);
+
+  const lanePoint = (e: ReactPointerEvent<HTMLElement>): { x: number; y: number } | null => {
+    const box = lanesRef.current?.getBoundingClientRect();
+    return box ? { x: e.clientX - box.left, y: e.clientY - box.top } : null;
+  };
+
+  // Empty lane space only: everything with its own grip — a diamond, a segment, a
+  // module, the element's bar — stops the event before it reaches here.
+  const onMarqueeDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const at = lanePoint(e);
+    if (!at) return;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      return;
+    }
+    marqueeRef.current = { pointerId: e.pointerId, x0: at.x, y0: at.y, moved: false };
+  };
+
+  const onMarqueeMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = marqueeRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const at = lanePoint(e);
+    if (!at) return;
+    if (!drag.moved && Math.abs(at.x - drag.x0) < DRAG_SLOP && Math.abs(at.y - drag.y0) < DRAG_SLOP)
+      return;
+    drag.moved = true;
+    const box = boxOf(drag.x0, drag.y0, at.x, at.y);
+    setMarquee(box);
+    // Whole spans only: a segment half inside the rectangle was not asked for.
+    const caught = segmentBoxes
+      .filter(
+        (seg) =>
+          seg.x0 >= box.left &&
+          seg.x1 <= box.left + box.width &&
+          seg.bottom > box.top &&
+          seg.top < box.top + box.height,
+      )
+      .map((seg) => seg.id);
+    useStudio.getState().setSelectedSegments(caught);
+  };
+
+  const onMarqueeUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = marqueeRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    marqueeRef.current = null;
+    setMarquee(null);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    // A press on empty track space that went nowhere is how a segment selection is
+    // let go of.
+    if (!drag.moved) useStudio.getState().setSelectedSegments([]);
+  };
+
   // Delete here takes away motion, never the element — so the event is stopped even
   // when nothing was picked, or the canvas' handler would find an element to remove.
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -412,7 +512,14 @@ export function Timeline() {
           </div>
 
           <div className="timeline-area">
-            <div className="timeline-lanes">
+            <div
+              className="timeline-lanes relative touch-none"
+              ref={lanesRef}
+              onPointerDown={onMarqueeDown}
+              onPointerMove={onMarqueeMove}
+              onPointerUp={onMarqueeUp}
+              onPointerCancel={onMarqueeUp}
+            >
               {rows.map((row) => (
                 <Fragment key={row.id}>
                   {/* An element has no motion of its own — what it has is the rows
@@ -455,6 +562,14 @@ export function Timeline() {
                     : null}
                 </Fragment>
               ))}
+
+              {marquee ? (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute z-[2] border border-[#0d99ff] bg-[#0d99ff]/10"
+                  style={marquee}
+                />
+              ) : null}
             </div>
 
             {/* Full height of the rows, not of the window onto them, so any scroll
@@ -913,6 +1028,17 @@ const EDGE_GRAB = 6;
 /** One frozen empty selection, so a block with nothing picked reads the same array
  *  every render rather than a new one the store would call a change. */
 const EMPTY_KEYS: string[] = [];
+const EMPTY_SEGMENTS: string[] = [];
+
+/** A rectangle in the strip's own space, in the shape a style prop takes. */
+type Box = { left: number; top: number; width: number; height: number };
+
+const boxOf = (x0: number, y0: number, x1: number, y1: number): Box => ({
+  left: Math.min(x0, x1),
+  top: Math.min(y0, y1),
+  width: Math.abs(x1 - x0),
+  height: Math.abs(y1 - y0),
+});
 
 /** Past this many pixels a press was a drag; under it, it was a click on whatever it
  *  landed on. */
@@ -947,7 +1073,11 @@ function KeyframeTrack({
     (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
   );
   const picked = useStudio((s) => (s.selectedId === layerId ? s.selectedKeys : EMPTY_KEYS));
+  const segments = useStudio((s) =>
+    s.selectedSegments.length > 0 ? s.selectedSegments : EMPTY_SEGMENTS,
+  );
   const dragRef = useRef<StopDrag | null>(null);
+  const [hot, setHot] = useState<number | null>(null);
   const prop = block.prop;
   const [from, to] = block.range;
   const span = to - from;
@@ -960,6 +1090,17 @@ function KeyframeTrack({
   const stops = block.stops;
   const last = stops.length - 1;
   const stretched = stops.length > 1;
+
+  const property = block.part.kind === "keyframes" ? block.part.property : null;
+  const idOf = (index: number): string | null =>
+    property === null ? null : segmentId({ layerId, property, index });
+  const onSegment = (index: number): boolean => {
+    const id = idOf(index);
+    return id !== null && segments.includes(id);
+  };
+  // Once one span on this row is picked, everything else on it stands back — the row
+  // is showing one piece of motion rather than all of them.
+  const dimming = stops.some((_, i) => i > 0 && onSegment(i));
 
   const writeStops = (next: Stop[]) => {
     const store = useStudio.getState();
@@ -990,7 +1131,9 @@ function KeyframeTrack({
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    useStudio.getState().selectPart(layerId, block.part);
+    // A press on a span has not decided yet whether it is a retime or a pick, so the
+    // panel is left alone until the drag moves. A press on a diamond has decided.
+    if (grab.kind !== "body") useStudio.getState().selectPart(layerId, block.part);
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -1010,6 +1153,9 @@ function KeyframeTrack({
     if (!drag || drag.pointerId !== e.pointerId) return;
     const dx = e.clientX - drag.fromX;
     if (!drag.moved && Math.abs(dx) < DRAG_SLOP) return;
+    if (!drag.moved && drag.grab.kind === "body") {
+      useStudio.getState().selectPart(layerId, block.part);
+    }
     drag.moved = true;
     const delta = perPx(dx);
     const grab = drag.grab;
@@ -1044,9 +1190,14 @@ function KeyframeTrack({
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     // A press that never moved was a click on whatever it landed on.
-    if (!drag.moved && drag.grab.kind !== "body") {
+    if (!drag.moved) {
       const store = useStudio.getState();
-      store.selectKey(layerId, entryId(prop, drag.grab.index), e.shiftKey || e.metaKey);
+      if (drag.grab.kind === "body") {
+        const id = idOf(drag.grab.index);
+        if (id) store.selectSegment(id, e.shiftKey || e.metaKey);
+      } else {
+        store.selectKey(layerId, entryId(prop, drag.grab.index), e.shiftKey || e.metaKey);
+      }
       return;
     }
     // One drag, one undo step — closed here so the next drag starts a new one.
@@ -1059,39 +1210,88 @@ function KeyframeTrack({
   // playhead still works from the inspector's diamond.
 
   return (
-    <div className="absolute inset-0">
+    <div className={`absolute inset-0 ${PROP_TEXT[prop]}`}>
       {/* Only once there are two: a line is the span between keyframes, and one
-          keyframe has no span. Grabbable, but kept to a hairline — the weight on
-          this row belongs to the diamonds. */}
-      {stretched ? (
-        <div
-          role="button"
-          tabIndex={0}
-          aria-label={`${block.label} keyframes`}
-          aria-pressed={selected}
-          className={`absolute top-1/2 flex -translate-y-1/2 touch-none items-center ${PROP_TEXT[prop]}`}
-          style={{
-            left: xOf(stops[0].t),
-            width: Math.max(2, xOf(stops[last].t) - xOf(stops[0].t)),
-            height: DIAMOND + 4,
-          }}
-          onPointerDown={(e) => beginDrag(e, { kind: "body", index: -1 })}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
-        >
+          keyframe has no span. The spans are drawn one at a time rather than as one
+          rail, because a span is now a thing you can pick. */}
+      {stops.map((stop, i) => {
+        if (i === 0) return null;
+        const on = onSegment(i);
+        const left = xOf(stops[i - 1].t);
+        const width = Math.max(2, xOf(stop.t) - left);
+        return (
           <span
-            className={`pointer-events-none w-full rounded-full bg-current ${
-              selected ? "opacity-100" : "opacity-55"
+            key={`line:${i}`}
+            aria-hidden="true"
+            className={`pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-full bg-current ${
+              on
+                ? "opacity-100"
+                : dimming
+                  ? "opacity-20"
+                  : hot === i || selected
+                    ? "opacity-90"
+                    : "opacity-55"
             }`}
-            style={{ height: RAIL_HEIGHT }}
+            style={{ left, width, height: on ? RAIL_HEIGHT + 1 : RAIL_HEIGHT }}
           />
-        </div>
+        );
+      })}
+
+      {/* The shape of each curve, drawn on the line it belongs to. Informational and
+          nothing else — what edits it is the graph in the panel. */}
+      {stretched ? (
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full overflow-hidden"
+          aria-hidden="true"
+        >
+          {stops.map((stop, i) =>
+            i === 0 || isLinearEase(stop.ease) ? null : (
+              <polyline
+                key={`curve:${i}`}
+                points={curvePoints(xOf(stops[i - 1].t), xOf(stop.t), stop.ease)}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1"
+                opacity={dimming && !onSegment(i) ? 0.15 : 0.6}
+              />
+            ),
+          )}
+        </svg>
       ) : null}
+
+      {/* The grips. Each covers the row's full height between its two diamonds, less
+          the clearance that keeps a reach for a diamond from landing on the span. */}
+      {stops.map((stop, i) => {
+        if (i === 0) return null;
+        const from = xOf(stops[i - 1].t) + SEGMENT_CLEAR;
+        const to = xOf(stop.t) - SEGMENT_CLEAR;
+        if (to - from < 2) return null;
+        const on = onSegment(i);
+        return (
+          <button
+            key={`grip:${i}`}
+            type="button"
+            aria-label={`${block.label} segment ${i} of ${last}`}
+            aria-pressed={on}
+            className="absolute inset-y-0 touch-none bg-transparent p-0"
+            style={{ left: from, width: to - from }}
+            onPointerEnter={() => setHot(i)}
+            onPointerLeave={() => setHot((lit) => (lit === i ? null : lit))}
+            onPointerDown={(e) => beginDrag(e, { kind: "body", index: i })}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+            onPointerCancel={onDragEnd}
+          />
+        );
+      })}
 
       {stops.map((stop, i) => {
         const on = picked.includes(entryId(prop, i));
         const end = stretched && (i === 0 || i === last);
+        // A diamond bounding a picked span fills the same way a picked keyframe
+        // does: both mean "this is what the panel is about".
+        const bounds = onSegment(i) || onSegment(i + 1);
+        const filled = on || bounds;
         return (
           <button
             key={i}
@@ -1100,9 +1300,9 @@ function KeyframeTrack({
             aria-pressed={on}
             // Picked reads on both grounds: filled, it stands out against the white
             // lane, and the halo keeps it visible on a selected bar of its own colour.
-            className={`absolute top-1/2 touch-none border p-0 ${PROP_TEXT[prop]} ${
-              on ? "border-current bg-current ring-2 ring-white" : "border-current bg-white"
-            }`}
+            className={`absolute top-1/2 touch-none border p-0 ${
+              filled ? "border-current bg-current ring-2 ring-white" : "border-current bg-white"
+            } ${dimming && !bounds ? "opacity-30" : ""}`}
             style={{
               left: xOf(stop.t),
               width: DIAMOND,
@@ -1121,6 +1321,24 @@ function KeyframeTrack({
       })}
     </div>
   );
+}
+
+/** Clearance either side of a diamond that the span's grip leaves alone, so a reach
+ *  for a keyframe lands on the keyframe. */
+const SEGMENT_CLEAR = 8;
+
+/** The band inside a property row the easing preview is drawn in, from the row's top. */
+const CURVE_TOP = 7;
+const CURVE_BOTTOM = PROPERTY_HEIGHT - 7;
+const CURVE_STEPS = 20;
+
+/** The easing curve across one span, in the row's own pixels. Overshoot runs past the
+ *  band and is clipped by the row, which is what makes it read as overshoot. */
+function curvePoints(left: number, right: number, ease: Stop["ease"]): string {
+  const width = right - left;
+  return easeSamples(ease, CURVE_STEPS)
+    .map((p) => `${(left + p.x * width).toFixed(1)},${(CURVE_BOTTOM - p.y * (CURVE_BOTTOM - CURVE_TOP)).toFixed(1)}`)
+    .join(" ");
 }
 
 /** What a press on a keyframe track grabbed. `body` is the bar between the ends. */

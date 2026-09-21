@@ -51,8 +51,9 @@ describe("newKeyframes", () => {
     const set = newKeyframes("scale", base);
     expect(set.range).toEqual([0, 1]);
     // One stop, not a pair: nothing is invented at the end to animate towards, and
-    // nothing caps where the author's own keyframes can go.
-    expect(set.stops).toEqual([{ t: 0, v: 2, ease: "linear" }]);
+    // nothing caps where the author's own keyframes can go. No easing either — an
+    // easing describes an incoming segment, and the first stop has nothing incoming.
+    expect(set.stops).toEqual([{ t: 0, v: 2 }]);
   });
 });
 

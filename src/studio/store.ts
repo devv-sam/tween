@@ -1,7 +1,9 @@
 import { create, type StateCreator } from "zustand";
 import { persist } from "zustand/middleware";
 import { clamp } from "../core/math";
-import { sampleStops } from "../core/curve";
+import { sampleStops, type Stop } from "../core/curve";
+import type { Blend } from "../core/types";
+import type { StopEase } from "../core/easing";
 import type {
   Composition,
   Distributor,
@@ -66,6 +68,7 @@ import {
   type History,
 } from "./history";
 import { clampDuration } from "./ruler";
+import { parseSegment, retimedStops, type SegmentRef } from "./segments";
 import {
   DEFAULT_FRAME,
   DEFAULT_VIEW_SCALE,
@@ -347,6 +350,20 @@ const pick = (ids: string[]): { selectedIds: string[]; selectedId: string | null
   selectedId: ids.length === 1 ? ids[0] : null,
 });
 
+/**
+ * The element selection let go of — what picking a segment does to it.
+ *
+ * Element-selected and segment-selected are exclusive states, so one arriving is
+ * always the other leaving. Kept here rather than spelled out at each call so the
+ * two can never half-swap.
+ */
+const clearElement = (): {
+  selectedIds: string[];
+  selectedId: string | null;
+  selectedPart: SelectedPart | null;
+  selectedKeys: string[];
+} => ({ ...pick([]), selectedPart: null, selectedKeys: [] });
+
 const patchTrack = (
   composition: Composition,
   layerId: string,
@@ -543,6 +560,15 @@ type StudioState = {
   /** Folded, not expanded: rows show by default, so folding is what is remembered. */
   collapsedTracks: string[];
   selectedKeys: string[];
+  /**
+   * Which segments are picked out, as `layer|property|index` ids.
+   *
+   * Exclusive with the element selection: you are editing an element or you are
+   * editing the motion between two of its keyframes, never both. Nothing is gained
+   * by a panel trying to be about two things at once, and the two have different
+   * things to say about the same track.
+   */
+  selectedSegments: string[];
   viewport: Size;
   view: View;
   history: History<Snapshot>;
@@ -573,6 +599,20 @@ type StudioState = {
    *  than replacing it, which is how a bundle is gathered. */
   selectKey: (layerId: string, id: string, additive?: boolean) => void;
   setSelectedKeys: (ids: string[]) => void;
+  /** Pick the span between two keyframes. Additive adds it to what is already picked,
+   *  or takes it back out — segments on different elements can be picked together. */
+  selectSegment: (id: string, additive?: boolean) => void;
+  setSelectedSegments: (ids: string[]) => void;
+  /** One curve written to every segment named, in a single step. Applying an easing
+   *  to five segments is one thing the author did, so it is one thing to undo. */
+  setSegmentEasing: (segmentIds: string[], ease: StopEase) => void;
+  setSegmentBlend: (segmentIds: string[], blend: Blend) => void;
+  /** How long the segment takes, in seconds. Moves its destination stop; the source
+   *  stays put. */
+  setSegmentDuration: (segmentId: string, seconds: number) => void;
+  /** Where the segment is heading. `axis` names which half of a position is written;
+   *  every other property only has the one. */
+  setSegmentValue: (segmentId: string, axis: "x" | "y", v: number) => void;
   renameLayer: (layerId: string, name: string) => void;
   addKeyframes: (layerId: string, target: KeyTarget) => void;
   removeKeyframes: (layerId: string, target: KeyTarget) => void;
@@ -772,6 +812,48 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     );
   };
 
+  /**
+   * One write across every segment named, wherever on the composition they live.
+   *
+   * Grouped onto the tracks in a single pass so a curve applied to segments on three
+   * different elements is still one edit — which is what makes it one thing to undo.
+   */
+  const patchSegments = (
+    ids: string[],
+    key: string | null,
+    patch: (stop: Stop, ref: SegmentRef) => Partial<Stop>,
+  ): void => {
+    const refs = ids
+      .map(parseSegment)
+      .filter((r): r is SegmentRef => r !== null);
+    if (refs.length === 0) return;
+    edit(key, (s) => ({
+      composition: {
+        ...s.composition,
+        tracks: s.composition.tracks.map((tr) => {
+          const mine = refs.filter((r) => r.layerId === tr.layer.id);
+          if (mine.length === 0) return tr;
+          const keyframes: Record<string, KeyframeSet> = { ...(tr.keyframes ?? {}) };
+          for (const ref of mine) {
+            // Position is two sets on shared times, so both axes take the change.
+            const axes = ref.property === "position" ? ["x", "y"] : [ref.property];
+            for (const axis of axes) {
+              const set = keyframes[axis];
+              if (!set || ref.index < 1 || ref.index >= set.stops.length) continue;
+              keyframes[axis] = {
+                ...set,
+                stops: set.stops.map((st, i) =>
+                  i === ref.index ? { ...st, ...patch(st, ref) } : st,
+                ),
+              };
+            }
+          }
+          return { ...tr, keyframes };
+        }),
+      },
+    }));
+  };
+
   return {
     composition: emptyComposition(),
     moduleLibrary: [],
@@ -788,6 +870,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     selectedPart: null,
     collapsedTracks: [],
     selectedKeys: [],
+    selectedSegments: [],
     viewport: { width: 0, height: 0 },
     view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
     history: emptyHistory<Snapshot>(),
@@ -948,6 +1031,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       set((s) => ({
         ...pick(layerId === null ? [] : [layerId]),
         selectedPart: null,
+        selectedSegments: [],
         // The picked keyframes are read against the selected element, so they mean
         // nothing once a different one is selected.
         selectedKeys: layerId === s.selectedId ? s.selectedKeys : [],
@@ -957,6 +1041,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     setSelectedIds: (ids) =>
       set((s) => ({
         ...pick(ids),
+        selectedSegments: [],
         selectedPart: ids.length === 1 && ids[0] === s.selectedId ? s.selectedPart : null,
         selectedKeys: ids.length === 1 && ids[0] === s.selectedId ? s.selectedKeys : [],
       })),
@@ -970,6 +1055,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
           : [...s.selectedIds, id];
         return {
           ...pick(next),
+          selectedSegments: [],
           selectedPart: next.length === 1 && next[0] === s.selectedId ? s.selectedPart : null,
           selectedKeys: next.length === 1 && next[0] === s.selectedId ? s.selectedKeys : [],
         };
@@ -979,6 +1065,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       set((s) => ({
         ...pick([layerId]),
         selectedPart: part,
+        selectedSegments: [],
         selectedKeys: layerId === s.selectedId ? s.selectedKeys : [],
       })),
 
@@ -995,6 +1082,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         const held = same ? s.selectedKeys : [];
         return {
           ...pick([layerId]),
+          selectedSegments: [],
           selectedKeys: additive
             ? held.includes(id)
               ? held.filter((k) => k !== id)
@@ -1006,6 +1094,86 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       }),
 
     setSelectedKeys: (ids) => set({ selectedKeys: ids }),
+
+    selectSegment: (id, additive = false) =>
+      set((s) => {
+        const held = s.selectedSegments;
+        const next = additive
+          ? held.includes(id)
+            ? held.filter((k) => k !== id)
+            : [...held, id]
+          : [id];
+        return { ...clearElement(), selectedSegments: next };
+      }),
+
+    setSelectedSegments: (ids) =>
+      set(() =>
+        ids.length === 0
+          ? { selectedSegments: [] }
+          : { ...clearElement(), selectedSegments: ids },
+      ),
+
+    setSegmentEasing: (segmentIds, ease) => {
+      patchSegments(segmentIds, null, () => ({ ease }));
+      get().sealHistory();
+    },
+
+    setSegmentBlend: (segmentIds, blend) => {
+      patchSegments(segmentIds, null, () => ({ blend }));
+      get().sealHistory();
+    },
+
+    setSegmentDuration: (segmentId, seconds) => {
+      const ref = parseSegment(segmentId);
+      if (!ref) return;
+      const { composition } = get();
+      const track = composition.tracks.find((tr) => tr.layer.id === ref.layerId);
+      if (!track) return;
+      const axes = ref.property === "position" ? ["x", "y"] : [ref.property];
+      const lead = track.keyframes?.[axes[0]];
+      if (!lead) return;
+      // Both axes of a position share every stop time, so the time is worked out once
+      // on the leading axis and the other is moved to match rather than re-clamped.
+      const moved = retimedStops(lead.stops, ref.index, seconds, lead.range, composition.duration);
+      const t = moved[ref.index]?.t;
+      if (t === undefined) return;
+      edit(`segment-time:${segmentId}`, (s) =>
+        patchTrack(s.composition, ref.layerId, (tr) => {
+          const keyframes: Record<string, KeyframeSet> = { ...(tr.keyframes ?? {}) };
+          for (const axis of axes) {
+            const set = keyframes[axis];
+            if (!set) continue;
+            keyframes[axis] = {
+              ...set,
+              stops: set.stops.map((st, i) => (i === ref.index ? { ...st, t } : st)),
+            };
+          }
+          return { ...tr, keyframes };
+        }),
+      );
+    },
+
+    setSegmentValue: (segmentId, axis, v) => {
+      const ref = parseSegment(segmentId);
+      if (!ref) return;
+      const target = ref.property === "position" ? axis : ref.property;
+      edit(`segment-value:${segmentId}:${axis}`, (s) =>
+        patchTrack(s.composition, ref.layerId, (tr) => {
+          const set = tr.keyframes?.[target];
+          if (!set || ref.index >= set.stops.length) return tr;
+          return {
+            ...tr,
+            keyframes: {
+              ...tr.keyframes,
+              [target]: {
+                ...set,
+                stops: set.stops.map((st, i) => (i === ref.index ? { ...st, v } : st)),
+              },
+            },
+          };
+        }),
+      );
+    },
 
     renameLayer: (layerId, name) => {
       edit(`rename:${layerId}`, (s) => patchTrack(s.composition, layerId, (tr) => ({
@@ -1026,7 +1194,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
           ? Boolean(track.keyframes?.x && track.keyframes?.y)
           : Boolean(track.keyframes?.[target]);
       if (held) {
-        set({ ...pick([layerId]), selectedPart: part });
+        set({ ...pick([layerId]), selectedPart: part, selectedSegments: [] });
         return;
       }
       // Position writes both axes, in lockstep from the start.
@@ -1037,6 +1205,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       edit(null, (s) => ({
         ...pick([layerId]),
         selectedPart: part,
+        selectedSegments: [],
         // The new row has to be visible, so a folded element unfolds.
         collapsedTracks: s.collapsedTracks.filter((id) => id !== layerId),
         ...patchTrack(s.composition, layerId, (tr) => ({
@@ -2081,6 +2250,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         ...pick([]),
         selectedPart: null,
         selectedKeys: [],
+        selectedSegments: [],
         composition: {
           ...s.composition,
           tracks: s.composition.tracks.filter((tr) => !gone.has(tr.layer.id)),

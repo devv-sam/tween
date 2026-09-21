@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { useStudio, type ImageAsset } from "./store";
 import { MIN_DURATION } from "./ruler";
 import { DEFAULT_FRAME } from "./view";
+import { segmentId } from "./segments";
+import { PRESETS } from "../core/easing";
 
 const asset: ImageAsset = {
   id: "asset-1",
@@ -24,6 +26,7 @@ const seed = () => {
     selectedPart: null,
     collapsedTracks: [],
     selectedKeys: [],
+    selectedSegments: [],
   });
   useStudio.getState().placeElement(asset.id, { x: 200, y: 200 });
   useStudio.setState({ history: { past: [], future: [], key: null, at: 0 } });
@@ -389,8 +392,8 @@ describe("a canvas gesture on a keyframed property", () => {
 
     // A keyframe at the playhead holding what the gesture landed on.
     expect(keyframes().scale.stops).toEqual([
-      { t: 0, v: 1, ease: "linear" },
-      { t: 0.5, v: 2, ease: "linear" },
+      { t: 0, v: 1 },
+      { t: 0.5, v: 2, ease: { kind: "linear" } },
     ]);
     // The base is what the curve overrides, so the gesture leaves it alone.
     expect(layer().base.scaleX).toBe(1);
@@ -413,8 +416,8 @@ describe("a canvas gesture on a keyframed property", () => {
     state().captureTransform(id, { scaleX: 2, scaleY: 1.5 });
 
     expect(keyframes().scaleX.stops).toEqual([
-      { t: 0, v: 1, ease: "linear" },
-      { t: 0.5, v: 2, ease: "linear" },
+      { t: 0, v: 1 },
+      { t: 0.5, v: 2, ease: { kind: "linear" } },
     ]);
     expect(keyframes().scaleY).toBeUndefined();
     expect(layer().base.scaleX).toBe(1);
@@ -1121,5 +1124,149 @@ describe("keying a property across a selection", () => {
     state().sealHistory();
     state().undo();
     for (const tr of tracks()) expect(tr.keyframes?.x).toBeUndefined();
+  });
+});
+
+describe("picking the span between two keyframes", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const stopsOf = (prop: string) =>
+    state().composition.tracks[0].keyframes?.[prop]?.stops ?? [];
+
+  /** An element with a rotation curve of three stops, so it carries two segments. */
+  const keyed = (): string => {
+    const id = layer().id;
+    state().addKeyframes(id, "rotation");
+    state().setKeyframeStops(id, "rotation", [
+      { t: 0, v: 0 },
+      { t: 0.5, v: 90 },
+      { t: 1, v: 180 },
+    ]);
+    state().sealHistory();
+    return id;
+  };
+
+  it("lets go of the element, because the two are never both being edited", () => {
+    const id = keyed();
+    expect(state().selectedId).toBe(id);
+
+    state().selectSegment(segmentId({ layerId: id, property: "rotation", index: 1 }));
+    expect(state().selectedSegments).toHaveLength(1);
+    expect(state().selectedId).toBeNull();
+    expect(state().selectedPart).toBeNull();
+    expect(state().selectedKeys).toEqual([]);
+  });
+
+  it("lets go of the segments as soon as an element is picked again", () => {
+    const id = keyed();
+    state().selectSegment(segmentId({ layerId: id, property: "rotation", index: 1 }));
+
+    state().select(id);
+    expect(state().selectedSegments).toEqual([]);
+    expect(state().selectedId).toBe(id);
+  });
+
+  it("adds to the selection, and takes back out what is already in it", () => {
+    const id = keyed();
+    const first = segmentId({ layerId: id, property: "rotation", index: 1 });
+    const second = segmentId({ layerId: id, property: "rotation", index: 2 });
+
+    state().selectSegment(first);
+    state().selectSegment(second, true);
+    expect(state().selectedSegments).toEqual([first, second]);
+
+    state().selectSegment(first, true);
+    expect(state().selectedSegments).toEqual([second]);
+  });
+
+  it("writes one curve to every segment picked, in a single step", () => {
+    const id = keyed();
+    const ids = [1, 2].map((i) => segmentId({ layerId: id, property: "rotation", index: i }));
+    const before = state().history.past.length;
+
+    state().setSegmentEasing(ids, PRESETS["ease out"]);
+    expect(stopsOf("rotation").map((s) => s.ease)).toEqual([
+      undefined,
+      PRESETS["ease out"],
+      PRESETS["ease out"],
+    ]);
+    expect(state().history.past).toHaveLength(before + 1);
+
+    // And one step to put back, not two.
+    state().undo();
+    expect(stopsOf("rotation").every((s) => s.ease === undefined)).toBe(true);
+  });
+
+  it("reaches segments on two different elements at once", () => {
+    const first = keyed();
+    useStudio.getState().placeElement(asset.id, { x: 400, y: 400 });
+    const second = useStudio.getState().selectedId!;
+    state().addKeyframes(second, "opacity");
+    state().setKeyframeStops(second, "opacity", [
+      { t: 0, v: 1 },
+      { t: 1, v: 0 },
+    ]);
+    state().sealHistory();
+
+    state().setSegmentEasing(
+      [
+        segmentId({ layerId: first, property: "rotation", index: 1 }),
+        segmentId({ layerId: second, property: "opacity", index: 1 }),
+      ],
+      PRESETS["in-out"],
+    );
+
+    const tracks = state().composition.tracks;
+    expect(tracks[0].keyframes?.rotation.stops[1].ease).toEqual(PRESETS["in-out"]);
+    expect(tracks[1].keyframes?.opacity.stops[1].ease).toEqual(PRESETS["in-out"]);
+  });
+
+  it("moves the destination when the duration changes, and holds the source", () => {
+    const id = keyed();
+    state().setSegmentDuration(segmentId({ layerId: id, property: "rotation", index: 1 }), 0.75);
+
+    // Three seconds of composition, so a 0.75s first segment lands its stop at 0.25.
+    expect(stopsOf("rotation").map((s) => s.t)).toEqual([0, 0.25, 1]);
+  });
+
+  it("keeps both axes of a position in lockstep when one is retimed", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    state().setPositionStops(id, {
+      x: [{ t: 0, v: 0 }, { t: 0.5, v: 300 }],
+      y: [{ t: 0, v: 0 }, { t: 0.5, v: 120 }],
+    });
+    state().sealHistory();
+
+    state().setSegmentDuration(segmentId({ layerId: id, property: "position", index: 1 }), 0.6);
+    expect(stopsOf("x").map((s) => s.t)).toEqual(stopsOf("y").map((s) => s.t));
+    expect(stopsOf("x")[1].t).toBeCloseTo(0.2, 6);
+  });
+
+  it("writes one axis of a position's destination and leaves the other alone", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    state().setPositionStops(id, {
+      x: [{ t: 0, v: 0 }, { t: 1, v: 300 }],
+      y: [{ t: 0, v: 0 }, { t: 1, v: 120 }],
+    });
+    state().sealHistory();
+
+    state().setSegmentValue(segmentId({ layerId: id, property: "position", index: 1 }), "y", 400);
+    expect(stopsOf("x")[1].v).toBe(300);
+    expect(stopsOf("y")[1].v).toBe(400);
+  });
+
+  it("puts the blend on the stop the segment arrives at", () => {
+    const id = keyed();
+    state().setSegmentBlend([segmentId({ layerId: id, property: "rotation", index: 2 })], "add");
+    expect(stopsOf("rotation").map((s) => s.blend)).toEqual([undefined, undefined, "add"]);
+  });
+
+  it("ignores an id that names no segment rather than writing somewhere else", () => {
+    const id = keyed();
+    state().setSegmentEasing([`${id}|rotation|9`, "nonsense"], PRESETS["ease in"]);
+    expect(stopsOf("rotation").every((s) => s.ease === undefined)).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { clamp } from "../core/math";
 import { sampleStops, type Stop } from "../core/curve";
-import type { Easing } from "../core/easing";
+import { defaultEase, type StopEase } from "../core/easing";
 import { isLinked, resolveModule } from "../core/library";
 import type {
   Distributor,
@@ -107,13 +107,6 @@ export const fromDisplay = (t: KeyTarget, v: number, size?: DesignSize): number 
   return against > 0 ? v / against : v;
 };
 
-export const EASINGS: { value: Easing; label: string }[] = [
-  { value: "linear", label: "linear" },
-  { value: "in", label: "ease in" },
-  { value: "out", label: "ease out" },
-  { value: "inout", label: "ease in-out" },
-];
-
 /**
  * One muted colour per property, so two blocks in the same lane are told apart at a
  * glance without competing with the frame.
@@ -164,7 +157,7 @@ export function baseValue(base: Transform, prop: KeyProp | TrackProp): number {
  *  a second one at the end would be motion nobody wrote, and a cap on where the
  *  motion they do write is allowed to go. */
 export function defaultStops(v: number): Stop[] {
-  return [{ t: 0, v, ease: "linear" }];
+  return [{ t: 0, v }];
 }
 
 /** A fresh standalone set: flat on the element's current value, spanning the whole
@@ -243,7 +236,7 @@ export function mergePosition(x: KeyframeSet, y: KeyframeSet): PositionSets {
 
   /** The easing an axis carries at an absolute time: its own stop's when it has one
    *  there, otherwise the one governing the segment that time falls inside. */
-  const easeAt = (set: KeyframeSet, at: number): Easing | undefined => {
+  const easeAt = (set: KeyframeSet, at: number): StopEase | undefined => {
     const own = set.stops.find((s) => Math.abs(absoluteT(set, s) - at) < SAME_STOP);
     if (own) return own.ease;
     return set.stops.find((s) => absoluteT(set, s) > at)?.ease;
@@ -605,7 +598,7 @@ export function stopAtTime(stops: Stop[], t: number, v: number): Stop[] {
   const at = stops.findIndex((s) => Math.abs(s.t - t) < SAME_STOP);
   if (at >= 0) return stops.map((s, i) => (i === at ? { ...s, v } : s));
   const before = stops.filter((s) => s.t < t).pop();
-  return sortStops([...stops, { t, v, ease: before?.ease ?? "linear" }]);
+  return sortStops([...stops, { t, v, ease: before?.ease ?? defaultEase() }]);
 }
 
 /** Remove a stop, never below the one a curve needs to hold a value at all. Emptying
