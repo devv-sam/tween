@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Driver, Track, Transform } from "../core/types";
+import type { Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
 import {
-  DRIVERS,
   FPS_CHOICES,
   RESOLUTIONS,
   normalizeHex,
@@ -28,7 +27,11 @@ import {
   type KeyTarget,
   type Range,
 } from "./modules";
-import { DistributorSection, ModuleInspector, ModuleStackSection } from "./ModuleStack";
+import {
+  DistributorSection,
+  ModuleInspector,
+  ModuleStackSection,
+} from "./ModuleStack";
 import { EaseSelect, EasingSection } from "./EasingControls";
 import {
   MIN_SEGMENT,
@@ -39,6 +42,7 @@ import {
   type SegmentView,
 } from "./segments";
 import { BenchPanel } from "./ModuleShelf";
+import { ZOOM_PRESETS, zoomPercent } from "./view";
 import {
   BOX,
   DiamondIcon,
@@ -65,7 +69,9 @@ export function Inspector() {
   const selectedId = useStudio((s) => s.selectedId);
   const selectedIds = useStudio((s) => s.selectedIds);
   const bench = useStudio((s) => s.bench);
-  const index = composition.tracks.findIndex((tr) => tr.layer.id === selectedId);
+  const index = composition.tracks.findIndex(
+    (tr) => tr.layer.id === selectedId,
+  );
   const track = index < 0 ? null : composition.tracks[index];
 
   return (
@@ -80,7 +86,11 @@ export function Inspector() {
         {bench ? (
           <BenchPanel bench={bench} />
         ) : (
-          <ElementPanels track={track} index={index} selectedIds={selectedIds} />
+          <ElementPanels
+            track={track}
+            index={index}
+            selectedIds={selectedIds}
+          />
         )}
       </div>
     </aside>
@@ -150,9 +160,7 @@ function SegmentPanel({ ids }: { ids: string[] }) {
         </button>
       </div>
 
-      {one ? (
-        <SegmentDuration segment={one} />
-      ) : null}
+      {one ? <SegmentDuration segment={one} /> : null}
 
       <EasingSection
         ease={sharedEase(picked)}
@@ -160,7 +168,6 @@ function SegmentPanel({ ids }: { ids: string[] }) {
         onChange={write}
         note={one ? undefined : `applying to ${picked.length} segments`}
       />
-
     </section>
   );
 }
@@ -176,7 +183,9 @@ function SegmentDuration({ segment }: { segment: SegmentView }) {
           value={segment.to - segment.from}
           step={0.05}
           min={MIN_SEGMENT}
-          onChange={(v) => useStudio.getState().setSegmentDuration(segment.id, v)}
+          onChange={(v) =>
+            useStudio.getState().setSegmentDuration(segment.id, v)
+          }
         />
       </div>
     </div>
@@ -192,7 +201,7 @@ function SegmentDuration({ segment }: { segment: SegmentView }) {
  * otherwise.
  */
 function CompositionPanel() {
-  const { fps, driver, background } = useStudio((s) => s.composition);
+  const { fps, background } = useStudio((s) => s.composition);
   const frame = useStudio((s) => s.frame);
 
   return (
@@ -205,8 +214,15 @@ function CompositionPanel() {
           label="fps"
           value={String(fps)}
           onChange={(v) => useStudio.getState().setFps(Number(v))}
-          options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
+          options={FPS_CHOICES.map((f) => ({
+            value: String(f),
+            label: String(f),
+          }))}
         />
+
+        <ZoomField />
+
+        <BackgroundField value={background ?? "#ffffff"} />
 
         <SelectField
           label="res"
@@ -216,14 +232,11 @@ function CompositionPanel() {
             const size = resolutionFor(v);
             if (size) useStudio.getState().setResolution(size);
           }}
-          options={RESOLUTIONS.map((r) => ({ value: resolutionKey(r.size), label: r.label }))}
+          options={RESOLUTIONS.map((r) => ({
+            value: resolutionKey(r.size),
+            label: r.label,
+          }))}
         />
-
-        <BackgroundField value={background ?? "#ffffff"} />
-
-        <div className={`${BOX} justify-between px-1`} title="driver">
-          <DriverToggle value={driver.kind} />
-        </div>
       </div>
     </section>
   );
@@ -269,26 +282,26 @@ function BackgroundField({ value }: { value: string }) {
   );
 }
 
-/** Two segments, one value. `input` is declared here before anything evaluates it. */
-function DriverToggle({ value }: { value: Driver["kind"] }) {
+function ZoomField() {
+  const zoom = useStudio((s) => s.view.zoom);
+  const current = zoomPercent(zoom);
+  const percents = [
+    ...new Set([...ZOOM_PRESETS.map(zoomPercent), current]),
+  ].sort((a, b) => a - b);
+
   return (
-    <div className="flex w-full overflow-hidden rounded-[5px]">
-      {DRIVERS.map((kind) => (
-        <button
-          key={kind}
-          type="button"
-          aria-pressed={value === kind}
-          className={`flex-1 py-0.5 text-[10px] ${
-            value === kind
-              ? "bg-[#e8f4ff] text-[#0d99ff]"
-              : "text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
-          }`}
-          onClick={() => useStudio.getState().setDriver(kind)}
-        >
-          {kind}
-        </button>
-      ))}
-    </div>
+    <SelectField
+      label="zoom"
+      value={String(current)}
+      onChange={(v) => {
+        const { viewport, zoomAroundPoint } = useStudio.getState();
+        zoomAroundPoint(
+          { x: viewport.width / 2, y: viewport.height / 2 },
+          Number(v) / 100,
+        );
+      }}
+      options={percents.map((p) => ({ value: String(p), label: `${p}%` }))}
+    />
   );
 }
 
@@ -333,7 +346,8 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       ? selectedPart.index
       : null;
   const activeKeyframes =
-    selectedPart?.kind === "keyframes" && hasKeyframes(track, selectedPart.property)
+    selectedPart?.kind === "keyframes" &&
+    hasKeyframes(track, selectedPart.property)
       ? selectedPart.property
       : null;
 
@@ -341,7 +355,11 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
     <>
       {/* What the element is, before anything animates it. The transform below is
           what happens to it; this is the thing being happened to. */}
-      <ElementSection track={track} index={index} activeKeyframes={activeKeyframes} />
+      <ElementSection
+        track={track}
+        index={index}
+        activeKeyframes={activeKeyframes}
+      />
 
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
@@ -413,7 +431,9 @@ function SelectionPanel({ ids }: { ids: string[] }) {
       mixed={read[prop] === null}
       join={join}
       onChange={(v) => useStudio.getState().setSelectionTransform(ids, prop, v)}
-      onStep={(by) => useStudio.getState().nudgeSelectionTransform(ids, prop, by)}
+      onStep={(by) =>
+        useStudio.getState().nudgeSelectionTransform(ids, prop, by)
+      }
     />
   );
 
@@ -430,7 +450,11 @@ function SelectionPanel({ ids }: { ids: string[] }) {
           <div className="min-w-0 flex-1">{axis("x", "left")}</div>
           <div className="min-w-0 flex-1">{axis("y", "right")}</div>
         </div>
-        <SelectionKeyButton ids={ids} target="position" keyframed={keyed("position")} />
+        <SelectionKeyButton
+          ids={ids}
+          target="position"
+          keyframed={keyed("position")}
+        />
       </div>
 
       <p className={`${SUBLABEL} mb-1`}>rotation</p>
@@ -445,13 +469,19 @@ function SelectionPanel({ ids }: { ids: string[] }) {
             }
             value={read.rotation ?? 0}
             mixed={read.rotation === null}
-            onChange={(v) => useStudio.getState().setSelectionTransform(ids, "rotation", v)}
+            onChange={(v) =>
+              useStudio.getState().setSelectionTransform(ids, "rotation", v)
+            }
             onStep={(by) =>
               useStudio.getState().nudgeSelectionTransform(ids, "rotation", by)
             }
           />
         </div>
-        <SelectionKeyButton ids={ids} target="rotation" keyframed={keyed("rotation")} />
+        <SelectionKeyButton
+          ids={ids}
+          target="rotation"
+          keyframed={keyed("rotation")}
+        />
       </div>
 
       <p className={`${SUBLABEL} mb-1`}>opacity</p>
@@ -473,7 +503,11 @@ function SelectionPanel({ ids }: { ids: string[] }) {
             onStep={(by) => useStudio.getState().nudgeOpacity(ids, by)}
           />
         </div>
-        <SelectionKeyButton ids={ids} target="opacity" keyframed={keyed("opacity")} />
+        <SelectionKeyButton
+          ids={ids}
+          target="opacity"
+          keyframed={keyed("opacity")}
+        />
       </div>
     </section>
   );
@@ -577,7 +611,10 @@ function ElementSection({
   // Only an element that *is* one part of a drawing has a node to name. What is left
   // of a file after parts came off it is still that file, however much it lost.
   const part =
-    asset && isSvg(asset) && asset.takenFrom !== undefined && asset.nodes.length === 1
+    asset &&
+    isSvg(asset) &&
+    asset.takenFrom !== undefined &&
+    asset.nodes.length === 1
       ? asset
       : null;
   const name = layerName(layer, asset?.name, index);
@@ -586,8 +623,8 @@ function ElementSection({
    *  and the box on the canvas cannot disagree about how wide the thing is. */
   const state = useMemo(
     () =>
-      renderState(composition, t, library).find((it) => it.id === layer.id)?.state ??
-      layer.base,
+      renderState(composition, t, library).find((it) => it.id === layer.id)
+        ?.state ?? layer.base,
     [composition, t, library, layer],
   );
 
@@ -622,7 +659,9 @@ function ElementSection({
         <>
           <p className={`${SUBLABEL} mb-1`}>node</p>
           <div className={`${BOX} mb-2 justify-between`} title={part.name}>
-            <span className="min-w-0 truncate text-[11px] text-[#555]">{part.name}</span>
+            <span className="min-w-0 truncate text-[11px] text-[#555]">
+              {part.name}
+            </span>
           </div>
         </>
       ) : null}
@@ -631,8 +670,24 @@ function ElementSection({
         <>
           <p className={`${SUBLABEL} mb-1`}>dimensions</p>
           <div className="mb-2 flex items-center gap-1.5">
-            {cell("scaleX", <SizeField axis="scaleX" track={track} state={state} size={size} />)}
-            {cell("scaleY", <SizeField axis="scaleY" track={track} state={state} size={size} />)}
+            {cell(
+              "scaleX",
+              <SizeField
+                axis="scaleX"
+                track={track}
+                state={state}
+                size={size}
+              />,
+            )}
+            {cell(
+              "scaleY",
+              <SizeField
+                axis="scaleY"
+                track={track}
+                state={state}
+                size={size}
+              />,
+            )}
             <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
           </div>
         </>
@@ -649,7 +704,9 @@ function ElementSection({
             step={PROP_STEP.opacity}
             min={0}
             max={1}
-            onChange={(v) => useStudio.getState().setLayerBase(layer.id, { opacity: v })}
+            onChange={(v) =>
+              useStudio.getState().setLayerBase(layer.id, { opacity: v })
+            }
           />,
         )}
       </div>
@@ -666,7 +723,9 @@ function ElementSection({
  */
 function CentreButton({ layerId, axis }: { layerId: string; axis: "x" | "y" }) {
   const label =
-    axis === "x" ? "align centre on the vertical axis" : "align centre on the horizontal axis";
+    axis === "x"
+      ? "align centre on the vertical axis"
+      : "align centre on the horizontal axis";
   return (
     <button
       type="button"
@@ -675,7 +734,11 @@ function CentreButton({ layerId, axis }: { layerId: string; axis: "x" | "y" }) {
       className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
       onClick={() => useStudio.getState().centreLayer(layerId, axis)}
     >
-      {axis === "x" ? <AlignCentreVerticalIcon /> : <AlignCentreHorizontalIcon />}
+      {axis === "x" ? (
+        <AlignCentreVerticalIcon />
+      ) : (
+        <AlignCentreHorizontalIcon />
+      )}
     </button>
   );
 }
@@ -753,7 +816,8 @@ function SizeField({
     const patch: Partial<Transform> = { [axis]: next };
     // A ratio is only a ratio while there is something to take it of: an element
     // already flattened to nothing has no proportion left to keep.
-    if (locked && state[axis] !== 0) patch[other] = state[other] * (next / state[axis]);
+    if (locked && state[axis] !== 0)
+      patch[other] = state[other] * (next / state[axis]);
     useStudio.getState().captureTransform(track.layer.id, patch);
   };
 
@@ -771,8 +835,7 @@ function SizeField({
 }
 
 /**
- * The aspect lock, the same one the canvas puts beside a selection. Either place
- * toggles it, and a resize from either place obeys it.
+ * The aspect lock. A resize from the panel or from the canvas obeys it.
  *
  * Built like the separate-position button below it rather than like a field: both are
  * a switch riding at the end of a row, saying how the numbers beside them behave, so
@@ -787,10 +850,8 @@ function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
       aria-pressed={locked}
       title={label}
       className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
-        locked
-          ? "bg-[#e8f4ff] text-[#0d99ff]"
-          : "text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
-      }`}
+        locked ? "text-[#0d99ff]" : "text-[#c0c0c0] hover:text-[#555]"
+      } hover:bg-[#f5f5f5]`}
       onClick={() => useStudio.getState().toggleLayerLock(layerId)}
     >
       {locked ? <LockIcon size={13} /> : <LockOpenIcon size={13} />}
@@ -814,19 +875,35 @@ function BaseTransform({
 }) {
   const { id, base, separatePosition } = track.layer;
   const separate = Boolean(separatePosition);
-  const set = (patch: Partial<Transform>) => useStudio.getState().setLayerBase(id, patch);
+  const set = (patch: Partial<Transform>) =>
+    useStudio.getState().setLayerBase(id, patch);
 
   const cell = (target: KeyTarget, field: ReactNode) => (
-    <KeyCell layerId={id} target={target} track={track} activeKeyframes={activeKeyframes}>
+    <KeyCell
+      layerId={id}
+      target={target}
+      track={track}
+      activeKeyframes={activeKeyframes}
+    >
       {field}
     </KeyCell>
   );
 
   const x = (join?: Join) => (
-    <NumberField label="x" value={base.x} onChange={(v) => set({ x: v })} join={join} />
+    <NumberField
+      label="x"
+      value={base.x}
+      onChange={(v) => set({ x: v })}
+      join={join}
+    />
   );
   const y = (join?: Join) => (
-    <NumberField label="y" value={base.y} onChange={(v) => set({ y: v })} join={join} />
+    <NumberField
+      label="y"
+      value={base.y}
+      onChange={(v) => set({ y: v })}
+      join={join}
+    />
   );
 
   return (
@@ -905,7 +982,10 @@ function KeyframeButton({
       onClick={() => {
         const store = useStudio.getState();
         if (!keyframed) return store.addKeyframes(layerId, target);
-        store.selectPart(layerId, selected ? null : { kind: "keyframes", property: target });
+        store.selectPart(
+          layerId,
+          selected ? null : { kind: "keyframes", property: target },
+        );
       }}
     >
       <DiamondIcon filled={keyframed} />
@@ -915,7 +995,13 @@ function KeyframeButton({
 
 /** Pressed, x and y are two properties with two sets of keyframes; released, they are
  *  one. The keyframes survive the trip either way. */
-function SeparateButton({ layerId, separate }: { layerId: string; separate: boolean }) {
+function SeparateButton({
+  layerId,
+  separate,
+}: {
+  layerId: string;
+  separate: boolean;
+}) {
   return (
     <button
       type="button"
@@ -927,7 +1013,9 @@ function SeparateButton({ layerId, separate }: { layerId: string; separate: bool
           ? "bg-[#e8f4ff] text-[#0d99ff]"
           : "text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
       }`}
-      onClick={() => useStudio.getState().setSeparatePosition(layerId, !separate)}
+      onClick={() =>
+        useStudio.getState().setSeparatePosition(layerId, !separate)
+      }
     >
       <SeparatorVerticalIcon />
     </button>
@@ -969,16 +1057,23 @@ function KeyframeEditor({ track }: { track: Track }) {
 
   const stopsOf = (property: KeyTarget): Stop[] => {
     const position = property === "position" ? positionSets(track) : null;
-    return position ? position.x.stops : (track.keyframes?.[property]?.stops ?? []);
+    return position
+      ? position.x.stops
+      : (track.keyframes?.[property]?.stops ?? []);
   };
   const rangeOf = (property: KeyTarget): Range => {
     const position = property === "position" ? positionSets(track) : null;
-    return position ? position.x.range : (track.keyframes?.[property]?.range ?? [0, 1]);
+    return position
+      ? position.x.range
+      : (track.keyframes?.[property]?.range ?? [0, 1]);
   };
 
   /** One edit reaching both axes of a position, or the single set behind any other
    *  property — the two writers the store already has, chosen by the property. */
-  const writeStops = (property: KeyTarget, fn: (stops: Stop[], axis: "x" | "y") => Stop[]) => {
+  const writeStops = (
+    property: KeyTarget,
+    fn: (stops: Stop[], axis: "x" | "y") => Stop[],
+  ) => {
     const store = useStudio.getState();
     const position = property === "position" ? positionSets(track) : null;
     if (position) {
@@ -989,7 +1084,8 @@ function KeyframeEditor({ track }: { track: Track }) {
       return;
     }
     const set = track.keyframes?.[property];
-    if (set) store.setKeyframeStops(layerId, property as KeyProp, fn(set.stops, "x"));
+    if (set)
+      store.setKeyframeStops(layerId, property as KeyProp, fn(set.stops, "x"));
   };
 
   /**
@@ -1015,15 +1111,26 @@ function KeyframeEditor({ track }: { track: Track }) {
   const setEntryTime = (entry: LogEntry, seconds: number) => {
     const t = secondsToT(seconds, rangeOf(entry.property), duration);
     writeStops(entry.property, (stops) => patchStop(stops, entry.index, { t }));
-    followMove(entry.property, entry.index, indexAfterMove(stopsOf(entry.property), entry.index, t));
+    followMove(
+      entry.property,
+      entry.index,
+      indexAfterMove(stopsOf(entry.property), entry.index, t),
+    );
   };
 
   const setEntryEase = (entry: LogEntry, ease: EasingDef) =>
-    writeStops(entry.property, (stops) => patchStop(stops, entry.index, { ease }));
+    writeStops(entry.property, (stops) =>
+      patchStop(stops, entry.index, { ease }),
+    );
 
   /** A value on one side of the arrow: `to` is the keyframe itself, `from` is the one
    *  before it, which is where the property was coming from. */
-  const setEntryValue = (entry: LogEntry, side: "from" | "to", axis: "x" | "y", v: number) => {
+  const setEntryValue = (
+    entry: LogEntry,
+    side: "from" | "to",
+    axis: "x" | "y",
+    v: number,
+  ) => {
     const index = side === "to" ? entry.index : entry.index - 1;
     if (index < 0) return;
     const stored = fromDisplay(entry.property, v, size);
@@ -1039,7 +1146,11 @@ function KeyframeEditor({ track }: { track: Track }) {
   const saveModule = (name: string) => {
     // The library that would hold this does not exist yet, so the bundle is named and
     // acknowledged and the keyframes stay where they are.
-    console.log("module saved (coming soon)", { name, layerId, entries: selectedKeys });
+    console.log("module saved (coming soon)", {
+      name,
+      layerId,
+      entries: selectedKeys,
+    });
     setToast("module saved (coming soon)");
     setNaming(false);
     useStudio.getState().setSelectedKeys([]);
@@ -1077,7 +1188,10 @@ function KeyframeEditor({ track }: { track: Track }) {
             {picked.length} keyframes picked
           </p>
           {naming ? (
-            <ModuleNameField onConfirm={saveModule} onCancel={() => setNaming(false)} />
+            <ModuleNameField
+              onConfirm={saveModule}
+              onCancel={() => setNaming(false)}
+            />
           ) : (
             <button
               type="button"
@@ -1091,7 +1205,10 @@ function KeyframeEditor({ track }: { track: Track }) {
       )}
 
       {toast ? (
-        <p role="status" className="mt-2 rounded bg-[#f5f5f5] px-2 py-1 text-[10px] text-[#555]">
+        <p
+          role="status"
+          className="mt-2 rounded bg-[#f5f5f5] px-2 py-1 text-[10px] text-[#555]"
+        >
           {toast}
         </p>
       ) : null}
@@ -1178,7 +1295,11 @@ function KeyframeFields({
             onChange={onTime}
           />
         </div>
-        <EaseSelect className="min-w-0 flex-1" ease={entry.ease} onChange={onEase} />
+        <EaseSelect
+          className="min-w-0 flex-1"
+          ease={entry.ease}
+          onChange={onEase}
+        />
       </div>
 
       {axes.map((axis) => (

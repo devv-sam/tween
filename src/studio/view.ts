@@ -19,6 +19,7 @@ export const DEFAULT_VIEW_SCALE = 0.5;
 export const MIN_ZOOM = 1;
 export const MAX_ZOOM = 8;
 export const ZOOM_EPS = 1e-4;
+export const ZOOM_PRESETS = [1, 1.5, 2, 4, 8] as const;
 
 /** Clear space kept between the frame and every edge of the viewport. */
 export const FRAME_MARGIN = 24;
@@ -55,6 +56,8 @@ export function frameSize(frame: Size, scale: number): Size {
 export function clampZoom(zoom: number): number {
   return clamp(zoom, MIN_ZOOM, MAX_ZOOM);
 }
+
+export const zoomPercent = (zoom: number): number => Math.round(zoom * 100);
 
 /** How far content can pan inside the frame. Zero at depth 1 — the frame is filled exactly. */
 export function panExtents(view: View, frame: Size): Point {

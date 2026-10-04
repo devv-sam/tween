@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -54,16 +55,23 @@ import {
 } from "./linked";
 import {
   MAX_DURATION,
+  MAX_TIMELINE_ZOOM,
   MIN_DURATION,
+  MIN_TIMELINE_ZOOM,
   PROPERTY_HEIGHT,
   RULER_HEIGHT,
   TRACK_HEIGHT,
+  ZOOM_STEP,
   clampDuration,
+  clampTimelineZoom,
   formatTime,
+  scrollForZoom,
+  sliderToZoom,
   spanPx,
   ticks,
   timeToX,
   xToTime,
+  zoomToSlider,
   type Unit,
 } from "./ruler";
 
@@ -75,8 +83,12 @@ export function Timeline() {
   const loop = useStudio((s) => s.loop);
   const collapsed = useStudio((s) => s.collapsedTracks);
   const selectedIds = useStudio((s) => s.selectedIds);
+  const zoom = useStudio((s) => s.timelineZoom);
 
+  const rulerRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
+  const pendingScroll = useRef<number | null>(null);
   const previewRef = useRef<Preview | null>(null);
   const scrubRef = useRef<number | null>(null);
   const durationRef = useRef<{
@@ -85,7 +97,7 @@ export function Timeline() {
     startDuration: number;
     perPx: number;
   } | null>(null);
-  const [width, setWidth] = useState(0);
+  const [viewWidth, setViewWidth] = useState(0);
   const [unit, setUnit] = useState<Unit>("s");
   // The set of curves being pointed at, by the key they all share. Held here rather
   // than per row, because the point of it is to light up the rows somewhere else.
@@ -98,6 +110,7 @@ export function Timeline() {
 
   const moduleLibrary = useStudio((s) => s.moduleLibrary);
   const { duration } = composition;
+  const width = viewWidth * zoom;
 
   // One clock for the whole studio: `Preview` owns the rAF loop and writes every
   // tick into the store, which is what the canvas renders from.
@@ -136,14 +149,35 @@ export function Timeline() {
   }, [playing]);
 
   useEffect(() => {
-    const el = areaRef.current;
+    const el = rulerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) =>
-      setWidth(entries[0].contentRect.width),
+      setViewWidth(entries[0].contentRect.width),
     );
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  useLayoutEffect(() => {
+    const scroll = pendingScroll.current;
+    pendingScroll.current = null;
+    if (scroll === null) return;
+    for (const el of [rulerRef.current, areaRef.current]) if (el) el.scrollLeft = scroll;
+  }, [zoom]);
+
+  const zoomTo = (next: number) => {
+    const to = clampTimelineZoom(next);
+    const store = useStudio.getState();
+    const scroll = rulerRef.current?.scrollLeft ?? 0;
+    pendingScroll.current = scrollForZoom(scroll, viewWidth, zoom, to, store.t);
+    store.setTimelineZoom(to);
+  };
+  const zoomBy = (factor: number) =>
+    zoomTo(useStudio.getState().timelineZoom * factor);
+
+  const followScroll = (from: HTMLElement, to: HTMLElement | null) => {
+    if (to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+  };
 
   const marks = useMemo(() => ticks(duration, width, unit), [duration, width, unit]);
   /** One frame as a share of the composition, which is the step a retime moves by. */
@@ -158,7 +192,7 @@ export function Timeline() {
   };
 
   const scrubTo = (clientX: number) => {
-    const el = areaRef.current;
+    const el = stripRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     seek(xToTime(clientX - rect.left, rect.width));
@@ -431,51 +465,58 @@ export function Timeline() {
           </div>
 
           <div
-            className="timeline-ruler"
-            ref={areaRef}
-            onPointerDown={beginScrub}
-            onPointerMove={moveScrub}
-            onPointerUp={endScrub}
-            onPointerCancel={endScrub}
+            className="timeline-ruler overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
+            ref={rulerRef}
+            onScroll={(e) => followScroll(e.currentTarget, areaRef.current)}
           >
-            {marks.map((mark) => (
-              <div
-                key={mark.x}
-                className={`ruler-tick${mark.label ? " is-major" : ""}`}
-                style={{ left: mark.x }}
-              >
-                {mark.label ? (
-                  <span className="ruler-label">{mark.label}</span>
-                ) : null}
-              </div>
-            ))}
-            {/* Sits on the ruler's end, which is where the composition stops. */}
-            <button
-              type="button"
-              className="duration-handle"
-              title="drag to set duration, double-click to trim"
-              aria-label={`Duration ${clampDuration(duration).toFixed(1)}s, drag to set duration, double-click to trim to the last keyframe`}
-              onPointerDown={onDurationDown}
-              onDoubleClick={() => useStudio.getState().trimDurationToContent()}
-              onPointerMove={onDurationMove}
-              onPointerUp={onDurationUp}
-              onPointerCancel={onDurationUp}
-            />
-            <span
-              className="playhead-grab"
-              role="slider"
-              tabIndex={0}
-              aria-label="playhead"
-              aria-valuemin={0}
-              aria-valuemax={duration}
-              aria-valuenow={Number((t * duration).toFixed(2))}
-              aria-valuetext={`${formatTime(t * duration, unit)}${unit}`}
-              style={{ transform: `translateX(${playheadX}px)` }}
+            <div
+              className="relative h-full overflow-hidden"
+              ref={stripRef}
+              style={{ width: width || "100%" }}
               onPointerDown={beginScrub}
               onPointerMove={moveScrub}
               onPointerUp={endScrub}
               onPointerCancel={endScrub}
-            />
+            >
+              {marks.map((mark) => (
+                <div
+                  key={mark.x}
+                  className={`ruler-tick${mark.label ? " is-major" : ""}`}
+                  style={{ left: mark.x }}
+                >
+                  {mark.label ? (
+                    <span className="ruler-label">{mark.label}</span>
+                  ) : null}
+                </div>
+              ))}
+              {/* Sits on the ruler's end, which is where the composition stops. */}
+              <button
+                type="button"
+                className="duration-handle"
+                title="drag to set duration, double-click to trim"
+                aria-label={`Duration ${clampDuration(duration).toFixed(1)}s, drag to set duration, double-click to trim to the last keyframe`}
+                onPointerDown={onDurationDown}
+                onDoubleClick={() => useStudio.getState().trimDurationToContent()}
+                onPointerMove={onDurationMove}
+                onPointerUp={onDurationUp}
+                onPointerCancel={onDurationUp}
+              />
+              <span
+                className="playhead-grab"
+                role="slider"
+                tabIndex={0}
+                aria-label="playhead"
+                aria-valuemin={0}
+                aria-valuemax={duration}
+                aria-valuenow={Number((t * duration).toFixed(2))}
+                aria-valuetext={`${formatTime(t * duration, unit)}${unit}`}
+                style={{ transform: `translateX(${playheadX}px)` }}
+                onPointerDown={beginScrub}
+                onPointerMove={moveScrub}
+                onPointerUp={endScrub}
+                onPointerCancel={endScrub}
+              />
+            </div>
           </div>
         </div>
 
@@ -511,77 +552,132 @@ export function Timeline() {
             )}
           </div>
 
-          <div className="timeline-area">
-            <div
-              className="timeline-lanes relative touch-none"
-              ref={lanesRef}
-              onPointerDown={onMarqueeDown}
-              onPointerMove={onMarqueeMove}
-              onPointerUp={onMarqueeUp}
-              onPointerCancel={onMarqueeUp}
-            >
-              {rows.map((row) => (
-                <Fragment key={row.id}>
-                  {/* An element has no motion of its own — what it has is the rows
-                      underneath, and this is the handle for all of them at once. */}
+          <div
+            className="timeline-area overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
+            ref={areaRef}
+            onScroll={(e) => followScroll(e.currentTarget, rulerRef.current)}
+          >
+            <div className="relative h-full overflow-hidden" style={{ width: width || "100%" }}>
+              <div
+                className="timeline-lanes relative touch-none"
+                ref={lanesRef}
+                onPointerDown={onMarqueeDown}
+                onPointerMove={onMarqueeMove}
+                onPointerUp={onMarqueeUp}
+                onPointerCancel={onMarqueeUp}
+              >
+                {rows.map((row) => (
+                  <Fragment key={row.id}>
+                    {/* An element has no motion of its own — what it has is the rows
+                        underneath, and this is the handle for all of them at once. */}
+                    <div
+                      className={`timeline-lane is-track${
+                        selectedIds.includes(row.id) ? " is-selected" : ""
+                      }`}
+                      style={{ height: TRACK_HEIGHT }}
+                    >
+                      <MainBar
+                        layerId={row.id}
+                        blocks={row.blocks}
+                        width={width}
+                        selected={selectedIds.includes(row.id)}
+                        name={row.name}
+                        frame={frameT}
+                      />
+                    </div>
+                    {row.open
+                      ? row.blocks.map((block, i) => (
+                          <div
+                            key={blockKey(block)}
+                            className={`timeline-lane is-property${
+                              hotLink === motionKey(block) ? " is-linked-hot" : ""
+                            }${i === row.blocks.length - 1 ? " is-last" : ""}`}
+                            style={{ height: PROPERTY_HEIGHT }}
+                            // Pointing at one bar says what it runs with, before anything
+                            // is touched — and touching it is what breaks the link.
+                            onPointerEnter={() => enterLink(motionKey(block))}
+                            onPointerLeave={() => leaveLink(motionKey(block))}
+                          >
+                            {block.standalone ? (
+                              <KeyframeTrack layerId={row.id} block={block} width={width} />
+                            ) : (
+                              <ModuleBlock layerId={row.id} block={block} width={width} />
+                            )}
+                          </div>
+                        ))
+                      : null}
+                  </Fragment>
+                ))}
+
+                {marquee ? (
                   <div
-                    className={`timeline-lane is-track${
-                      selectedIds.includes(row.id) ? " is-selected" : ""
-                    }`}
-                    style={{ height: TRACK_HEIGHT }}
-                  >
-                    <MainBar
-                      layerId={row.id}
-                      blocks={row.blocks}
-                      width={width}
-                      selected={selectedIds.includes(row.id)}
-                      name={row.name}
-                      frame={frameT}
-                    />
-                  </div>
-                  {row.open
-                    ? row.blocks.map((block, i) => (
-                        <div
-                          key={blockKey(block)}
-                          className={`timeline-lane is-property${
-                            hotLink === motionKey(block) ? " is-linked-hot" : ""
-                          }${i === row.blocks.length - 1 ? " is-last" : ""}`}
-                          style={{ height: PROPERTY_HEIGHT }}
-                          // Pointing at one bar says what it runs with, before anything
-                          // is touched — and touching it is what breaks the link.
-                          onPointerEnter={() => enterLink(motionKey(block))}
-                          onPointerLeave={() => leaveLink(motionKey(block))}
-                        >
-                          {block.standalone ? (
-                            <KeyframeTrack layerId={row.id} block={block} width={width} />
-                          ) : (
-                            <ModuleBlock layerId={row.id} block={block} width={width} />
-                          )}
-                        </div>
-                      ))
-                    : null}
-                </Fragment>
-              ))}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute z-[2] border border-[#0d99ff] bg-[#0d99ff]/10"
+                    style={marquee}
+                  />
+                ) : null}
+              </div>
 
-              {marquee ? (
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute z-[2] border border-[#0d99ff] bg-[#0d99ff]/10"
-                  style={marquee}
-                />
-              ) : null}
+              {/* Full height of the rows, not of the window onto them, so any scroll
+                  position still has the line crossing it. */}
+              <span
+                className="playhead-line"
+                aria-hidden="true"
+                style={{ transform: `translateX(${playheadX}px)` }}
+              />
             </div>
-
-            {/* Full height of the rows, not of the window onto them, so any scroll
-                position still has the line crossing it. */}
-            <span
-              className="playhead-line"
-              aria-hidden="true"
-              style={{ transform: `translateX(${playheadX}px)` }}
-            />
           </div>
         </div>
       </div>
+
+      <ZoomControl zoom={zoom} onZoom={zoomTo} onStep={zoomBy} />
+    </div>
+  );
+}
+
+function ZoomControl({
+  zoom,
+  onZoom,
+  onStep,
+}: {
+  zoom: number;
+  onZoom: (zoom: number) => void;
+  onStep: (factor: number) => void;
+}) {
+  const button =
+    "grid h-5 w-5 place-items-center rounded text-[#111] hover:bg-[#f0f0f0] disabled:pointer-events-none disabled:text-[#c0c0c0]";
+  return (
+    <div className="flex h-7 shrink-0 items-center justify-end gap-1.5 border-t border-[#e0e0e0] px-3">
+      <button
+        type="button"
+        className={button}
+        aria-label="zoom out"
+        title="zoom out"
+        disabled={zoom <= MIN_TIMELINE_ZOOM}
+        onClick={() => onStep(1 / ZOOM_STEP)}
+      >
+        <ZoomOutIcon />
+      </button>
+      <input
+        type="range"
+        className="h-4 w-[112px] cursor-pointer appearance-none bg-transparent focus-visible:outline-none [&::-moz-range-thumb]:h-[11px] [&::-moz-range-thumb]:w-[11px] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-[#c4c4c4] [&::-moz-range-track]:h-[3px] [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[#d8d8d8] [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[#d8d8d8] [&::-webkit-slider-thumb]:-mt-[4px] [&::-webkit-slider-thumb]:h-[11px] [&::-webkit-slider-thumb]:w-[11px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#c4c4c4] hover:[&::-webkit-slider-thumb]:bg-[#999] focus-visible:[&::-webkit-slider-thumb]:bg-[#999]"
+        aria-label="timeline zoom"
+        min={0}
+        max={1}
+        step={0.01}
+        value={zoomToSlider(zoom)}
+        onChange={(e) => onZoom(sliderToZoom(Number(e.target.value)))}
+      />
+      <button
+        type="button"
+        className={button}
+        aria-label="zoom in"
+        title="zoom in"
+        disabled={zoom >= MAX_TIMELINE_ZOOM}
+        onClick={() => onStep(ZOOM_STEP)}
+      >
+        <ZoomInIcon />
+      </button>
     </div>
   );
 }
@@ -1572,6 +1668,47 @@ function LoopIcon() {
       <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
       <path d="m7 22-4-4 4-4" />
       <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+function ZoomInIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.35-4.35" />
+      <path d="M11 8v6" />
+      <path d="M8 11h6" />
+    </svg>
+  );
+}
+
+function ZoomOutIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.35-4.35" />
+      <path d="M8 11h6" />
     </svg>
   );
 }

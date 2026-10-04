@@ -5,6 +5,7 @@ import {
   MAX_ZOOM,
   MIN_VIEW_SCALE,
   MIN_ZOOM,
+  ZOOM_PRESETS,
   clampPan,
   clampZoom,
   compositionToScreen,
@@ -16,6 +17,7 @@ import {
   panExtents,
   screenToComposition,
   zoomAround,
+  zoomPercent,
   type Size,
   type View,
 } from "./view";
@@ -153,5 +155,20 @@ describe("clampZoom", () => {
     expect(clampZoom(0)).toBe(MIN_ZOOM);
     expect(clampZoom(99)).toBe(MAX_ZOOM);
     expect(clampZoom(2)).toBe(2);
+  });
+});
+
+describe("zoom presets", () => {
+  it("all sit inside the zoom range, ascending, starting at the whole frame", () => {
+    expect(ZOOM_PRESETS[0]).toBe(MIN_ZOOM);
+    expect(ZOOM_PRESETS[ZOOM_PRESETS.length - 1]).toBe(MAX_ZOOM);
+    expect([...ZOOM_PRESETS]).toEqual([...ZOOM_PRESETS].sort((a, b) => a - b));
+  });
+
+  it("reads depth as a whole percent", () => {
+    expect(zoomPercent(1)).toBe(100);
+    expect(zoomPercent(1.5)).toBe(150);
+    expect(zoomPercent(1.3749)).toBe(137);
+    expect(zoomPercent(MAX_ZOOM)).toBe(800);
   });
 });

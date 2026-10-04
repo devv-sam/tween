@@ -40,6 +40,21 @@ const MIN_MINOR_GAP = 10;
 export const clampDuration = (seconds: number) =>
   clamp(seconds, MIN_DURATION, MAX_DURATION);
 
+export const MIN_TIMELINE_ZOOM = 1;
+export const MAX_TIMELINE_ZOOM = 32;
+export const ZOOM_STEP = 1.5;
+
+export const clampTimelineZoom = (zoom: number) =>
+  clamp(zoom, MIN_TIMELINE_ZOOM, MAX_TIMELINE_ZOOM);
+
+const ZOOM_SPAN = Math.log(MAX_TIMELINE_ZOOM / MIN_TIMELINE_ZOOM);
+
+export const zoomToSlider = (zoom: number): number =>
+  clamp(Math.log(clampTimelineZoom(zoom) / MIN_TIMELINE_ZOOM) / ZOOM_SPAN, 0, 1);
+
+export const sliderToZoom = (position: number): number =>
+  clampTimelineZoom(MIN_TIMELINE_ZOOM * Math.exp(clamp(position, 0, 1) * ZOOM_SPAN));
+
 /**
  * The ruler's one mapping: normalized time to a strip-local x. `xToTime` is its
  * inverse, so a drag and the playhead it moves always agree.
@@ -107,4 +122,26 @@ export function ticks(duration: number, width: number, unit: Unit = "s"): Tick[]
     });
   }
   return out;
+}
+
+/**
+ * The scroll that keeps one moment where it was on screen as the strip goes from
+ * `from` times the view's width to `to` times it. The playhead is the moment held
+ * while it is in view, the middle of the view otherwise.
+ */
+export function scrollForZoom(
+  scroll: number,
+  viewWidth: number,
+  from: number,
+  to: number,
+  playhead: number,
+): number {
+  const before = viewWidth * from;
+  const after = viewWidth * to;
+  const head = timeToX(playhead, before) - scroll;
+  const held = head >= 0 && head <= viewWidth ? head : viewWidth / 2;
+  const span = spanPx(before);
+  if (span < 1) return 0;
+  const at = (scroll + held - GUTTER_PX) / span;
+  return clamp(timeToX(at, after) - held, 0, Math.max(0, after - viewWidth));
 }

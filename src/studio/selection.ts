@@ -68,31 +68,6 @@ export const ROTATE_REACH = 26;
 /** Rotation snaps to this many degrees while Shift is held. */
 export const ROTATE_SNAP = 15;
 
-/**
- * Aspect-lock button centre, offset from the box's top-right corner in screen px.
- * Sits just outside the right edge, top-aligned with the box. Fixed rather than
- * proportional so it hugs the corner the same way at any element size.
- */
-export const LOCK_OFFSET = { x: 21, y: 11 };
-
-/** Drawn edge of the aspect-lock button, in screen px. Matches `.studio-lock` in CSS. */
-export const LOCK_SIZE = 22;
-
-/**
- * Slack around the lock button that still counts as hovering the element. Without it
- * the button sits in a gap outside the bounds, so reaching for it would clear the
- * hover and unmount it mid-approach.
- */
-export const LOCK_PAD = 12;
-
-/** Is a screen point on the lock button, or close enough to be heading for it? */
-export function withinLock(screen: Point, lockCentre: Point): boolean {
-  const half = LOCK_SIZE / 2 + LOCK_PAD;
-  return (
-    Math.abs(screen.x - lockCentre.x) <= half && Math.abs(screen.y - lockCentre.y) <= half
-  );
-}
-
 const halfExtents = (state: Transform, size: Size): Point => ({
   x: (size.width * state.scaleX) / 2,
   y: (size.height * state.scaleY) / 2,

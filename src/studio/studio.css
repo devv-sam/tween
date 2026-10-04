@@ -94,7 +94,7 @@ body {
 .timeline {
   /* Head and rows must agree exactly, or ticks stop lining up with keyframes. */
   --gutter-w: 248px;
-  height: 200px;
+  height: 228px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -413,15 +413,12 @@ body {
   position: relative;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
 }
 
 .timeline-ruler {
   position: relative;
   flex: 1;
   min-width: 0;
-  /* The last tick's label runs past the end it labels. */
-  overflow: hidden;
   border-bottom: 1px solid #e0e0e0;
   cursor: pointer;
   touch-action: none;
@@ -604,42 +601,6 @@ body {
   fill: #fff;
   stroke: #0d99ff;
   stroke-width: 1.5;
-}
-
-/* Aspect lock, floating just outside the box's top-right. Blue means constrained. */
-.studio-lock {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 4;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid #e0e0e0;
-  border-radius: 5px;
-  background: #fff;
-  color: #888;
-  cursor: pointer;
-  pointer-events: auto;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.studio-lock:hover {
-  border-color: #0d99ff;
-  color: #0d99ff;
-}
-
-.studio-lock.is-locked {
-  border-color: #0d99ff;
-  background: #0d99ff;
-  color: #fff;
-}
-
-.studio-lock:focus-visible {
-  outline: 1px solid #0d99ff;
-  outline-offset: 2px;
 }
 
 .studio-badge {

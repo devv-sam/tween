@@ -235,9 +235,7 @@ export function ChevronIcon() {
   );
 }
 
-/** Lucide `lock` / `lock-open`, inlined so two glyphs don't pull in an icon package.
- *  The canvas overlay and the inspector's dimensions row both toggle the same
- *  `lockAspect`, so they had better be the same glyph doing it. */
+/** Lucide `lock` / `lock-open`, inlined so two glyphs don't pull in an icon package. */
 export function LockIcon({ size = 12 }: { size?: number }) {
   return (
     <svg

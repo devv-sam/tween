@@ -18,8 +18,6 @@ export const RESOLUTIONS: { label: string; size: Size }[] = [
   { label: "1080×1920", size: { width: 1080, height: 1920 } },
 ];
 
-export const DRIVERS = ["time", "input"] as const;
-
 export const clampFps = (fps: number): number => clamp(Math.round(fps), 1, 240);
 
 /** `1920x1080` — the key a select uses to name one of `RESOLUTIONS`. */

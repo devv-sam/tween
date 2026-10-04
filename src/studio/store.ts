@@ -7,7 +7,6 @@ import type { StopEase } from "../core/easing";
 import type {
   Composition,
   Distributor,
-  Driver,
   ElementModule,
   KeyframeSet,
   Layer,
@@ -67,7 +66,7 @@ import {
   undo as undoHistory,
   type History,
 } from "./history";
-import { clampDuration } from "./ruler";
+import { clampDuration, clampTimelineZoom } from "./ruler";
 import { parseSegment, retimedStops, type SegmentRef } from "./segments";
 import {
   DEFAULT_FRAME,
@@ -210,6 +209,11 @@ const emptyComposition = (): Composition => ({
 });
 
 const centerOf = (frame: Size): Point => ({ x: frame.width / 2, y: frame.height / 2 });
+
+const DROP_STEP = 32;
+
+const landingFor = (asset: StudioAsset, at: Point, frame: Size): Point =>
+  clampToFrame(at, { x: asset.naturalW / 2, y: asset.naturalH / 2 }, frame);
 
 function imageTrack(
   id: string,
@@ -571,6 +575,7 @@ type StudioState = {
   selectedSegments: string[];
   viewport: Size;
   view: View;
+  timelineZoom: number;
   history: History<Snapshot>;
   setT: (t: number) => void;
   setPlaying: (playing: boolean) => void;
@@ -582,12 +587,12 @@ type StudioState = {
   setFps: (fps: number) => void;
   setResolution: (size: Size) => void;
   setBackground: (hex: string) => void;
-  setDriver: (kind: Driver["kind"]) => void;
   setViewport: (viewport: Size) => void;
   zoomAroundPoint: (screen: Point, nextZoom: number) => void;
   panBy: (dx: number, dy: number) => void;
   resetZoom: () => void;
-  importImages: (files: Iterable<File>) => Promise<void>;
+  setTimelineZoom: (zoom: number) => void;
+  importImages: (files: Iterable<File>, at?: Point) => Promise<void>;
   placeElement: (assetId: string, at?: Point) => void;
   removeAsset: (id: string) => void;
   select: (layerId: string | null) => void;
@@ -873,6 +878,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     selectedSegments: [],
     viewport: { width: 0, height: 0 },
     view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
+    timelineZoom: 1,
     history: emptyHistory<Snapshot>(),
 
     // `t` is normalized over the composition — the playhead and the rAF loop both
@@ -925,10 +931,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       }));
     },
 
-    setDriver: (kind) => {
-      edit(null, (s) => ({ composition: { ...s.composition, driver: { kind } } }));
-    },
-
     setViewport: (viewport) => {
       const { frame, view } = get();
       // Refit on every resize: the frame's screen size follows the room it has.
@@ -953,7 +955,11 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       set({ view: { ...view, zoom: 1, panX: 0, panY: 0 } });
     },
 
-    importImages: async (files) => {
+    setTimelineZoom: (zoom) => {
+      set({ timelineZoom: clampTimelineZoom(zoom) });
+    },
+
+    importImages: async (files, at) => {
       let importError: string | null = null;
       const added: StudioAsset[] = [];
       for (const file of files) {
@@ -976,22 +982,31 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         return;
       }
 
-      edit(null, (s) => ({
-        assets: [...s.assets, ...added],
-        importError,
-      }));
+      edit(null, (s) => {
+        if (!at) return { assets: [...s.assets, ...added], importError };
+        const tracks = added.map((asset, i) =>
+          imageTrack(
+            crypto.randomUUID(),
+            asset.id,
+            landingFor(asset, { x: at.x + i * DROP_STEP, y: at.y + i * DROP_STEP }, s.frame),
+            isSvg(asset),
+          ),
+        );
+        return {
+          assets: [...s.assets, ...added],
+          importError,
+          ...pick(tracks.map((tr) => tr.layer.id)),
+          selectedPart: null,
+          composition: { ...s.composition, tracks: [...s.composition.tracks, ...tracks] },
+        };
+      });
     },
 
     placeElement: (assetId, at) => {
       const { assets, frame } = get();
       const asset = assets.find((a) => a.id === assetId);
       if (!asset) return;
-      // A drop near an edge lands the whole element inside, not straddling it.
-      const place = clampToFrame(
-        at ?? centerOf(frame),
-        { x: asset.naturalW / 2, y: asset.naturalH / 2 },
-        frame,
-      );
+      const place = landingFor(asset, at ?? centerOf(frame), frame);
       const layerId = crypto.randomUUID();
       edit(null, (s) => ({
         ...pick([layerId]),

@@ -11,7 +11,7 @@ import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
 import { ClonerGizmo } from "./ClonerGizmo";
 import { runDistance } from "./gizmo";
-import { GHOST_BTN, LockIcon, LockOpenIcon } from "./fields";
+import { GHOST_BTN } from "./fields";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { alignmentFor, type Alignment, type Box } from "./guides";
 import {
@@ -37,7 +37,6 @@ import {
   HANDLES,
   HANDLE_CURSOR,
   HANDLE_SIZE,
-  LOCK_OFFSET,
   angleTo,
   boundsHalf,
   boxSize,
@@ -47,13 +46,11 @@ import {
   gripAtScreen,
   handlePositions,
   hitTest,
-  normalizeAngle,
   regionAngle,
   resizeFrom,
   ROTATE_SNAP,
   rotateCursor,
   rotateFrom,
-  withinLock,
   type Handle,
 } from "./selection";
 import {
@@ -175,9 +172,7 @@ export function StudioCanvas() {
   const dpr = useDevicePixelRatio();
   const [imagesReady, setImagesReady] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
-  // The lock only shows while the pointer is on the element, so idle chrome stays quiet.
-  const [hovering, setHovering] = useState(false);
-  // While rotating, the badge reports the angle instead of the box size.
+  // The size badge steps aside while the element turns.
   const [rotating, setRotating] = useState(false);
   // What the element in flight has lined up with. Chrome only — it is drawn over the
   // render, never into it, and it is dropped the moment the pointer comes up.
@@ -327,13 +322,8 @@ export function StudioCanvas() {
     if (!item) return null;
     const intrinsic = sizeOf(item);
     if (!intrinsic) return null;
-    const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
-    return {
-      item,
-      size: intrinsic,
-      lockAspect: Boolean(track?.layer.lockAspect),
-    };
-  }, [scene, solo, selectedId, sizeOf, composition]);
+    return { item, size: intrinsic };
+  }, [scene, solo, selectedId, sizeOf]);
 
   /**
    * Every other element on the frame, as a box to line up against.
@@ -357,8 +347,6 @@ export function StudioCanvas() {
     }
     return out;
   };
-
-  useEffect(() => setHovering(false), [selectedId]);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -424,7 +412,7 @@ export function StudioCanvas() {
         placeElement(assetId, at);
         return;
       }
-      if (files?.length) void importImages(files);
+      if (files?.length) void importImages([...files], at);
     };
 
     el.addEventListener("dragover", onDragOver, true);
@@ -725,7 +713,6 @@ export function StudioCanvas() {
         view,
       );
       if (grip) {
-        setHovering(true);
         if (grip.kind === "resize") {
           setCursor(HANDLE_CURSOR[grip.handle]);
           if (begin(selected.item, selected.size, "resize", grip.handle)) return;
@@ -772,7 +759,6 @@ export function StudioCanvas() {
     const itemSize = item && sizeOf(item);
     if (!item || !itemSize) return;
     setCursor("move");
-    setHovering(true);
     begin(item, itemSize, "move", null);
   };
 
@@ -815,7 +801,6 @@ export function StudioCanvas() {
     if (!drag) {
       if (!selected) {
         setCursor(null);
-        setHovering(false);
         return;
       }
       const grip = gripAtScreen(
@@ -834,15 +819,11 @@ export function StudioCanvas() {
                 regionAngle(selected.item.state, selected.size, grip.near),
               ),
         );
-        setHovering(true);
         return;
       }
       const point = screenToComposition(screen, viewport, frame, view);
       const inside = containsPoint(selected.item.state, selected.size, point);
       setCursor(inside ? "move" : null);
-      // The lock sits outside the bounds, so its own area counts as hovering too —
-      // otherwise it would vanish as the pointer crossed the gap to reach it.
-      setHovering(inside || (chrome !== null && withinLock(screen, chrome.lock)));
       return;
     }
 
@@ -1040,10 +1021,6 @@ export function StudioCanvas() {
     return {
       outline,
       handles,
-      lock: {
-        x: handles.ne.x + LOCK_OFFSET.x,
-        y: handles.ne.y + LOCK_OFFSET.y,
-      },
       badge: {
         x: (outline[0].x + outline[1].x + outline[2].x + outline[3].x) / 4,
         y: Math.max(...outline.map((p) => p.y)) + BADGE_GAP,
@@ -1066,7 +1043,6 @@ export function StudioCanvas() {
       onPointerLeave={() => {
         if (dragRef.current) return;
         setCursor(null);
-        setHovering(false);
       }}
       onDoubleClick={onDoubleClick}
     >
@@ -1259,40 +1235,16 @@ export function StudioCanvas() {
               );
             })}
           </svg>
-          {/* Hidden while rotating: pinned to a corner, it would swing around the box. */}
-          {hovering && !rotating ? (
-          <button
-            type="button"
-            className={`studio-lock${selected.lockAspect ? " is-locked" : ""}`}
-            aria-pressed={selected.lockAspect}
-            aria-label={
-              selected.lockAspect ? "Unlock aspect ratio" : "Lock aspect ratio"
-            }
-            title={
-              selected.lockAspect ? "Unlock aspect ratio" : "Lock aspect ratio"
-            }
-            style={{
-              transform: `translate(${chrome.lock.x}px, ${chrome.lock.y}px) translate(-50%, -50%)`,
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onDoubleClick={(e) => e.stopPropagation()}
-            onClick={() =>
-              useStudio.getState().toggleLayerLock(selected.item.id)
-            }
-          >
-            {selected.lockAspect ? <LockIcon /> : <LockOpenIcon />}
-          </button>
-          ) : null}
-          <div
-            className="studio-badge"
-            style={{
-              transform: `translate(${chrome.badge.x}px, ${chrome.badge.y}px) translate(-50%, 0)`,
-            }}
-          >
-            {rotating
-              ? `${Math.round(normalizeAngle(selected.item.state.rotation))}°`
-              : `${Math.round(chrome.badge.size.width)} × ${Math.round(chrome.badge.size.height)}`}
-          </div>
+          {rotating ? null : (
+            <div
+              className="studio-badge"
+              style={{
+                transform: `translate(${chrome.badge.x}px, ${chrome.badge.y}px) translate(-50%, 0)`,
+              }}
+            >
+              {`${Math.round(chrome.badge.size.width)} × ${Math.round(chrome.badge.size.height)}`}
+            </div>
+          )}
         </>
       ) : null}
     </div>

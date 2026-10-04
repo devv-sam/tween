@@ -3,15 +3,21 @@ import {
   FINEST_STEP,
   GUTTER_PX,
   MAX_DURATION,
+  MAX_TIMELINE_ZOOM,
   MIN_DURATION,
+  MIN_TIMELINE_ZOOM,
   SNAP_PX,
   clampDuration,
+  clampTimelineZoom,
   formatMillis,
   formatSeconds,
   formatTime,
+  scrollForZoom,
+  sliderToZoom,
   ticks,
   timeToX,
   xToTime,
+  zoomToSlider,
 } from "./ruler";
 
 const WIDTH = 800;
@@ -133,5 +139,55 @@ describe("ticks", () => {
     expect(ticks(5, 0)).toEqual([]);
     expect(ticks(5, GUTTER_PX)).toEqual([]);
     expect(ticks(0, WIDTH)).toEqual([]);
+  });
+});
+
+describe("timeline zoom", () => {
+  it("clamps between the whole strip and the deepest zoom", () => {
+    expect(clampTimelineZoom(0.2)).toBe(MIN_TIMELINE_ZOOM);
+    expect(clampTimelineZoom(500)).toBe(MAX_TIMELINE_ZOOM);
+    expect(clampTimelineZoom(3)).toBe(3);
+  });
+
+  it("maps the slider across the whole range, evenly in ratio", () => {
+    expect(sliderToZoom(0)).toBe(MIN_TIMELINE_ZOOM);
+    expect(sliderToZoom(1)).toBeCloseTo(MAX_TIMELINE_ZOOM);
+    expect(sliderToZoom(0.5)).toBeCloseTo(Math.sqrt(MAX_TIMELINE_ZOOM));
+    for (const zoom of [1, 1.5, 4, 17, MAX_TIMELINE_ZOOM]) {
+      expect(sliderToZoom(zoomToSlider(zoom))).toBeCloseTo(zoom, 6);
+    }
+  });
+});
+
+describe("scrollForZoom", () => {
+  const view = 600;
+
+  it("holds the playhead where it stood while it is in view", () => {
+    const scroll = 300;
+    const playhead = 0.5;
+    const stood = timeToX(playhead, view * 2) - scroll;
+    const next = scrollForZoom(scroll, view, 2, 4, playhead);
+    expect(timeToX(playhead, view * 4) - next).toBeCloseTo(stood, 6);
+  });
+
+  it("holds the middle of the view when the playhead is out of it", () => {
+    const scroll = 0;
+    const next = scrollForZoom(scroll, view, 4, 8, 0.9);
+    const middle = xToTime(scroll + view / 2, view * 4);
+    expect(xToTime(next + view / 2, view * 8)).toBeCloseTo(middle, 2);
+  });
+
+  it("settles at the start when zoomed back out to the whole strip", () => {
+    expect(scrollForZoom(900, view, 4, 1, 0.5)).toBe(0);
+  });
+
+  it("never scrolls past the end of the strip", () => {
+    const next = scrollForZoom(view * 3, view, 4, 8, 1);
+    expect(next).toBeLessThanOrEqual(view * 8 - view);
+    expect(next).toBeGreaterThanOrEqual(0);
+  });
+
+  it("has nothing to hold before the view has a width", () => {
+    expect(scrollForZoom(0, 0, 1, 2, 0.5)).toBe(0);
   });
 });

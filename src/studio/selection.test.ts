@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Scene, Transform } from "../core/types";
 import {
-  LOCK_OFFSET,
-  LOCK_PAD,
-  LOCK_SIZE,
   MIN_SCALE,
   ROTATE_REACH,
   ROTATE_SNAP,
@@ -23,7 +20,6 @@ import {
   resizeFrom,
   rotateCursor,
   rotateFrom,
-  withinLock,
 } from "./selection";
 import { DEFAULT_VIEW_SCALE, compositionToScreen, type Size, type View } from "./view";
 
@@ -294,32 +290,6 @@ describe("resizeFrom — rotation", () => {
       scaleX: 0,
       scaleY: 1,
     });
-  });
-});
-
-describe("lock hover region", () => {
-  // The lock hangs off the box's top-right, so the pointer must be able to leave the
-  // bounds and reach it without the hover clearing on the way.
-  const ne = { x: 600, y: 250 };
-  const centre = { x: ne.x + LOCK_OFFSET.x, y: ne.y + LOCK_OFFSET.y };
-
-  it("covers the button itself", () => {
-    expect(withinLock(centre, centre)).toBe(true);
-    const corner = { x: centre.x + LOCK_SIZE / 2 - 1, y: centre.y + LOCK_SIZE / 2 - 1 };
-    expect(withinLock(corner, centre)).toBe(true);
-  });
-
-  it("bridges the gap back to the box edge", () => {
-    // Walk from the box's right edge across to the button; no step may fall outside.
-    for (let x = ne.x; x <= centre.x; x++) {
-      expect(withinLock({ x, y: ne.y + LOCK_OFFSET.y }, centre)).toBe(true);
-    }
-  });
-
-  it("does not extend indefinitely", () => {
-    const far = LOCK_SIZE / 2 + LOCK_PAD + 1;
-    expect(withinLock({ x: centre.x + far, y: centre.y }, centre)).toBe(false);
-    expect(withinLock({ x: centre.x, y: centre.y + far }, centre)).toBe(false);
   });
 });
 
