@@ -356,10 +356,6 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
         activeKeyframes={activeKeyframes}
       />
 
-      {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
-        <ShapeDimsSection track={track} activeKeyframes={activeKeyframes} />
-      ) : null}
-
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
       {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
@@ -635,7 +631,7 @@ function ElementSection({
           to once the composition's settings are sitting right above them. The two
           centring buttons ride the same line: they act on the whole element rather
           than on any one field under it, which is what the heading names. */}
-      <div className={`flex items-center gap-1 ${layerSrc.kind === "rect" || layerSrc.kind === "ellipse" ? "" : "mb-2"}`}>
+      <div className={`flex items-center gap-1 mb-2`}>
         <input
           className={`${LABEL} min-w-0 flex-1 truncate bg-transparent outline-none focus:text-text-primary`}
           value={name}
@@ -659,35 +655,37 @@ function ElementSection({
         </>
       ) : null}
 
-      {size && layerSrc.kind !== "rect" && layerSrc.kind !== "ellipse" ? (
+      {(layerSrc.kind === "rect" || layerSrc.kind === "ellipse") ? (
+        <ShapeDimsInline layer={layer} cell={cell} />
+      ) : (
         <>
-          <p className={`${SUBLABEL} mb-1`}>Dimensions</p>
-          <div className="mb-2 flex items-center gap-1.5">
-            {cell(
-              "scaleX",
-              <SizeField
-                axis="scaleX"
-                track={track}
-                state={state}
-                size={size}
-              />,
-            )}
-            {cell(
-              "scaleY",
-              <SizeField
-                axis="scaleY"
-                track={track}
-                state={state}
-                size={size}
-              />,
-            )}
-            <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
-          </div>
-        </>
-      ) : null}
+          {size ? (
+            <>
+              <p className={`${SUBLABEL} mb-1`}>Dimensions</p>
+              <div className="mb-2 flex items-center gap-1.5">
+                {cell(
+                  "scaleX",
+                  <SizeField
+                    axis="scaleX"
+                    track={track}
+                    state={state}
+                    size={size}
+                  />,
+                )}
+                {cell(
+                  "scaleY",
+                  <SizeField
+                    axis="scaleY"
+                    track={track}
+                    state={state}
+                    size={size}
+                  />,
+                )}
+                <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
+              </div>
+            </>
+          ) : null}
 
-      {layerSrc.kind !== "rect" && layerSrc.kind !== "ellipse" ? (
-        <>
           <p className={`${SUBLABEL} mb-1`}>Opacity</p>
           <div className="grid grid-cols-2 gap-x-1.5">
             {cell(
@@ -705,28 +703,23 @@ function ElementSection({
             )}
           </div>
         </>
-      ) : null}
+      )}
     </section>
   );
 }
 
-function ShapeDimsSection({ track, activeKeyframes }: { track: Track; activeKeyframes: KeyTarget | null }) {
-  const { layer } = track;
+function ShapeDimsInline({ layer, cell }: {
+  layer: Track["layer"];
+  cell: (target: KeyTarget, field: ReactNode) => ReactNode;
+}) {
   const src = layer.source;
   if (src.kind !== "rect" && src.kind !== "ellipse") return null;
   const props = src.props;
   const set = (patch: Record<string, unknown>) =>
     useStudio.getState().setShapeProp(layer.id, patch);
 
-  const cell = (target: KeyTarget, field: ReactNode) => (
-    <KeyCell layerId={layer.id} target={target} track={track} activeKeyframes={activeKeyframes}>
-      {field}
-    </KeyCell>
-  );
-
   return (
-    <section className={SECTION}>
-      <p className={`${SUBLABEL} mb-1`}>Shape</p>
+    <>
       <div className="mb-1 flex items-center gap-1.5">
         {cell("scaleX", <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />)}
         {cell("scaleY", <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />)}
@@ -753,7 +746,7 @@ function ShapeDimsSection({ track, activeKeyframes }: { track: Track; activeKeyf
           />,
         )}
       </div>
-    </section>
+    </>
   );
 }
 
