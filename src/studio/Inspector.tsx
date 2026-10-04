@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Track, Transform } from "../core/types";
+import type { FillDef, StrokeDef, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
@@ -28,6 +28,7 @@ import {
   type Range,
 } from "./modules";
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
+import { Toolbar } from "./Toolbar";
 import { EaseSelect, EasingSection } from "./EasingControls";
 import {
   MIN_SEGMENT,
@@ -105,16 +106,10 @@ function ElementPanels({
   const segments = useStudio((s) => s.selectedSegments);
   return (
     <>
-      {/* The composition is always there to edit, so it stays put and the element's
-          own panel stacks under it rather than replacing it. */}
+      <Toolbar />
       <CompositionPanel />
-      {/* One element opens its own panel; several open the little that can honestly
-          be said about several at once. `selectedId` is null while more than one is
-          picked, so the two are never both on screen. */}
       {track ? <ElementPanel track={track} index={index} /> : null}
       {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
-      {/* Exclusive with the element panels above: picking a span clears the element,
-          so at most one of the two is ever standing. */}
       {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
     </>
   );
@@ -363,6 +358,10 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
 
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
+      {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
+        <ShapeFillStrokeSection track={track} />
+      ) : null}
+
       {/* The list of keyframes is on the timeline, under the element it belongs to.
           What is left here is the editor for whichever one is picked. */}
       <KeyframeEditor track={track} />
@@ -527,7 +526,7 @@ function SelectionKeyButton({
       }`}
       onClick={() => useStudio.getState().keySelection(ids, target)}
     >
-      <DiamondIcon filled={keyframed} />
+      <DiamondIcon filled={keyframed} size={10} />
     </button>
   );
 }
@@ -551,7 +550,7 @@ function KeyCell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1">
+    <div className="flex min-w-0 flex-1 items-center gap-0.5">
       <div className="min-w-0 flex-1">{children}</div>
       <KeyframeButton
         layerId={layerId}
@@ -589,9 +588,10 @@ function ElementSection({
   const library = useStudio((s) => s.moduleLibrary);
   const t = useStudio((s) => s.t);
   const { layer } = track;
+  const layerSrc = layer.source;
   const asset =
-    layer.source.kind === "image"
-      ? assets.find((a) => a.id === layer.source.value)
+    layerSrc.kind === "image"
+      ? assets.find((a) => a.id === layerSrc.value)
       : undefined;
   const size = designSizeOf(assets, layer);
   // Only an element that *is* one part of a drawing has a node to name. What is left
@@ -631,10 +631,13 @@ function ElementSection({
           to once the composition's settings are sitting right above them. The two
           centring buttons ride the same line: they act on the whole element rather
           than on any one field under it, which is what the heading names. */}
-      <div className="mb-2 flex items-center gap-1">
-        <p className={`${LABEL} min-w-0 flex-1 truncate`} title={name}>
-          {name}
-        </p>
+      <div className={`flex items-center gap-1 mb-2`}>
+        <input
+          className={`${LABEL} min-w-0 flex-1 truncate bg-transparent outline-none focus:text-text-primary`}
+          value={name}
+          title={name}
+          onChange={(e) => useStudio.getState().renameLayer(layer.id, e.target.value)}
+        />
         <CentreButton layerId={layer.id} axis="x" />
         <CentreButton layerId={layer.id} axis="y" />
       </div>
@@ -652,35 +655,85 @@ function ElementSection({
         </>
       ) : null}
 
-      {size ? (
+      {(layerSrc.kind === "rect" || layerSrc.kind === "ellipse") ? (
+        <ShapeDimsInline layer={layer} cell={cell} />
+      ) : (
         <>
-          <p className={`${SUBLABEL} mb-1`}>Dimensions</p>
-          <div className="mb-2 flex items-center gap-1.5">
+          {size ? (
+            <>
+              <p className={`${SUBLABEL} mb-1`}>Dimensions</p>
+              <div className="mb-2 flex items-center gap-1.5">
+                {cell(
+                  "scaleX",
+                  <SizeField
+                    axis="scaleX"
+                    track={track}
+                    state={state}
+                    size={size}
+                  />,
+                )}
+                {cell(
+                  "scaleY",
+                  <SizeField
+                    axis="scaleY"
+                    track={track}
+                    state={state}
+                    size={size}
+                  />,
+                )}
+                <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
+              </div>
+            </>
+          ) : null}
+
+          <p className={`${SUBLABEL} mb-1`}>Opacity</p>
+          <div className="grid grid-cols-2 gap-x-1.5">
             {cell(
-              "scaleX",
-              <SizeField
-                axis="scaleX"
-                track={track}
-                state={state}
-                size={size}
+              "opacity",
+              <NumberField
+                label="O"
+                value={layer.base.opacity}
+                step={PROP_STEP.opacity}
+                min={0}
+                max={1}
+                onChange={(v) =>
+                  useStudio.getState().setLayerBase(layer.id, { opacity: v })
+                }
               />,
             )}
-            {cell(
-              "scaleY",
-              <SizeField
-                axis="scaleY"
-                track={track}
-                state={state}
-                size={size}
-              />,
-            )}
-            <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
           </div>
         </>
-      ) : null}
+      )}
+    </section>
+  );
+}
 
-      <p className={`${SUBLABEL} mb-1`}>Opacity</p>
-      <div className="grid grid-cols-2 gap-x-1.5">
+function ShapeDimsInline({ layer, cell }: {
+  layer: Track["layer"];
+  cell: (target: KeyTarget, field: ReactNode) => ReactNode;
+}) {
+  const src = layer.source;
+  if (src.kind !== "rect" && src.kind !== "ellipse") return null;
+  const props = src.props;
+  const set = (patch: Record<string, unknown>) =>
+    useStudio.getState().setShapeProp(layer.id, patch);
+
+  return (
+    <>
+      <div className="mb-1 flex items-center gap-1.5">
+        {cell("scaleX", <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />)}
+        {cell("scaleY", <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />)}
+        <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
+      </div>
+      <div className="mb-1 grid grid-cols-2 gap-x-1.5 gap-y-1">
+        {src.kind === "rect" ? (
+          <NumberField label="R" value={src.props.cornerRadius} step={1} min={0} onChange={(v) => set({ cornerRadius: v })} />
+        ) : (
+          <>
+            <NumberField label="Sweep" value={src.props.sweepAngle} step={1} min={0} max={360} onChange={(v) => set({ sweepAngle: v })} />
+            <NumberField label="Start" value={src.props.startAngle} step={1} min={0} max={360} onChange={(v) => set({ startAngle: v })} />
+          </>
+        )}
         {cell(
           "opacity",
           <NumberField
@@ -689,13 +742,89 @@ function ElementSection({
             step={PROP_STEP.opacity}
             min={0}
             max={1}
-            onChange={(v) =>
-              useStudio.getState().setLayerBase(layer.id, { opacity: v })
-            }
+            onChange={(v) => useStudio.getState().setLayerBase(layer.id, { opacity: v })}
           />,
         )}
       </div>
-    </section>
+    </>
+  );
+}
+
+function ShapeFillStrokeSection({ track }: { track: Track }) {
+  const { layer } = track;
+  const src = layer.source;
+  if (src.kind !== "rect" && src.kind !== "ellipse") return null;
+  const props = src.props;
+  const set = (patch: Record<string, unknown>) =>
+    useStudio.getState().setShapeProp(layer.id, patch);
+  const setFill = (patch: Partial<FillDef>) =>
+    set({ fill: { ...props.fill, ...patch } });
+  const setStroke = (patch: Partial<StrokeDef>) =>
+    set({ stroke: { ...props.stroke, ...patch } });
+
+  return (
+    <>
+      <section className={SECTION}>
+        <p className={`${SUBLABEL} mb-1`}>Fill</p>
+        <div className="mb-2 flex items-center gap-1.5">
+          <input
+            type="color"
+            value={props.fill.color}
+            className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
+            onChange={(e) => setFill({ color: e.target.value })}
+          />
+          <input
+            className={INPUT}
+            value={props.fill.color}
+            onChange={(e) => {
+              const v = normalizeHex(e.target.value);
+              if (v) setFill({ color: v });
+            }}
+          />
+          <NumberField label="A" value={props.fill.opacity} step={0.01} min={0} max={1} onChange={(v) => setFill({ opacity: v })} />
+        </div>
+      </section>
+
+      <section className={SECTION}>
+        <p className={`${SUBLABEL} mb-1`}>Stroke</p>
+        <div className="mb-1 flex items-center gap-1.5">
+          <label className="flex items-center gap-1 text-[11px] text-text-muted">
+            <input
+              type="checkbox"
+              checked={props.stroke.enabled}
+              className="accent-accent"
+              onChange={(e) => setStroke({ enabled: e.target.checked })}
+            />
+            Enabled
+          </label>
+        </div>
+        {props.stroke.enabled ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                value={props.stroke.color}
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
+                onChange={(e) => setStroke({ color: e.target.value })}
+              />
+              <input
+                className={INPUT}
+                value={props.stroke.color}
+                onChange={(e) => {
+                  const v = normalizeHex(e.target.value);
+                  if (v) setStroke({ color: v });
+                }}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-x-1.5">
+              <NumberField label="W" value={props.stroke.width} step={0.5} min={0} onChange={(v) => setStroke({ width: v })} />
+              <NumberField label="A" value={props.stroke.opacity} step={0.01} min={0} max={1} onChange={(v) => setStroke({ opacity: v })} />
+              <NumberField label="Dash" value={props.stroke.dashOffset} step={1} min={0} onChange={(v) => setStroke({ dashOffset: v })} />
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </>
   );
 }
 
@@ -959,7 +1088,7 @@ function KeyframeButton({
       aria-label={`${label}: ${target}`}
       aria-pressed={selected}
       title={label}
-      className={`grid h-3.75 w-3.75 shrink-0 place-items-center rounded-md  ${keyframed ? PROP_TEXT[target] : "text-text-muted/60 hover:text-text-primary/70"}`}
+      className={`grid h-3 w-3 shrink-0 place-items-center rounded ${keyframed ? PROP_TEXT[target] : "text-text-muted/60 hover:text-text-primary/70"}`}
       onClick={() => {
         const store = useStudio.getState();
         if (!keyframed) return store.addKeyframes(layerId, target);
@@ -969,7 +1098,7 @@ function KeyframeButton({
         );
       }}
     >
-      <DiamondIcon filled={keyframed} />
+      <DiamondIcon filled={keyframed} size={10} />
     </button>
   );
 }

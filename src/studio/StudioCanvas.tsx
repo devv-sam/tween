@@ -184,6 +184,11 @@ export function StudioCanvas() {
   // A group resize or turn in flight. Held in state, not a ref, because the overlay
   // turns with it.
   const [groupDrag, setGroupDrag] = useState<GroupDrag | null>(null);
+  const activeTool = useStudio((s) => s.activeTool);
+  const [drawPreview, setDrawPreview] = useState<{
+    from: Point; to: Point; kind: "rect" | "ellipse"; shift: boolean;
+  } | null>(null);
+  const drawRef = useRef<{ pointerId: number; from: Point; kind: "rect" | "ellipse" } | null>(null);
 
   const origin = frameOrigin(viewport, frame, view);
   const size = frameSize(frame, view.scale);
@@ -208,8 +213,12 @@ export function StudioCanvas() {
     const byId = new Map(
       assets.map((a) => [a.id, { width: a.naturalW, height: a.naturalH }]),
     );
-    return (item: SceneItem): Size | undefined =>
-      item.source.kind === "image" ? byId.get(item.source.value) : undefined;
+    return (item: SceneItem): Size | undefined => {
+      if (item.source.kind === "image") return byId.get(item.source.value);
+      if (item.source.kind === "rect" || item.source.kind === "ellipse")
+        return { width: item.source.props.width, height: item.source.props.height };
+      return undefined;
+    };
   }, [assets]);
 
   /**
@@ -478,7 +487,8 @@ export function StudioCanvas() {
       // keystroke there is already in the composition, so the studio's own undo is
       // the one that can take the edit back — the field just has to let go first.
       const key = e.key.toLowerCase();
-      const undoing = (e.metaKey || e.ctrlKey) && key === "z";
+      const mod = e.metaKey || e.ctrlKey;
+      const undoing = mod && key === "z";
       const redoing = (e.ctrlKey && !e.metaKey && key === "y") || (undoing && e.shiftKey);
       if (undoing || redoing) {
         e.preventDefault();
@@ -486,6 +496,26 @@ export function StudioCanvas() {
         const { undo, redo } = useStudio.getState();
         if (redoing) redo();
         else undo();
+        return;
+      }
+      if (mod && key === "c" && !editing) {
+        e.preventDefault();
+        useStudio.getState().copySelected();
+        return;
+      }
+      if (mod && key === "x" && !editing) {
+        e.preventDefault();
+        useStudio.getState().cutSelected();
+        return;
+      }
+      if (mod && key === "v" && !editing) {
+        e.preventDefault();
+        useStudio.getState().pasteClipboard();
+        return;
+      }
+      if (mod && key === "d" && !editing) {
+        e.preventDefault();
+        useStudio.getState().duplicateSelected();
         return;
       }
       if (editing) return;
@@ -513,6 +543,10 @@ export function StudioCanvas() {
       if (e.key === "Escape") {
         if (useStudio.getState().templateEditMode) {
           useStudio.getState().setTemplateEditMode(false);
+          return;
+        }
+        if (useStudio.getState().activeTool !== "select") {
+          useStudio.getState().setActiveTool("select");
           return;
         }
         if (picked.length > 0) select(null);
@@ -550,6 +584,10 @@ export function StudioCanvas() {
         nudgeSelected(by.x, by.y);
         return;
       }
+
+      if (key === "v") { useStudio.getState().setActiveTool("select"); return; }
+      if (key === "r") { useStudio.getState().setActiveTool("rect"); return; }
+      if (key === "o") { useStudio.getState().setActiveTool("ellipse"); return; }
 
       if (e.key === "0") {
         e.preventDefault();
@@ -689,6 +727,15 @@ export function StudioCanvas() {
     if (e.button !== 0) return;
     const screen = screenAt(e);
     const point = screenToComposition(screen, viewport, frame, view);
+
+    const tool = useStudio.getState().activeTool;
+    if (tool === "rect" || tool === "ellipse") {
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { return; }
+      drawRef.current = { pointerId: e.pointerId, from: point, kind: tool };
+      setDrawPreview({ from: point, to: point, kind: tool, shift: e.shiftKey });
+      return;
+    }
+
     const begin = (
       item: SceneItem,
       itemSize: Size,
@@ -826,6 +873,12 @@ export function StudioCanvas() {
     const screen = screenAt(e);
     const drag = dragRef.current;
 
+    if (drawRef.current && drawRef.current.pointerId === e.pointerId) {
+      const point = screenToComposition(screen, viewport, frame, view);
+      setDrawPreview({ from: drawRef.current.from, to: point, kind: drawRef.current.kind, shift: e.shiftKey });
+      return;
+    }
+
     if (marquee && marquee.pointerId === e.pointerId) {
       setMarquee({ ...marquee, to: screen });
       return;
@@ -859,6 +912,10 @@ export function StudioCanvas() {
     }
 
     if (!drag) {
+      if (useStudio.getState().activeTool !== "select") {
+        setCursor("crosshair");
+        return;
+      }
       if (clonerGroup) {
         const point = screenToComposition(screen, viewport, frame, view);
         const under = hitTest(scene, sizeOf, point) ?? runAt(point);
@@ -1044,6 +1101,32 @@ export function StudioCanvas() {
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (drawRef.current && drawRef.current.pointerId === e.pointerId) {
+      const d = drawRef.current;
+      drawRef.current = null;
+      setDrawPreview(null);
+      if (e.currentTarget.hasPointerCapture(d.pointerId)) {
+        e.currentTarget.releasePointerCapture(d.pointerId);
+      }
+      const to = screenToComposition(screenAt(e), viewport, frame, view);
+      let dx = to.x - d.from.x;
+      let dy = to.y - d.from.y;
+      const MIN_DRAG = 4 / scale;
+      if (Math.abs(dx) < MIN_DRAG && Math.abs(dy) < MIN_DRAG) {
+        dx = 160; dy = 160;
+      }
+      if (e.shiftKey) {
+        const side = Math.max(Math.abs(dx), Math.abs(dy));
+        dx = Math.sign(dx || 1) * side;
+        dy = Math.sign(dy || 1) * side;
+      }
+      const w = Math.abs(dx);
+      const h = Math.abs(dy);
+      const cx = d.from.x + dx / 2;
+      const cy = d.from.y + dy / 2;
+      useStudio.getState().addShape(d.kind, cx, cy, w, h);
+      return;
+    }
     if (closeMarquee(e)) return;
     if (groupDrag && groupDrag.pointerId === e.pointerId) {
       setGroupDrag(null);
@@ -1113,7 +1196,7 @@ export function StudioCanvas() {
       className="studio-viewport"
       aria-label="Studio canvas"
       tabIndex={0}
-      style={cursor ? { cursor } : undefined}
+      style={{ cursor: cursor ?? (activeTool !== "select" ? "crosshair" : undefined) }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -1290,6 +1373,37 @@ export function StudioCanvas() {
           }}
         />
       ) : null}
+      {drawPreview ? (() => {
+        const a = compositionToScreen(drawPreview.from, viewport, frame, view);
+        const b = compositionToScreen(drawPreview.to, viewport, frame, view);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        if (drawPreview.shift) {
+          const side = Math.max(Math.abs(dx), Math.abs(dy));
+          dx = Math.sign(dx || 1) * side;
+          dy = Math.sign(dy || 1) * side;
+        }
+        const sx = Math.min(a.x, a.x + dx);
+        const sy = Math.min(a.y, a.y + dy);
+        const sw = Math.abs(dx);
+        const sh = Math.abs(dy);
+        return (
+          <svg
+            className="pointer-events-none absolute inset-0 z-[3]"
+            width={viewport.width}
+            height={viewport.height}
+            aria-hidden="true"
+          >
+            {drawPreview.kind === "rect" ? (
+              <rect x={sx} y={sy} width={sw} height={sh}
+                fill="rgba(217,217,217,0.3)" stroke="#7B61FF" strokeWidth={1} />
+            ) : (
+              <ellipse cx={sx + sw / 2} cy={sy + sh / 2} rx={sw / 2} ry={sh / 2}
+                fill="rgba(217,217,217,0.3)" stroke="#7B61FF" strokeWidth={1} />
+            )}
+          </svg>
+        );
+      })() : null}
       {clonerGroupRect ? (
         <svg
           className="studio-selection"

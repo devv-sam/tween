@@ -8,8 +8,13 @@ import type {
   Composition,
   Distributor,
   ElementModule,
+  FillDef,
+  StrokeDef,
+  RectProps,
+  EllipseProps,
   KeyframeSet,
   Layer,
+  LayerSource,
   LinkedModule,
   ModuleAsset,
   ModuleData,
@@ -104,8 +109,12 @@ export const designSizeOf = (
   assets: StudioAsset[],
   layer: Layer,
 ): DesignSize | undefined => {
-  if (layer.source.kind !== "image") return undefined;
-  const asset = assets.find((a) => a.id === layer.source.value);
+  const src = layer.source;
+  if (src.kind === "rect" || src.kind === "ellipse") {
+    return { width: src.props.width, height: src.props.height };
+  }
+  if (src.kind !== "image") return undefined;
+  const asset = assets.find((a) => a.id === src.value);
   return asset ? { width: asset.naturalW, height: asset.naturalH } : undefined;
 };
 
@@ -521,7 +530,22 @@ export function benchComposition(bench: Bench, comp: Composition, frame: Size): 
 
 export const PROXY_ID = "__bench-proxy";
 
+export type ActiveTool = "select" | "rect" | "ellipse";
+
+const DEFAULT_FILL: FillDef = { type: "solid", color: "#D9D9D9", opacity: 1 };
+const DEFAULT_STROKE: StrokeDef = { enabled: false, color: "#000000", opacity: 1, width: 2, position: "center", dashOffset: 0 };
+
+function defaultRectProps(w: number, h: number): RectProps {
+  return { width: w, height: h, cornerRadius: 0, fill: { ...DEFAULT_FILL }, stroke: { ...DEFAULT_STROKE } };
+}
+
+function defaultEllipseProps(w: number, h: number): EllipseProps {
+  return { width: w, height: h, sweepAngle: 360, startAngle: 0, fill: { ...DEFAULT_FILL }, stroke: { ...DEFAULT_STROKE } };
+}
+
 type StudioState = {
+  activeTool: ActiveTool;
+  shapeCounters: { rect: number; ellipse: number };
   composition: Composition;
   /**
    * Saved behaviours, kept beside the composition rather than inside it: a library is
@@ -759,6 +783,14 @@ type StudioState = {
    *  motion — there is no curve left to be the one keyframe of. */
   removeSelectedKeys: () => void;
   toggleLayerLock: (layerId: string) => void;
+  setActiveTool: (tool: ActiveTool) => void;
+  addShape: (kind: "rect" | "ellipse", x: number, y: number, w: number, h: number) => string;
+  setShapeProp: (layerId: string, patch: Record<string, unknown>) => void;
+  clipboard: Track | null;
+  copySelected: () => void;
+  cutSelected: () => void;
+  pasteClipboard: () => void;
+  duplicateSelected: () => void;
   undo: () => void;
   redo: () => void;
   /** End the interaction the last edits belonged to, so the next one is its own step. */
@@ -865,6 +897,8 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
   };
 
   return {
+    activeTool: "select",
+    shapeCounters: { rect: 0, ellipse: 0 },
     composition: emptyComposition(),
     moduleLibrary: [],
     bench: null,
@@ -2143,8 +2177,9 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     detachPart: async (layerId, at) => {
       const { composition, moduleLibrary, assets, t } = get();
       const track = composition.tracks.find((tr) => tr.layer.id === layerId);
-      if (!track || track.layer.source.kind !== "image") return null;
-      const asset = assets.find((a) => a.id === track.layer.source.value);
+      const detachSrc = track?.layer.source;
+      if (!track || !detachSrc || detachSrc.kind !== "image") return null;
+      const asset = assets.find((a) => a.id === detachSrc.value);
       // One part is not a thing to take apart: there would be nothing left behind.
       if (!asset || !isSvg(asset) || asset.nodes.length < 2) return null;
 
@@ -2313,6 +2348,110 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
           tracks: s.composition.tracks.filter((tr) => !gone.has(tr.layer.id)),
         },
       }));
+    },
+
+    setActiveTool: (tool) => {
+      set({ activeTool: tool, ...pick([]), selectedPart: null });
+    },
+
+    addShape: (kind, x, y, w, h) => {
+      const id = crypto.randomUUID();
+      const source: LayerSource =
+        kind === "rect"
+          ? { kind: "rect", props: defaultRectProps(w, h) }
+          : { kind: "ellipse", props: defaultEllipseProps(w, h) };
+      const counters = { ...get().shapeCounters };
+      counters[kind] += 1;
+      const name = kind === "rect" ? `Rectangle ${counters.rect}` : `Ellipse ${counters.ellipse}`;
+      const track: Track = {
+        layer: { id, name, source, base: { x, y, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 } },
+        modules: [],
+      };
+      edit(null, (s) => ({
+        ...pick([id]),
+        selectedPart: null,
+        activeTool: "select",
+        shapeCounters: counters,
+        composition: { ...s.composition, tracks: [...s.composition.tracks, track] },
+      }));
+      return id;
+    },
+
+    setShapeProp: (layerId, patch) => {
+      edit(`shape:${layerId}`, (s) => ({
+        composition: {
+          ...s.composition,
+          tracks: s.composition.tracks.map((tr) => {
+            if (tr.layer.id !== layerId) return tr;
+            const src = tr.layer.source;
+            if (src.kind === "rect") {
+              return { ...tr, layer: { ...tr.layer, source: { ...src, props: { ...src.props, ...patch } } } };
+            }
+            if (src.kind === "ellipse") {
+              return { ...tr, layer: { ...tr.layer, source: { ...src, props: { ...src.props, ...patch } } } };
+            }
+            return tr;
+          }),
+        },
+      }));
+    },
+
+    clipboard: null,
+
+    copySelected: () => {
+      const { selectedId, composition } = get();
+      if (!selectedId) return;
+      const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
+      if (!track) return;
+      set({ clipboard: structuredClone(track) });
+    },
+
+    cutSelected: () => {
+      const s = get();
+      if (!s.selectedId) return;
+      s.copySelected();
+      s.deleteSelected();
+    },
+
+    pasteClipboard: () => {
+      const { clipboard } = get();
+      if (!clipboard) return;
+      const id = crypto.randomUUID();
+      const PASTE_OFFSET = 20;
+      const baseName = clipboard.layer.name?.replace(/\s*\d+$/, "") ?? "";
+      const existing = get().composition.tracks;
+      let max = 0;
+      for (const tr of existing) {
+        const n = tr.layer.name;
+        if (!n) continue;
+        const m = n.match(new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(\\d+)$`));
+        if (m) max = Math.max(max, Number(m[1]));
+      }
+      const cloned: Track = {
+        ...structuredClone(clipboard),
+        layer: {
+          ...structuredClone(clipboard.layer),
+          id,
+          name: baseName ? `${baseName} ${max + 1}` : undefined,
+          base: {
+            ...clipboard.layer.base,
+            x: clipboard.layer.base.x + PASTE_OFFSET,
+            y: clipboard.layer.base.y + PASTE_OFFSET,
+          },
+        },
+      };
+      edit(null, (s) => ({
+        ...pick([id]),
+        selectedPart: null,
+        composition: { ...s.composition, tracks: [...s.composition.tracks, cloned] },
+      }));
+    },
+
+    duplicateSelected: () => {
+      const s = get();
+      if (!s.selectedId) return;
+      s.copySelected();
+      s.pasteClipboard();
     },
 
     undo: () => {
