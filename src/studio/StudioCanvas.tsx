@@ -335,17 +335,6 @@ export function StudioCanvas() {
     };
   }, [cloner, selectedId, scene, sizeOf, templateEditMode]);
 
-  const clonerGroupChrome = useMemo(() => {
-    if (!clonerGroup) return null;
-    const toScreen = (p: Point) => compositionToScreen(p, viewport, frame, view);
-    const at = handlePositions(clonerGroup.state, clonerGroup.size);
-    const handles = {} as Record<Handle, Point>;
-    for (const k of HANDLES) handles[k] = toScreen(at[k]);
-    return {
-      outline: cornerPoints(clonerGroup.state, clonerGroup.size).map(toScreen),
-      handles,
-    };
-  }, [clonerGroup, viewport, frame, view]);
 
   /**
    * The picked element itself, apart from any copies of it.
@@ -372,15 +361,6 @@ export function StudioCanvas() {
     return { item, size: intrinsic };
   }, [scene, solo, selectedId, sizeOf]);
 
-  /** The source element's outline when the cloner group is shown, drawn with a
-   *  thicker stroke so the author knows which copy is the anchor. */
-  const sourceChrome = useMemo(() => {
-    if (!clonerGroup || !solo) return null;
-    const sz = sizeOf(solo);
-    if (!sz) return null;
-    const toScreen = (p: Point) => compositionToScreen(p, viewport, frame, view);
-    return { outline: cornerPoints(solo.state, sz).map(toScreen) };
-  }, [clonerGroup, solo, sizeOf, viewport, frame, view]);
 
   /**
    * Every other element on the frame, as a box to line up against.
@@ -1282,40 +1262,6 @@ export function StudioCanvas() {
                 width={HANDLE_SIZE}
                 height={HANDLE_SIZE}
                 transform={`rotate(${groupChrome.rotation} ${p.x} ${p.y})`}
-              />
-            );
-          })}
-        </svg>
-      ) : null}
-      {/* A cloner spread, boxed as one. The source gets a thicker outline so the
-          author knows which copy is the anchor everything is arranged around. */}
-      {clonerGroup && clonerGroupChrome ? (
-        <svg
-          className="studio-selection"
-          width={viewport.width}
-          height={viewport.height}
-          aria-hidden="true"
-        >
-          {sourceChrome ? (
-            <polygon
-              style={{ fill: "none", stroke: "var(--color-accent)", strokeWidth: 2.5 }}
-              points={sourceChrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
-            />
-          ) : null}
-          <polygon
-            className="studio-selection-outline"
-            points={clonerGroupChrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
-          />
-          {CORNERS.map((k) => {
-            const p = clonerGroupChrome.handles[k];
-            return (
-              <rect
-                key={k}
-                className="studio-handle"
-                x={p.x - HANDLE_SIZE / 2}
-                y={p.y - HANDLE_SIZE / 2}
-                width={HANDLE_SIZE}
-                height={HANDLE_SIZE}
               />
             );
           })}
