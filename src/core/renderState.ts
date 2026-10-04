@@ -36,7 +36,7 @@ export function renderState(comp: Composition, t: number, library: ModuleAsset[]
         // cloner staggers instead of moving as one block.
         const delay = typeof md.params.delay === "number" ? md.params.delay : 0;
         const localT = clamp(remap(t, md.range) - inst.u * delay, 0, 1);
-        const ctx: EvalCtx = { t, localT, u: inst.u, i: inst.i, count: inst.count, field: sample };
+        const ctx: EvalCtx = { t, tSec: t * comp.duration, localT, u: inst.u, i: inst.i, count: inst.count, field: sample };
         state = getModule(md.type).evaluate(state, ctx, md.params);
       }
       scene.push({ id: track.layer.id, source: track.layer.source, state });

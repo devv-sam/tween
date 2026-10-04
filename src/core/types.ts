@@ -9,7 +9,7 @@ export type Blend = "set" | "add" | "mul";
 export type Prop = "x" | "y" | "scale" | "scaleX" | "scaleY" | "rotation" | "opacity";
 
 export interface EvalCtx {
-  t: number; localT: number; u: number; i: number; count: number;
+  t: number; tSec: number; localT: number; u: number; i: number; count: number;
   field: (id: string, x: number, y: number) => number;
 }
 

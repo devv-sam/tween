@@ -576,7 +576,9 @@ type StudioState = {
   viewport: Size;
   view: View;
   timelineZoom: number;
+  templateEditMode: boolean;
   history: History<Snapshot>;
+  setTemplateEditMode: (on: boolean) => void;
   setT: (t: number) => void;
   setPlaying: (playing: boolean) => void;
   toggleLoop: () => void;
@@ -882,7 +884,10 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     viewport: { width: 0, height: 0 },
     view: { scale: DEFAULT_VIEW_SCALE, zoom: 1, panX: 0, panY: 0 },
     timelineZoom: 1,
+    templateEditMode: false,
     history: emptyHistory<Snapshot>(),
+
+    setTemplateEditMode: (on) => set({ templateEditMode: on }),
 
     // `t` is normalized over the composition — the playhead and the rAF loop both
     // land here, so the renderer has one clock to read.
@@ -1050,6 +1055,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         ...pick(layerId === null ? [] : [layerId]),
         selectedPart: null,
         selectedSegments: [],
+        templateEditMode: false,
         // The picked keyframes are read against the selected element, so they mean
         // nothing once a different one is selected.
         selectedKeys: layerId === s.selectedId ? s.selectedKeys : [],
@@ -1060,6 +1066,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       set((s) => ({
         ...pick(ids),
         selectedSegments: [],
+        templateEditMode: false,
         selectedPart: ids.length === 1 && ids[0] === s.selectedId ? s.selectedPart : null,
         selectedKeys: ids.length === 1 && ids[0] === s.selectedId ? s.selectedKeys : [],
       })),
@@ -1331,7 +1338,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         const track = s.composition.tracks.find((tr) => tr.layer.id === layerId);
         if (!track) return {};
         return {
-          // The new one is what you came to configure, so it opens picked.
           selectedPart: { kind: "module", index: track.modules.length },
           ...patchTrack(s.composition, layerId, (tr) => ({
             ...tr,

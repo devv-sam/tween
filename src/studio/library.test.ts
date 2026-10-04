@@ -80,12 +80,12 @@ describe("saving a stack as a module", () => {
   it("bundles the raw entries and links them back", () => {
     const id = seed();
     useStudio.getState().addModule(id, "keyframes");
-    useStudio.getState().addModule(id, "clonerGraph");
+    useStudio.getState().addModule(id, "pulse");
     useStudio.getState().saveStackAsModule(id, "  card fan  ");
 
     expect(library()).toHaveLength(1);
     expect(library()[0].name).toBe("card fan");
-    expect(library()[0].stack.map((md) => md.type)).toEqual(["keyframes", "clonerGraph"]);
+    expect(library()[0].stack.map((md) => md.type)).toEqual(["keyframes", "pulse"]);
     expect(modulesOf()).toHaveLength(1);
     expect(isLinked(modulesOf()[0])).toBe(true);
   });
