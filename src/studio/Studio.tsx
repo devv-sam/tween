@@ -35,14 +35,14 @@ export function Studio() {
         {/* Both panels are always in the layout. Only the rail's own width changes on
             collapse, so the frame grows from the left and never from the right. */}
         <nav
-          className="flex min-h-0 shrink-0 border-r border-[#e0e0e0] bg-white"
+          className="flex min-h-0 shrink-0 border-r border-border bg-bg"
           aria-label="studio"
         >
-          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-[#e0e0e0] px-[5px] py-2">
+          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border px-[5px] py-2">
             {/* Collapsed, the rail is the only thing left — so the toggle comes with
                 it, keeping its own divided slot above the panel tabs. */}
             {collapsed ? (
-              <div className="mb-1 flex w-full justify-center border-b border-[#e0e0e0] pb-2">
+              <div className="mb-1 flex w-full justify-center border-b border-border pb-2">
                 <PanelToggle collapsed onToggle={() => setCollapsed(false)} />
               </div>
             ) : null}
@@ -66,11 +66,17 @@ export function Studio() {
             />
           </div>
           {collapsed ? null : (
-            <div className="flex w-[236px] shrink-0 flex-col" id="assets-drawer">
+            <div
+              className="flex w-[236px] shrink-0 flex-col"
+              id="assets-drawer"
+            >
               {/* Its own strip above the panel's contents, matched to the inspector
                   header's height so the two panels line up across the studio. */}
-              <div className="flex h-9 shrink-0 items-center justify-end border-b border-[#e0e0e0] px-2">
-                <PanelToggle collapsed={false} onToggle={() => setCollapsed(true)} />
+              <div className="flex h-9 shrink-0 items-center justify-end border-b border-border px-2">
+                <PanelToggle
+                  collapsed={false}
+                  onToggle={() => setCollapsed(true)}
+                />
               </div>
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-width:none]">
                 {tab === "assets" ? (
@@ -102,13 +108,13 @@ function AssetShelf({
 }) {
   return (
     <>
-      <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-white px-3 pt-3 pb-2">
-        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888]">
+      <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-bg px-3 pt-3 pb-2">
+        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-muted">
           Assets
         </span>
         <button
           type="button"
-          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
           aria-label="Import images"
           title="Import images"
           onClick={() => inputRef.current?.click()}
@@ -130,7 +136,7 @@ function AssetShelf({
         }}
       />
       {assets.length === 0 ? (
-        <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-[#b0b0b0]">
+        <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-text-muted/60">
           Nothing here yet. Import png, jpg, webp, or svg.
         </p>
       ) : (
@@ -159,17 +165,18 @@ function RailTab({
   return (
     <button
       type="button"
-      className={`flex w-full flex-col items-center gap-1 rounded-[7px] px-0.5 pt-[5px] pb-1.5 text-[10px] leading-tight focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[#111] ${
-        active ? "font-medium text-[#111]" : "text-[#888]"
+      className={`flex w-full flex-col items-center gap-1 rounded-[7px] px-0.5 pt-[5px] pb-1.5 text-[10px] leading-tight focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-text-primary ${
+        active ? "font-medium text-text-primary" : "text-text-muted"
       }`}
       aria-pressed={active}
       aria-controls="assets-drawer"
-      title={label}
       onClick={onClick}
     >
       <span
         className={`grid h-7 w-7 place-items-center rounded-[7px] ${
-          active ? "bg-[#e8f4ff] text-[#0d99ff]" : "text-[#555] hover:bg-[#f5f5f5]"
+          active
+            ? "bg-accent/10 text-accent"
+            : "text-text-primary/70 hover:bg-text-primary/5"
         }`}
       >
         {icon}
@@ -187,11 +194,11 @@ function PanelToggle({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const label = collapsed ? "expand" : "collapse";
+  const label = collapsed ? "Expand" : "Collapse";
   return (
     <button
       type="button"
-      className="grid h-7 w-7 place-items-center rounded-[7px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+      className="grid h-7 w-7 place-items-center rounded-[7px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
       aria-label={label}
       aria-expanded={!collapsed}
       aria-controls="assets-drawer"
@@ -205,10 +212,10 @@ function PanelToggle({
 
 /** Per-extension chip colours. */
 const CHIP: Record<string, string> = {
-  png: "bg-[#f1ebfd] text-[#7c4ddb]",
-  jpg: "bg-[#fdeedd] text-[#c4711a]",
-  webp: "bg-[#e5f1fe] text-[#1a76cc]",
-  svg: "bg-[#e8f7ef] text-[#1a8a5a]",
+  png: "bg-badge-png text-badge-png-text",
+  jpg: "bg-badge-jpg text-badge-jpg-text",
+  webp: "bg-badge-webp text-badge-webp-text",
+  svg: "bg-badge-svg text-badge-svg-text",
 };
 
 function AssetCard({ asset }: { asset: StudioAsset }) {
@@ -247,7 +254,7 @@ function AssetCard({ asset }: { asset: StudioAsset }) {
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
-      <div className="relative grid aspect-square place-items-center overflow-hidden rounded-[7px] border border-[#e0e0e0] bg-[#f5f5f5] p-1.5 group-hover/asset:border-[#c8c8c8]">
+      <div className="relative grid aspect-square place-items-center overflow-hidden rounded-[7px] border border-border bg-text-primary/5 p-1.5 group-hover/asset:border-text-muted/50">
         {/* `contain` inside a box of the thumb's own size, so an asset reads whole in
             the drawer the way it does on canvas. Sizing by `max-h-full` instead lets a
             portrait asset out of the bottom of the square: a percentage max-height has
@@ -261,7 +268,7 @@ function AssetCard({ asset }: { asset: StudioAsset }) {
         {/* Takes any elements placed from this asset with it — see `removeAsset`. */}
         <button
           type="button"
-          className="pointer-events-none absolute right-1 top-1 grid h-[17px] w-[17px] place-items-center rounded border border-[#e0e0e0] bg-white p-0 text-[#555] opacity-0 hover:border-[#111] hover:bg-[#111] hover:text-white focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111] group-hover/asset:pointer-events-auto group-hover/asset:opacity-100"
+          className="pointer-events-none absolute right-1 top-1 grid h-[17px] w-[17px] place-items-center rounded border border-border bg-bg p-0 text-text-primary/70 opacity-0 hover:border-text-primary hover:bg-text-primary hover:text-bg focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary group-hover/asset:pointer-events-auto group-hover/asset:opacity-100"
           draggable={false}
           aria-label={`Remove ${label}`}
           title="Remove"
@@ -271,7 +278,10 @@ function AssetCard({ asset }: { asset: StudioAsset }) {
         </button>
       </div>
       <div className="flex min-w-0 items-center justify-between gap-1.5">
-        <span className="truncate text-[10px] leading-[1.3] text-[#111]" title={asset.name}>
+        <span
+          className="truncate text-[10px] leading-[1.3] text-text-primary"
+          title={asset.name}
+        >
           {label}
         </span>
         {ext ? (
@@ -285,7 +295,9 @@ function AssetCard({ asset }: { asset: StudioAsset }) {
       {/* Quiet, and on the card rather than in the import error: the file did come
           in, it just came in whole. */}
       {asset.kind === "svg" && asset.notice ? (
-        <p className="m-0 text-[9px] leading-[1.35] text-[#b0b0b0]">{asset.notice}</p>
+        <p className="m-0 text-[9px] leading-[1.35] text-text-muted/60">
+          {asset.notice}
+        </p>
       ) : null}
     </div>
   );

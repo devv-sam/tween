@@ -14,13 +14,13 @@ export function ModuleShelf() {
     <>
       {/* The same header the Assets shelf has, so the way you add a module is the
           way you add a picture. */}
-      <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-white px-3 pt-3 pb-2">
-        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-[#888]">
+      <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-bg px-3 pt-3 pb-2">
+        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-muted">
           Modules
         </span>
         <button
           type="button"
-          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
           aria-label="New module"
           title="New module"
           onClick={() => useStudio.getState().openBench()}
@@ -29,7 +29,7 @@ export function ModuleShelf() {
         </button>
       </div>
       {library.length === 0 ? (
-        <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-[#b0b0b0]">
+        <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-text-muted/60">
           no modules yet
         </p>
       ) : (
@@ -73,7 +73,7 @@ function ModuleCard({ id }: { id: string }) {
   return (
     <li className="flex flex-col gap-1">
       <div
-        className="group/module flex min-w-0 cursor-grab items-center gap-1 rounded-[7px] border border-[#e0e0e0] px-2 py-1.5 hover:border-[#c8c8c8]"
+        className="group/module flex min-w-0 cursor-grab items-center gap-1 rounded-[7px] border border-border px-2 py-1.5 hover:border-text-muted/50"
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(MODULE_DRAG, asset.id);
@@ -81,10 +81,10 @@ function ModuleCard({ id }: { id: string }) {
         }}
       >
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[11px] leading-[1.3] text-[#111]" title={asset.name}>
+          <span className="truncate text-[11px] leading-[1.3] text-text-primary" title={asset.name}>
             {asset.name}
           </span>
-          <span className="truncate text-[9px] leading-[1.35] text-[#b0b0b0]">
+          <span className="truncate text-[9px] leading-[1.35] text-text-muted/60">
             {stackSummary(asset.stack) || "empty"}
           </span>
         </span>
@@ -92,8 +92,8 @@ function ModuleCard({ id }: { id: string }) {
           type="button"
           aria-label={`more for ${asset.name}`}
           aria-expanded={menu}
-          title="more"
-          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+          title="More"
+          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
           draggable={false}
           onClick={() => setMenu((v) => !v)}
         >
@@ -102,10 +102,10 @@ function ModuleCard({ id }: { id: string }) {
       </div>
 
       {menu ? (
-        <div className="flex flex-col gap-0.5 rounded-md border border-[#e0e0e0] bg-[#fbfbfb] p-1">
+        <div className="flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
           <button
             type="button"
-            className="rounded px-1.5 py-1 text-left text-[11px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
+            className="rounded px-1.5 py-1 text-left text-[11px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
             onClick={() => {
               setMenu(false);
               useStudio.getState().openBench(asset.id);
@@ -115,7 +115,7 @@ function ModuleCard({ id }: { id: string }) {
           </button>
           <button
             type="button"
-            className="rounded px-1.5 py-1 text-left text-[11px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
+            className="rounded px-1.5 py-1 text-left text-[11px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
             onClick={() => {
               setMenu(false);
               setConfirming(true);
@@ -127,9 +127,9 @@ function ModuleCard({ id }: { id: string }) {
       ) : null}
 
       {confirming ? (
-        <div className="rounded-md border border-[#e0e0e0] bg-[#fbfbfb] p-2">
+        <div className="rounded-md border border-border bg-text-primary/[0.03] p-2">
           {uses > 0 ? (
-            <p className="mb-1.5 text-[11px] leading-snug text-[#555]">
+            <p className="mb-1.5 text-[11px] leading-snug text-text-primary/70">
               {uses} element{uses === 1 ? "" : "s"} use this module. deleting will detach
               them.
             </p>
@@ -204,29 +204,29 @@ export function BenchPanel({ bench }: { bench: Bench }) {
       <section className={SECTION}>
         <p className={`${LABEL} mb-2`}>stack</p>
         {bench.stack.length === 0 ? (
-          <p className="mb-2 text-[11px] text-[#b0b0b0]">nothing on the stack yet</p>
+          <p className="mb-2 text-[11px] text-text-muted/60">nothing on the stack yet</p>
         ) : (
           <ul className="mb-2 flex flex-col gap-1">
             {bench.stack.map((md, i) => (
               <li key={i} className="flex items-center gap-1">
-                <span className="flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border border-[#e0e0e0] px-2 text-[11px] text-[#555]">
+                <span className="flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] text-text-primary/70">
                   <span className="truncate">{md.type}</span>
                 </span>
                 <StackButton
-                  label="move up"
+                  label="Move up"
                   disabled={i === 0}
                   onClick={() => store.moveBenchModule(i, i - 1)}
                 >
                   ↑
                 </StackButton>
                 <StackButton
-                  label="move down"
+                  label="Move down"
                   disabled={i === bench.stack.length - 1}
                   onClick={() => store.moveBenchModule(i, i + 1)}
                 >
                   ↓
                 </StackButton>
-                <StackButton label="remove" onClick={() => store.removeBenchModule(i)}>
+                <StackButton label="Remove" onClick={() => store.removeBenchModule(i)}>
                   ×
                 </StackButton>
               </li>
@@ -237,7 +237,7 @@ export function BenchPanel({ bench }: { bench: Bench }) {
       </section>
 
       {bench.stack.map((md, i) => (
-        <section key={i} className={`${SECTION} bg-[#fbfbfb]`}>
+        <section key={i} className={`${SECTION} bg-text-primary/[0.03]`}>
           <p className={`${SUBLABEL} mb-1.5`}>{md.type}</p>
           <ModuleParams
             module={md}
@@ -268,7 +268,7 @@ function StackButton({
       aria-label={label}
       title={label}
       disabled={disabled}
-      className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
+      className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
       onClick={onClick}
     >
       {children}

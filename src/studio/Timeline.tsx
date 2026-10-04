@@ -439,7 +439,6 @@ export function Timeline() {
               type="button"
               className="transport-btn"
               aria-label={playing ? "pause" : "play"}
-              title={playing ? "pause" : "play"}
               aria-pressed={playing}
               onClick={() => useStudio.getState().setPlaying(!playing)}
             >
@@ -449,7 +448,7 @@ export function Timeline() {
               type="button"
               className={`transport-btn${loop ? " is-on" : ""}`}
               aria-label="loop"
-              title="loop"
+              title="Loop"
               aria-pressed={loop}
               onClick={() => useStudio.getState().toggleLoop()}
             >
@@ -493,7 +492,7 @@ export function Timeline() {
               <button
                 type="button"
                 className="duration-handle"
-                title="drag to set duration, double-click to trim"
+                title="Set duration (double-click to trim)"
                 aria-label={`Duration ${clampDuration(duration).toFixed(1)}s, drag to set duration, double-click to trim to the last keyframe`}
                 onPointerDown={onDurationDown}
                 onDoubleClick={() => useStudio.getState().trimDurationToContent()}
@@ -612,7 +611,7 @@ export function Timeline() {
                 {marquee ? (
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute z-[2] border border-[#0d99ff] bg-[#0d99ff]/10"
+                    className="pointer-events-none absolute z-[2] border border-accent bg-accent/10"
                     style={marquee}
                   />
                 ) : null}
@@ -645,14 +644,13 @@ function ZoomControl({
   onStep: (factor: number) => void;
 }) {
   const button =
-    "grid h-5 w-5 place-items-center rounded text-[#111] hover:bg-[#f0f0f0] disabled:pointer-events-none disabled:text-[#c0c0c0]";
+    "grid h-5 w-5 place-items-center rounded text-text-primary hover:bg-text-primary/5 disabled:pointer-events-none disabled:text-text-muted/60";
   return (
-    <div className="flex h-7 shrink-0 items-center justify-end gap-1.5 border-t border-[#e0e0e0] px-3">
+    <div className="flex h-7 shrink-0 items-center justify-end gap-1.5 border-t border-border px-3">
       <button
         type="button"
         className={button}
         aria-label="zoom out"
-        title="zoom out"
         disabled={zoom <= MIN_TIMELINE_ZOOM}
         onClick={() => onStep(1 / ZOOM_STEP)}
       >
@@ -660,7 +658,7 @@ function ZoomControl({
       </button>
       <input
         type="range"
-        className="h-4 w-[112px] cursor-pointer appearance-none bg-transparent focus-visible:outline-none [&::-moz-range-thumb]:h-[11px] [&::-moz-range-thumb]:w-[11px] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-[#c4c4c4] [&::-moz-range-track]:h-[3px] [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[#d8d8d8] [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[#d8d8d8] [&::-webkit-slider-thumb]:-mt-[4px] [&::-webkit-slider-thumb]:h-[11px] [&::-webkit-slider-thumb]:w-[11px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#c4c4c4] hover:[&::-webkit-slider-thumb]:bg-[#999] focus-visible:[&::-webkit-slider-thumb]:bg-[#999]"
+        className="h-4 w-[112px] cursor-pointer appearance-none bg-transparent focus-visible:outline-none [&::-moz-range-thumb]:h-[11px] [&::-moz-range-thumb]:w-[11px] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-text-muted/60 [&::-moz-range-track]:h-[3px] [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border [&::-webkit-slider-thumb]:-mt-[4px] [&::-webkit-slider-thumb]:h-[11px] [&::-webkit-slider-thumb]:w-[11px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-text-muted/60 hover:[&::-webkit-slider-thumb]:bg-text-muted focus-visible:[&::-webkit-slider-thumb]:bg-text-muted"
         aria-label="timeline zoom"
         min={0}
         max={1}
@@ -672,7 +670,6 @@ function ZoomControl({
         type="button"
         className={button}
         aria-label="zoom in"
-        title="zoom in"
         disabled={zoom >= MAX_TIMELINE_ZOOM}
         onClick={() => onStep(ZOOM_STEP)}
       >
@@ -732,7 +729,7 @@ function TrackLabel({
         over ? " is-drop" : ""
       }`}
       style={{ height: TRACK_HEIGHT }}
-      title={draft === null ? `${name} — double-click to rename` : undefined}
+      title={draft === null ? "Double-click to rename" : undefined}
       onDoubleClick={() => setDraft(given)}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(MODULE_DRAG)) return;
@@ -759,7 +756,6 @@ function TrackLabel({
             ? `collapse ${name}, ${blocks} animated ${blocks === 1 ? "property" : "properties"}`
             : `expand ${name}, ${blocks} animated ${blocks === 1 ? "property" : "properties"}`
         }
-        title={open ? "collapse" : "expand"}
         onClick={() => useStudio.getState().toggleTrackExpanded(layerId)}
       >
         <ChevronIcon />
@@ -782,7 +778,7 @@ function TrackLabel({
       ) : (
         <input
           autoFocus
-          className="min-w-0 flex-1 rounded-[3px] border border-[#0d99ff] bg-white px-1 py-px text-[11px] text-[#111] outline-none"
+          className="min-w-0 flex-1 rounded-[3px] border border-accent bg-bg px-1 py-px text-[11px] text-text-primary outline-none"
           aria-label="element name"
           value={draft}
           placeholder={name}
@@ -799,7 +795,7 @@ function TrackLabel({
       {!open && draft === null ? (
         <span
           className="timeline-track-count"
-          title={`${blocks} animated ${blocks === 1 ? "property" : "properties"}`}
+          title={`${blocks} ${blocks === 1 ? "property" : "properties"}`}
         >
           {blocks}
         </span>
@@ -906,7 +902,6 @@ function PropertyLabel({
         type="button"
         className="timeline-property-name"
         aria-pressed={selected}
-        title={`${block.label} — click to select`}
         onClick={() => useStudio.getState().selectPart(layerId, block.part)}
       >
         {block.label}
@@ -919,7 +914,7 @@ function PropertyLabel({
             <div key={axis} className={axes.length > 1 ? "w-[42px]" : "w-[58px]"}>
               <NumberField
                 label=""
-                title={`${block.label}${axes.length > 1 ? ` ${axis}` : ""} at the playhead — editing it writes a keyframe there`}
+                title="Value at playhead"
                 value={read(axis)}
                 step={PROP_STEP[target]}
                 compact
@@ -929,7 +924,7 @@ function PropertyLabel({
           ))}
         </div>
       ) : (
-        <span className="ml-auto pr-1 text-[10px] text-[#b0b0b0]">module</span>
+        <span className="ml-auto pr-1 text-[10px] text-text-muted/60">module</span>
       )}
     </div>
   );
@@ -1040,8 +1035,8 @@ function MainBar({
       aria-label={`${name} timing — drag to move every property, drag an end to stretch them`}
       aria-pressed={selected}
       className={`absolute top-1/2 flex -translate-y-1/2 touch-none items-center justify-between rounded-[5px] px-1.5 ${
-        selected ? "bg-[#1f78cf] ring-2 ring-[#9dcaf2]" : "bg-[#3186d6]"
-      } hover:bg-[#2b7ecd]`}
+        selected ? "bg-accent ring-2 ring-accent/30" : "bg-accent/85 hover:bg-accent"
+      }`}
       style={{ left, width: Math.max(4, right - left), height: MAIN_HEIGHT }}
       onPointerDown={onDown}
       onPointerMove={onMove}
@@ -1049,8 +1044,8 @@ function MainBar({
       onPointerCancel={onUp}
     >
       {/* The two ends, said plainly — this bar can be stretched as well as moved. */}
-      <span className="pointer-events-none h-[11px] w-[2px] rounded-full bg-white/85" />
-      <span className="pointer-events-none h-[11px] w-[2px] rounded-full bg-white/85" />
+      <span className="pointer-events-none h-[11px] w-[2px] rounded-full bg-bg/85" />
+      <span className="pointer-events-none h-[11px] w-[2px] rounded-full bg-bg/85" />
     </div>
   );
 }
@@ -1090,12 +1085,11 @@ function Rail({ cap }: { cap: RailCap | null }) {
  * to authoring them together after going in to tweak one.
  */
 function LinkMark({ group }: { group: LinkGroup }) {
-  const others = group.members.length - 1;
   return (
     <button
       type="button"
       className={`timeline-link ${PROP_TEXT[group.property]}`}
-      title={`runs with ${others} other element${others === 1 ? "" : "s"} — click to pick them all`}
+      title="Select linked elements"
       aria-label={`${group.property} runs the same on ${group.members.length} elements, pick them all`}
       onClick={() => useStudio.getState().setSelectedIds(group.members)}
     >
@@ -1394,10 +1388,10 @@ function KeyframeTrack({
             type="button"
             aria-label={`${block.label} keyframe ${i + 1} of ${stops.length}`}
             aria-pressed={on}
-            // Picked reads on both grounds: filled, it stands out against the white
+            // Picked reads on both grounds: filled, it stands out against its
             // lane, and the halo keeps it visible on a selected bar of its own colour.
             className={`absolute top-1/2 touch-none border p-0 ${
-              filled ? "border-current bg-current ring-2 ring-white" : "border-current bg-white"
+              filled ? "border-current bg-current ring-2 ring-timeline-bg" : "border-current bg-timeline-bg"
             } ${dimming && !bounds ? "opacity-30" : ""}`}
             style={{
               left: xOf(stop.t),
@@ -1553,7 +1547,7 @@ function ModuleBlock({
       {block.stops.map((stop, i) => (
         <span
           key={i}
-          className="pointer-events-none absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-current bg-white"
+          className="pointer-events-none absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-current bg-timeline-bg"
           style={{ left: `calc(${stop.t * 100}% + ${(0.5 - stop.t) * 9}px)` }}
         />
       ))}
@@ -1579,7 +1573,7 @@ function Readout({
   onSeek: (seconds: number) => void;
   onToggleUnit: () => void;
 }) {
-  const name = unit === "s" ? "seconds" : "milliseconds";
+  const name = unit === "s" ? "Seconds" : "Milliseconds";
   const ms = unit === "ms";
   // One scale for both fields: what is typed is in the unit on show, what is stored
   // is always seconds.
@@ -1595,7 +1589,7 @@ function Readout({
           <NumberField
             label=""
             ariaLabel={`current time in ${name}`}
-            title="current time — type to move the playhead"
+            title="Current time"
             join="left"
             tight
             value={time * scale}
@@ -1609,7 +1603,7 @@ function Readout({
           <NumberField
             label=""
             ariaLabel={`duration in ${name}`}
-            title="duration — type to set how long the composition runs"
+            title="Duration"
             join="right"
             tight
             value={duration * scale}

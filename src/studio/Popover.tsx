@@ -90,7 +90,7 @@ export function Popover({
         ref={boxRef}
         role="dialog"
         aria-label={label}
-        className="fixed z-50 rounded-[9px] border border-[#e0e0e0] bg-white shadow-[0_6px_20px_rgba(0,0,0,.14)]"
+        className="fixed z-50 rounded-[9px] border border-border bg-bg shadow-[0_6px_20px_rgba(0,0,0,.14)]"
         // Measured against the anchor, so there is nothing static to put in a class.
         // Held off-screen for the first frame rather than flashing at the corner.
         style={at ?? { left: -9999, top: -9999 }}
