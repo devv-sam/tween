@@ -754,15 +754,13 @@ function PulseSettings({
         </button>
       </div>
       <div className="border-t border-border/60 p-3">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[10px] text-text-muted">
-              Property
-            </span>
+        <div className="grid grid-cols-2 gap-2">
+          <label className={`${BOX} col-span-2 justify-between`}>
+            <span className={LABEL}>Property</span>
             <select
               value={property}
               onChange={(e) => setProperty(e.target.value as PulseProp)}
-              className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+              className="bg-transparent text-[11px] text-text-primary outline-none"
             >
               {PULSE_PROPS.map((p) => (
                 <option key={p} value={p}>
@@ -776,85 +774,55 @@ function PulseSettings({
                 </option>
               ))}
             </select>
-          </div>
+          </label>
 
-          <div className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[10px] text-text-muted">
-              Min
-            </span>
-            <NumberField
-              label=""
-              value={min}
-              step={0.1}
-              onChange={(v) => onParams({ min: v })}
-              tight
-            />
-          </div>
+          <NumberField
+            label="Min"
+            value={min}
+            step={0.1}
+            onChange={(v) => onParams({ min: v })}
+            tight
+          />
+          <NumberField
+            label="Max"
+            value={max}
+            step={0.1}
+            onChange={(v) => onParams({ max: v })}
+            tight
+          />
 
-          <div className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[10px] text-text-muted">
-              Max
-            </span>
-            <NumberField
-              label=""
-              value={max}
-              step={0.1}
-              onChange={(v) => onParams({ max: v })}
-              tight
-            />
-          </div>
+          <NumberField
+            label="Rhythm"
+            value={rhythm}
+            step={0.1}
+            min={0.01}
+            onChange={(v) => onParams({ rhythm: v })}
+            tight
+          />
+          <NumberField
+            label="Stagger"
+            value={stagger}
+            step={0.05}
+            min={0}
+            onChange={(v) => onParams({ stagger: v })}
+            tight
+          />
 
-          <div className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[10px] text-text-muted">
-              Rhythm
-            </span>
-            <div className="flex flex-1 items-center gap-1">
-              <NumberField
-                label=""
-                value={rhythm}
-                step={0.1}
-                min={0.01}
-                onChange={(v) => onParams({ rhythm: v })}
-                tight
-              />
-              <span className="text-[10px] text-text-muted/60">/s</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[10px] text-text-muted">
-              Stagger
-            </span>
-            <div className="flex flex-1 items-center gap-1">
-              <NumberField
-                label=""
-                value={stagger}
-                step={0.05}
-                min={0}
-                onChange={(v) => onParams({ stagger: v })}
-                tight
-              />
-              <span className="text-[10px] text-text-muted/60">s</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[10px] text-text-muted">
-              Blend
-            </span>
+          <label className={`${BOX} col-span-2 justify-between`}>
+            <span className={LABEL}>Blend</span>
             <select
               value={blend}
               onChange={(e) => onParams({ blend: e.target.value })}
-              className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+              className="bg-transparent text-[11px] text-text-primary outline-none"
             >
               <option value="mul">Mul</option>
               <option value="add">Add</option>
               <option value="set">Set</option>
             </select>
-          </div>
+          </label>
 
           {!hasCloner ? (
-            <p className="text-[10px] text-text-muted/60">
+            <p className="col-span-2 text-[10px] text-text-muted/60">
               Add a cloner to stagger across clones
             </p>
           ) : null}
