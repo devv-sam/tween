@@ -126,7 +126,7 @@ export function EasingSection({
         </>
       )}
 
-      {note ? <p className="mt-2 text-[10px] text-[#b0b0b0]">{note}</p> : null}
+      {note ? <p className="mt-2 text-[10px] text-text-muted/60">{note}</p> : null}
     </div>
   );
 }
@@ -152,12 +152,12 @@ function PresetPicker({
         aria-label="easing preset"
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`${BOX} mt-1.5 w-full justify-between hover:border-[#c8c8c8]`}
+        className={`${BOX} mt-1.5 w-full justify-between hover:border-text-muted/50`}
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <MiniCurve ease={choice === null ? PRESETS.linear : ease} />
-          <span className="truncate text-[11px] text-[#111]">
+          <span className="truncate text-[11px] text-text-primary">
             {choice === null ? "Mixed" : CHOICE_LABEL[choice]}
           </span>
         </span>
@@ -179,7 +179,7 @@ function PresetPicker({
                   role="option"
                   aria-selected={choice === name}
                   className={`flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] ${
-                    choice === name ? "bg-[#eef4fb] text-[#111]" : "text-[#555] hover:bg-[#f5f5f5]"
+                    choice === name ? "bg-accent/[0.06] text-text-primary" : "text-text-primary/70 hover:bg-text-primary/5"
                   }`}
                   onClick={() => {
                     onPick(name);
@@ -203,12 +203,12 @@ function PresetPicker({
 /** The dotted ground the canvas is drawn on, at the size it uses there — so the pad
  *  reads as a piece of the same surface rather than a window onto something else. */
 const DOTS =
-  "bg-[radial-gradient(circle,#e0e0e0_1px,transparent_1.15px)] bg-[length:20px_20px]";
+  "bg-[radial-gradient(circle,var(--color-border)_1px,transparent_1.15px)] bg-[length:20px_20px]";
 
 /** The same surface at glyph size. Twenty-pixel dots in a twenty-pixel tile would be
  *  one dot, which reads as a speck rather than as ground. */
 const DOTS_MINI =
-  "bg-[radial-gradient(circle,#e4e4e4_0.5px,transparent_0.8px)] bg-[length:4px_4px]";
+  "bg-[radial-gradient(circle,var(--color-border)_0.5px,transparent_0.8px)] bg-[length:4px_4px]";
 
 const MINI_W = 22;
 const MINI_H = 22;
@@ -237,10 +237,10 @@ function MiniCurve({ ease }: { ease: StopEase | undefined }) {
       width={MINI_W}
       height={MINI_H}
       viewBox={`0 0 ${MINI_W} ${MINI_H}`}
-      className={`shrink-0 rounded-[3px] border border-[#e8e8e8] ${DOTS_MINI}`}
+      className={`shrink-0 rounded-[3px] border border-border ${DOTS_MINI}`}
       aria-hidden="true"
     >
-      <polyline points={points} fill="none" stroke="#111" strokeWidth="1.25" />
+      <polyline points={points} fill="none" stroke="var(--color-text-primary)" strokeWidth="1.25" />
     </svg>
   );
 }
@@ -332,15 +332,15 @@ function BezierPad({
           y1={n === 1 ? gy(0) : gy(1)}
           x2={cx}
           y2={cy}
-          stroke="#c8c8c8"
+          stroke="color-mix(in srgb, var(--color-text-muted) 50%, transparent)"
           strokeWidth="1"
         />
         <circle
           cx={cx}
           cy={cy}
           r={held === n ? 6 : 5}
-          fill={held === n ? "#0d99ff" : "#fff"}
-          stroke="#0d99ff"
+          fill={held === n ? "var(--color-accent)" : "var(--color-canvas)"}
+          stroke="var(--color-accent)"
           strokeWidth="1.5"
           className="cursor-grab touch-none"
           onPointerDown={(e) => {
@@ -356,7 +356,7 @@ function BezierPad({
   return (
     <div
       ref={padRef}
-      className={`relative mt-1.5 w-full touch-none overflow-hidden rounded-md border border-[#e0e0e0] ${DOTS}`}
+      className={`relative mt-1.5 w-full touch-none overflow-hidden rounded-md border border-border ${DOTS}`}
       style={{ height: PAD_HEIGHT }}
       onPointerMove={onMove}
       onPointerUp={end}
@@ -365,20 +365,20 @@ function BezierPad({
       <svg className="absolute inset-0 h-full w-full" aria-label="easing curve">
         {/* The 0–1 square the curve is read against, so a handle past it reads as
             past something rather than as floating. */}
-        <line x1={gx(0)} y1={gy(0)} x2={gx(1)} y2={gy(0)} stroke="#d8d8d8" strokeWidth="1" />
-        <line x1={gx(0)} y1={gy(1)} x2={gx(1)} y2={gy(1)} stroke="#d8d8d8" strokeWidth="1" />
+        <line x1={gx(0)} y1={gy(0)} x2={gx(1)} y2={gy(0)} stroke="var(--color-border)" strokeWidth="1" />
+        <line x1={gx(0)} y1={gy(1)} x2={gx(1)} y2={gy(1)} stroke="var(--color-border)" strokeWidth="1" />
         <line
           x1={gx(0)}
           y1={gy(0)}
           x2={gx(1)}
           y2={gy(1)}
-          stroke="#d8d8d8"
+          stroke="var(--color-border)"
           strokeWidth="1"
           strokeDasharray="3 3"
         />
-        <polyline points={path} fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round" />
-        <circle cx={gx(0)} cy={gy(0)} r="3" fill="#b0b0b0" />
-        <circle cx={gx(1)} cy={gy(1)} r="3" fill="#b0b0b0" />
+        <polyline points={path} fill="none" stroke="var(--color-text-primary)" strokeWidth="2" strokeLinecap="round" />
+        <circle cx={gx(0)} cy={gy(0)} r="3" fill="var(--color-text-muted)" />
+        <circle cx={gx(1)} cy={gy(1)} r="3" fill="var(--color-text-muted)" />
         {handle(1, x1, y1)}
         {handle(2, x2, y2)}
       </svg>
@@ -407,8 +407,8 @@ function BezierValue({ x1, y1, x2, y2, onChange }: Bezier & { onChange: (next: B
   const shown = draft ?? [x1, y1, x2, y2].map(trim).join(", ");
 
   return (
-    <label className={`${BOX} mt-1.5`} title="cubic bezier: x1, y1, x2, y2">
-      <span className="shrink-0 text-[#888]">
+    <label className={`${BOX} mt-1.5`} title="Cubic bezier">
+      <span className="shrink-0 text-text-muted">
         <SplineIcon />
       </span>
       <input
@@ -471,7 +471,7 @@ function SpringFields({
             <span className={`${SUBLABEL} w-[52px] shrink-0`}>{key}</span>
             <input
               type="range"
-              className="h-[18px] min-w-0 flex-1 accent-[#0d99ff]"
+              className="h-[18px] min-w-0 flex-1 accent-accent"
               aria-label={key}
               min={min}
               max={max}
@@ -479,7 +479,7 @@ function SpringFields({
               value={spring[key]}
               onChange={(e) => write({ [key]: Number(e.target.value) })}
             />
-            <span className="w-[34px] shrink-0 text-right text-[10px] tabular-nums text-[#555]">
+            <span className="w-[34px] shrink-0 text-right text-[10px] tabular-nums text-text-primary/70">
               {Number(spring[key].toFixed(1))}
             </span>
           </div>
@@ -487,11 +487,11 @@ function SpringFields({
       </div>
 
       <div
-        className={`relative mt-2 h-[26px] overflow-hidden rounded-md border border-[#e0e0e0] ${DOTS}`}
+        className={`relative mt-2 h-[26px] overflow-hidden rounded-md border border-border ${DOTS}`}
         aria-hidden="true"
       >
         <span
-          className="absolute top-1/2 h-[10px] w-[10px] -translate-y-1/2 animate-[spring-dot_1.4s_infinite] rounded-full bg-[#0d99ff]"
+          className="absolute top-1/2 h-[10px] w-[10px] -translate-y-1/2 animate-[spring-dot_1.4s_infinite] rounded-full bg-accent"
           style={{ animationTimingFunction: timing, animationDuration: `${PREVIEW_SECONDS}s` }}
         />
       </div>
@@ -510,7 +510,7 @@ function ChevronDownIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="shrink-0 text-[#888]"
+      className="shrink-0 text-text-muted"
       aria-hidden="true"
     >
       <path d="m6 9 6 6 6-6" />
@@ -561,9 +561,9 @@ export function EaseSelect({
   const choice = choiceOf(ease);
   return (
     <select
-      className={`h-[26px] rounded-md border border-[#e0e0e0] bg-transparent px-1 text-[10px] text-[#555] outline-none ${className}`}
+      className={`h-[26px] rounded-md border border-border bg-transparent px-1 text-[10px] text-text-primary/70 outline-none ${className}`}
       aria-label="easing"
-      title={title ?? "easing into this keyframe"}
+      title={title ?? "Easing"}
       value={choice}
       onChange={(e) => {
         const next = e.target.value as Choice;

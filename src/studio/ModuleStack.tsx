@@ -59,9 +59,9 @@ export function DistributorSection({
           type="button"
           aria-label="add cloner"
           aria-expanded={adding}
-          title={d ? "one cloner at a time" : "add cloner"}
+          title={d ? "One cloner at a time" : "Add cloner"}
           disabled={Boolean(d)}
-          className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-[#111]"
+          className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
           onClick={() => setAdding((v) => !v)}
         >
           <PlusIcon />
@@ -108,8 +108,8 @@ function ClonerRow({
         aria-label={`${d.type} cloner settings`}
         className={`flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-left text-[11px] ${
           open
-            ? "border-[#0d99ff] bg-[#e8f4ff] text-[#111]"
-            : "border-[#e0e0e0] text-[#555] hover:bg-[#f5f5f5]"
+            ? "border-accent bg-accent/10 text-text-primary"
+            : "border-border text-text-primary/70 hover:bg-text-primary/5"
         }`}
         onClick={() => setOpen((v) => !v)}
       >
@@ -121,8 +121,8 @@ function ClonerRow({
       <button
         type="button"
         aria-label="remove cloner"
-        title="remove cloner"
-        className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+        title="Remove cloner"
+        className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
         onClick={() => onChange(null)}
       >
         ×
@@ -163,23 +163,21 @@ function ClonerSettings({
         <button
           type="button"
           aria-expanded={switching}
-          title="change layout"
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[5px] px-1 py-0.5 text-left text-[11px] text-[#111] hover:bg-[#f5f5f5]"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[5px] px-1 py-0.5 text-left text-[11px] text-text-primary hover:bg-text-primary/5"
           onClick={() => setSwitching((v) => !v)}
         >
           <span className="shrink-0 opacity-70">
             <ClonerIcon type={d.type} />
           </span>
           <span className="truncate">{d.type}</span>
-          <span className="shrink-0 text-[#888]">
+          <span className="shrink-0 text-text-muted">
             <ChevronDownIcon />
           </span>
         </button>
         <button
           type="button"
           aria-label="close"
-          title="close"
-          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
           onClick={onClose}
         >
           ×
@@ -187,7 +185,7 @@ function ClonerSettings({
         {switching ? (
           // Inside the card, so plain absolute placement is safe — nothing here
           // scrolls or clips the way the panel behind it does.
-          <div className="absolute left-1 right-1 top-[30px] z-10 rounded-[7px] border border-[#e0e0e0] bg-white p-1 shadow-[0_4px_14px_rgba(0,0,0,.12)]">
+          <div className="absolute left-1 right-1 top-[30px] z-10 rounded-[7px] border border-border bg-bg p-1 shadow-[0_4px_14px_rgba(0,0,0,.12)]">
             <ClonerMenu
               compact
               onPick={(type) => {
@@ -201,7 +199,7 @@ function ClonerSettings({
         ) : null}
       </div>
 
-      <div className="border-t border-[#ededed] p-2">
+      <div className="border-t border-border/60 p-2">
         <NumberField
           label="count"
           value={d.count}
@@ -234,7 +232,7 @@ function ClonerMenu({
           <button
             type="button"
             autoFocus={i === 0}
-            className="flex w-full items-center gap-2 rounded-[5px] px-1.5 py-1.5 text-left text-[11px] text-[#111] hover:bg-[#0d99ff] hover:text-white focus-visible:bg-[#0d99ff] focus-visible:text-white focus-visible:outline-none"
+            className="flex w-full items-center gap-2 rounded-[5px] px-1.5 py-1.5 text-left text-[11px] text-text-primary hover:bg-accent hover:text-bg focus-visible:bg-accent focus-visible:text-bg focus-visible:outline-none"
             onClick={() => onPick(type)}
           >
             <span className="shrink-0 opacity-70">
@@ -331,7 +329,7 @@ function DistributorParams({
       <span className={LABEL}>face along</span>
       <input
         type="checkbox"
-        className="accent-[#0d99ff]"
+        className="accent-accent"
         checked={Boolean(p.align)}
         onChange={(e) => set({ align: e.target.checked })}
       />
@@ -360,7 +358,7 @@ function DistributorParams({
     return (
       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
         <NumberField label="radius" value={num("radius", 200)} step={1} onChange={(v) => set({ radius: v })} />
-        <NumberField label="start" title="start angle" value={num("startAngle", -90)} step={1} onChange={(v) => set({ startAngle: v })} />
+        <NumberField label="start" title="Start angle" value={num("startAngle", -90)} step={1} onChange={(v) => set({ startAngle: v })} />
         <NumberField label="sweep" value={num("sweep", 360)} step={5} onChange={(v) => set({ sweep: v })} />
         <div />
         {align}
@@ -381,7 +379,7 @@ function DistributorParams({
       >
         + add anchor
       </button>
-      <p className="mt-1 text-[10px] leading-snug text-[#b0b0b0]">
+      <p className="mt-1 text-[10px] leading-snug text-text-muted/60">
         drag the anchors on the frame. double-click one to round it off, alt-click to
         take it out.
       </p>
@@ -423,7 +421,7 @@ export function ModuleParams({
         <span className="flex min-w-0 items-center gap-1.5">
           {masterProp !== undefined && masterProp !== prop ? <Ghost>{masterProp}</Ghost> : null}
           <select
-            className="bg-transparent text-[11px] text-[#111] outline-none"
+            className="bg-transparent text-[11px] text-text-primary outline-none"
             value={prop}
             onChange={(e) => {
               const next = e.target.value as KeyProp;
@@ -447,7 +445,6 @@ export function ModuleParams({
             <div className="min-w-0 flex-1">
               <NumberField
                 label="delay"
-                title="clone delay"
                 value={delay}
                 step={0.01}
                 min={0}
@@ -459,7 +456,7 @@ export function ModuleParams({
               <Ghost>{masterDelay.toFixed(2)}</Ghost>
             ) : null}
           </div>
-          <p className="mt-1 text-[10px] text-[#b0b0b0]">
+          <p className="mt-1 text-[10px] text-text-muted/60">
             staggers clones across time. 0 = simultaneous
           </p>
         </>
@@ -479,8 +476,8 @@ export function ModuleParams({
 function Ghost({ children }: { children: React.ReactNode }) {
   return (
     <span
-      className="shrink-0 text-[10px] tabular-nums text-[#c8c8c8] line-through"
-      title="the module's own value"
+      className="shrink-0 text-[10px] tabular-nums text-text-muted/50 line-through"
+      title="Module's own value"
     >
       {children}
     </span>
@@ -504,7 +501,7 @@ export function ModuleStackSection({ track }: { track: Track }) {
     <section className={SECTION}>
       <p className={`${LABEL} mb-2`}>modules</p>
       {rows.length === 0 ? (
-        <p className="mb-2 text-[11px] text-[#b0b0b0]">nothing on this element yet</p>
+        <p className="mb-2 text-[11px] text-text-muted/60">nothing on this element yet</p>
       ) : (
         <ul className="mb-2 flex flex-col gap-1">
           {rows.map((row) => (
@@ -547,8 +544,8 @@ function ModuleRow({
           aria-pressed={selected}
           className={`flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-left text-[11px] ${
             selected
-              ? "border-[#0d99ff] bg-[#e8f4ff] text-[#111]"
-              : "border-[#e0e0e0] text-[#555] hover:bg-[#f5f5f5]"
+              ? "border-accent bg-accent/10 text-text-primary"
+              : "border-border text-text-primary/70 hover:bg-text-primary/5"
           }`}
           onClick={() =>
             useStudio
@@ -557,19 +554,19 @@ function ModuleRow({
           }
         >
           {row.kind === "linked" ? (
-            <span className="shrink-0 text-[#0d99ff]" title="linked to a saved module">
+            <span className="shrink-0 text-accent" title="Linked module">
               <ChainIcon />
             </span>
           ) : null}
           <span className="truncate">{label}</span>
-          <span className="ml-auto shrink-0 text-[10px] text-[#999]">{summary}</span>
+          <span className="ml-auto shrink-0 text-[10px] text-text-muted">{summary}</span>
         </button>
         <button
           type="button"
           aria-label={`more for ${label}`}
           aria-expanded={menu}
-          title="more"
-          className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f5f5f5] hover:text-[#111]"
+          title="More"
+          className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
           onClick={() => setMenu((v) => !v)}
         >
           ···
@@ -577,7 +574,7 @@ function ModuleRow({
       </div>
 
       {menu && row.kind === "linked" ? (
-        <div className="flex flex-col gap-0.5 rounded-md border border-[#e0e0e0] bg-[#fbfbfb] p-1">
+        <div className="flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
           <MenuItem
             onClick={() => {
               setMenu(false);
@@ -606,7 +603,7 @@ function ModuleRow({
       ) : null}
 
       {menu && row.kind === "raw" ? (
-        <div className="flex flex-col gap-0.5 rounded-md border border-[#e0e0e0] bg-[#fbfbfb] p-1">
+        <div className="flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
           <MenuItem
             onClick={() => {
               setMenu(false);
@@ -619,8 +616,8 @@ function ModuleRow({
       ) : null}
 
       {confirming ? (
-        <div className="rounded-md border border-[#e0e0e0] bg-[#fbfbfb] p-2">
-          <p className="mb-1.5 text-[11px] text-[#555]">
+        <div className="rounded-md border border-border bg-text-primary/[0.03] p-2">
+          <p className="mb-1.5 text-[11px] text-text-primary/70">
             detach from module? changes won't sync.
           </p>
           <div className="flex gap-1.5">
@@ -648,7 +645,7 @@ function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: (
   return (
     <button
       type="button"
-      className="rounded px-1.5 py-1 text-left text-[11px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
+      className="rounded px-1.5 py-1 text-left text-[11px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
       onClick={onClick}
     >
       {children}
@@ -669,19 +666,19 @@ export function AddModuleButton({ onAdd }: { onAdd: (type: ModuleType) => void }
         + add module
       </button>
       {open ? (
-        <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-[#e0e0e0] bg-[#fbfbfb] p-1">
+        <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
           {MODULE_TYPES.map((type) => (
             <li key={type}>
               <button
                 type="button"
-                className="flex w-full flex-col rounded px-1.5 py-1 text-left hover:bg-[#f0f0f0]"
+                className="flex w-full flex-col rounded px-1.5 py-1 text-left hover:bg-text-primary/5"
                 onClick={() => {
                   setOpen(false);
                   onAdd(type);
                 }}
               >
-                <span className="text-[11px] text-[#111]">{type}</span>
-                <span className="text-[10px] text-[#b0b0b0]">{MODULE_BLURB[type]}</span>
+                <span className="text-[11px] text-text-primary">{type}</span>
+                <span className="text-[10px] text-text-muted/60">{MODULE_BLURB[type]}</span>
               </button>
             </li>
           ))}
@@ -782,7 +779,7 @@ export function ModuleInspector({ track, index }: { track: Track; index: number 
 
   if (row.kind === "raw") {
     return (
-      <section className={`${SECTION} bg-[#fbfbfb]`}>
+      <section className={`${SECTION} bg-text-primary/[0.03]`}>
         <p className={`${LABEL} mb-2`}>
           {row.module.type} · {moduleProp(row.module)}
         </p>
@@ -797,21 +794,21 @@ export function ModuleInspector({ track, index }: { track: Track; index: number 
   }
 
   return (
-    <section className={`${SECTION} bg-[#fbfbfb]`}>
+    <section className={`${SECTION} bg-text-primary/[0.03]`}>
       <div className="mb-2 flex items-center gap-1.5">
-        <span className="shrink-0 text-[#0d99ff]">
+        <span className="shrink-0 text-accent">
           <ChainIcon />
         </span>
         <p className={`${LABEL} min-w-0 truncate`}>{row.asset.name}</p>
       </div>
       {row.resolved.map((md, entry) => (
-        <div key={entry} className={entry > 0 ? "mt-3 border-t border-[#ededed] pt-3" : ""}>
+        <div key={entry} className={entry > 0 ? "mt-3 border-t border-border/60 pt-3" : ""}>
           <div className="mb-1.5 flex items-center gap-1.5">
             <p className={SUBLABEL}>{md.type}</p>
             {row.link.overrides[entry] ? (
               <span
-                className="h-1.5 w-1.5 rounded-full bg-[#0d99ff]"
-                title="this element has its own value here"
+                className="h-1.5 w-1.5 rounded-full bg-accent"
+                title="Overridden"
               />
             ) : null}
           </div>

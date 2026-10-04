@@ -1084,7 +1084,7 @@ export function StudioCanvas() {
           element they have somehow acquired. */}
       {bench ? (
         <div
-          className="pointer-events-none absolute rounded bg-[#111] px-1.5 py-0.5 text-[10px] leading-[1.4] text-white"
+          className="pointer-events-none absolute rounded bg-text-primary px-1.5 py-0.5 text-[10px] leading-[1.4] text-bg"
           style={{
             transform: `translate(${
               origin.x + view.panX + (frame.width / 2) * scale
@@ -1097,8 +1097,8 @@ export function StudioCanvas() {
         </div>
       ) : null}
       {pendingAttach ? (
-        <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-[#e0e0e0] bg-white px-2.5 py-2 text-[11px] shadow-[0_2px_8px_rgba(0,0,0,.1)]">
-          <span className="text-[#555]">replace existing distributor?</span>
+        <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-bg px-2.5 py-2 text-[11px] shadow-[0_2px_8px_rgba(0,0,0,.1)]">
+          <span className="text-text-primary/70">replace existing distributor?</span>
           <button
             type="button"
             className={GHOST_BTN}
@@ -1195,7 +1195,7 @@ export function StudioCanvas() {
       {/* The rectangle being drawn, while it is being drawn. */}
       {marquee ? (
         <div
-          className="pointer-events-none absolute z-[3] border border-[#0d99ff] bg-[#0d99ff]/10"
+          className="pointer-events-none absolute z-[3] border border-accent bg-accent/10"
           aria-hidden="true"
           style={{
             transform: `translate(${Math.min(marquee.from.x, marquee.to.x)}px, ${Math.min(

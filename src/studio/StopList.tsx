@@ -59,7 +59,7 @@ export function StopList({
         <p className={LABEL}>keyframes</p>
         <button
           type="button"
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:bg-[#f0f0f0] hover:text-[#111]"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
           onClick={addAtPlayhead}
         >
           <DiamondPlusIcon />
@@ -74,7 +74,7 @@ export function StopList({
             <div key={axis.prop} className="min-w-0 flex-1">
               <NumberField
                 label={axes.length > 1 ? axis.prop : "v"}
-                title={`${axis.prop} value`}
+                title={axes.length > 1 ? undefined : "Value"}
                 value={axis.stops[i].v}
                 step={PROP_STEP[axis.prop]}
                 onChange={(v) =>
@@ -94,7 +94,7 @@ export function StopList({
               <div className="w-[68px] shrink-0">
                 <NumberField
                   label="s"
-                  title="time in seconds"
+                  title="Time"
                   value={stopSeconds(stop.t, range, duration)}
                   step={0.1}
                   min={0}
@@ -114,9 +114,9 @@ export function StopList({
               <button
                 type="button"
                 aria-label="remove keyframe"
-                title="remove keyframe"
+                title="Remove keyframe"
                 disabled={stops.length <= 1}
-                className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-[#888] hover:bg-[#f0f0f0] hover:text-[#111] disabled:opacity-30 disabled:hover:bg-transparent"
+                className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
                 onClick={() => all((axis) => removeStop(axis.stops, i))}
               >
                 <DiamondMinusIcon />

@@ -76,7 +76,7 @@ export function Inspector() {
 
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col border-l border-[#e0e0e0] bg-white"
+      className="flex h-full w-[260px] shrink-0 flex-col border-l border-border bg-bg"
       aria-label={bench ? "module bench" : "inspector"}
     >
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -147,13 +147,12 @@ function SegmentPanel({ ids }: { ids: string[] }) {
     <section className={SECTION}>
       <div className="flex items-baseline gap-1.5">
         <p className={LABEL}>{one ? "segment" : `${picked.length} segments`}</p>
-        <span className="min-w-0 flex-1 truncate text-[10px] lowercase text-[#b0b0b0]">
+        <span className="min-w-0 flex-1 truncate text-[10px] lowercase text-text-muted/60">
           {label}
         </span>
         <button
           type="button"
-          className="rounded px-1 text-[10px] text-[#b0b0b0] hover:bg-[#f0f0f0] hover:text-[#555]"
-          title="clear the selection"
+          className="rounded px-1 text-[10px] text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
           onClick={() => useStudio.getState().setSelectedSegments([])}
         >
           clear
@@ -179,7 +178,6 @@ function SegmentDuration({ segment }: { segment: SegmentView }) {
       <div className="mt-1.5 w-[86px]">
         <NumberField
           label="s"
-          title="time between the two keyframes"
           value={segment.to - segment.from}
           step={0.05}
           min={MIN_SEGMENT}
@@ -226,7 +224,7 @@ function CompositionPanel() {
 
         <SelectField
           label="res"
-          title="resolution"
+          title="Resolution"
           value={resolutionKey(frame)}
           onChange={(v) => {
             const size = resolutionFor(v);
@@ -252,11 +250,11 @@ function BackgroundField({ value }: { value: string }) {
   const set = (hex: string) => useStudio.getState().setBackground(hex);
 
   return (
-    <div className={BOX} title="background">
+    <div className={BOX} title="Background">
       <input
         type="color"
         aria-label="background colour"
-        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-[#e0e0e0] bg-transparent p-0"
+        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
         value={value}
         onChange={(e) => {
           setDraft(null);
@@ -319,12 +317,12 @@ function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className={`${BOX} justify-between`} title={title ?? label}>
+    <label className={`${BOX} justify-between`} title={title}>
       <span className={`${LABEL} shrink-0`}>{label}</span>
       {/* The select is free to shrink: a native control sizes itself to its widest
           option, which walks the chevron straight out of the box. */}
       <select
-        className="min-w-0 flex-1 bg-transparent text-right text-[11px] text-[#111] outline-none"
+        className="min-w-0 flex-1 bg-transparent text-right text-[11px] text-text-primary outline-none"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -422,11 +420,7 @@ function SelectionPanel({ ids }: { ids: string[] }) {
   const axis = (prop: "x" | "y", join: Join) => (
     <NumberField
       label={prop}
-      title={
-        read[prop] === null
-          ? `these sit at different ${prop} positions — type one to settle them all on it`
-          : prop
-      }
+      title={read[prop] === null ? "Type to set all" : undefined}
       value={read[prop] ?? 0}
       mixed={read[prop] === null}
       join={join}
@@ -462,11 +456,7 @@ function SelectionPanel({ ids }: { ids: string[] }) {
         <div className="min-w-0 flex-1">
           <NumberField
             label="r"
-            title={
-              read.rotation === null
-                ? "these are turned differently — type one angle to settle them all on it"
-                : "rotation in degrees"
-            }
+            title={read.rotation === null ? "Type to set all" : undefined}
             value={read.rotation ?? 0}
             mixed={read.rotation === null}
             onChange={(v) =>
@@ -489,11 +479,7 @@ function SelectionPanel({ ids }: { ids: string[] }) {
         <div className="min-w-0 flex-1">
           <NumberField
             label="o"
-            title={
-              read.opacity === null
-                ? "these have different opacities — type one to settle them all on it"
-                : "opacity"
-            }
+            title={read.opacity === null ? "Type to set all" : undefined}
             value={read.opacity ?? 1}
             mixed={read.opacity === null}
             step={PROP_STEP.opacity}
@@ -530,14 +516,16 @@ function SelectionKeyButton({
   target: KeyTarget;
   keyframed: boolean;
 }) {
-  const label = keyframed ? "keyframe here" : "add keyframe";
+  const label = keyframed ? "Keyframe here" : "Add keyframe";
   return (
     <button
       type="button"
       aria-label={`${label}: ${target}, ${ids.length} elements`}
       title={label}
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md hover:bg-[#f5f5f5] ${
-        keyframed ? PROP_TEXT[target] : "text-[#c0c0c0] hover:text-[#555]"
+      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md hover:bg-text-primary/5 ${
+        keyframed
+          ? PROP_TEXT[target]
+          : "text-text-muted/60 hover:text-text-primary/70"
       }`}
       onClick={() => useStudio.getState().keySelection(ids, target)}
     >
@@ -659,7 +647,7 @@ function ElementSection({
         <>
           <p className={`${SUBLABEL} mb-1`}>node</p>
           <div className={`${BOX} mb-2 justify-between`} title={part.name}>
-            <span className="min-w-0 truncate text-[11px] text-[#555]">
+            <span className="min-w-0 truncate text-[11px] text-text-primary/70">
               {part.name}
             </span>
           </div>
@@ -699,7 +687,6 @@ function ElementSection({
           "opacity",
           <NumberField
             label="o"
-            title="opacity"
             value={layer.base.opacity}
             step={PROP_STEP.opacity}
             min={0}
@@ -724,14 +711,14 @@ function ElementSection({
 function CentreButton({ layerId, axis }: { layerId: string; axis: "x" | "y" }) {
   const label =
     axis === "x"
-      ? "align centre on the vertical axis"
-      : "align centre on the horizontal axis";
+      ? "Centre horizontally"
+      : "Centre vertically";
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
+      className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
       onClick={() => useStudio.getState().centreLayer(layerId, axis)}
     >
       {axis === "x" ? (
@@ -824,7 +811,6 @@ function SizeField({
   return (
     <NumberField
       label={axis === "scaleX" ? "w" : "h"}
-      title={axis === "scaleX" ? "width in pixels" : "height in pixels"}
       value={toDisplay(axis, state[axis], size)}
       step={PROP_STEP[axis]}
       min={0}
@@ -842,7 +828,7 @@ function SizeField({
  * neither should read as another value to fill in.
  */
 function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
-  const label = locked ? "unlock aspect ratio" : "lock aspect ratio";
+  const label = locked ? "Unlock aspect ratio" : "Lock aspect ratio";
   return (
     <button
       type="button"
@@ -850,8 +836,8 @@ function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
       aria-pressed={locked}
       title={label}
       className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
-        locked ? "text-[#0d99ff]" : "text-[#c0c0c0] hover:text-[#555]"
-      } hover:bg-[#f5f5f5]`}
+        locked ? "text-accent" : "text-text-muted/60 hover:text-text-primary/70"
+      } hover:bg-text-primary/5`}
       onClick={() => useStudio.getState().toggleLayerLock(layerId)}
     >
       {locked ? <LockIcon size={13} /> : <LockOpenIcon size={13} />}
@@ -944,7 +930,6 @@ function BaseTransform({
           "rotation",
           <NumberField
             label="r"
-            title="rotation in degrees"
             value={base.rotation}
             onChange={(v) => set({ rotation: v })}
           />,
@@ -969,16 +954,14 @@ function KeyframeButton({
   keyframed: boolean;
   selected: boolean;
 }) {
-  const label = keyframed ? "edit keyframes" : "add keyframe";
+  const label = keyframed ? "Edit keyframes" : "Add keyframe";
   return (
     <button
       type="button"
       aria-label={`${label}: ${target}`}
       aria-pressed={selected}
       title={label}
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
-        selected ? "bg-[#e8f4ff]" : "hover:bg-[#f5f5f5]"
-      } ${keyframed ? PROP_TEXT[target] : "text-[#c0c0c0] hover:text-[#555]"}`}
+      className={`grid h-3.75 w-3.75 shrink-0 place-items-center rounded-md  ${keyframed ? PROP_TEXT[target] : "text-text-muted/60 hover:text-text-primary/70"}`}
       onClick={() => {
         const store = useStudio.getState();
         if (!keyframed) return store.addKeyframes(layerId, target);
@@ -1007,11 +990,11 @@ function SeparateButton({
       type="button"
       aria-label="separate dimensions"
       aria-pressed={separate}
-      title="separate dimensions"
+      title="Separate dimensions"
       className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
         separate
-          ? "bg-[#e8f4ff] text-[#0d99ff]"
-          : "text-[#c0c0c0] hover:bg-[#f5f5f5] hover:text-[#555]"
+          ? "bg-accent/10 text-accent"
+          : "text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
       }`}
       onClick={() =>
         useStudio.getState().setSeparatePosition(layerId, !separate)
@@ -1164,8 +1147,7 @@ function KeyframeEditor({ track }: { track: Track }) {
         <p className={LABEL}>keyframe</p>
         <button
           type="button"
-          className="ml-auto rounded px-1 text-[10px] text-[#b0b0b0] hover:bg-[#f0f0f0] hover:text-[#555]"
-          title="clear the selection"
+          className="ml-auto rounded px-1 text-[10px] text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
           onClick={() => useStudio.getState().setSelectedKeys([])}
         >
           clear
@@ -1184,7 +1166,7 @@ function KeyframeEditor({ track }: { track: Track }) {
         />
       ) : (
         <>
-          <p className="mt-2 text-[11px] text-[#555]">
+          <p className="mt-2 text-[11px] text-text-primary/70">
             {picked.length} keyframes picked
           </p>
           {naming ? (
@@ -1207,7 +1189,7 @@ function KeyframeEditor({ track }: { track: Track }) {
       {toast ? (
         <p
           role="status"
-          className="mt-2 rounded bg-[#f5f5f5] px-2 py-1 text-[10px] text-[#555]"
+          className="mt-2 rounded bg-text-primary/5 px-2 py-1 text-[10px] text-text-primary/70"
         >
           {toast}
         </p>
@@ -1240,7 +1222,7 @@ function ModuleNameField({
           if (e.key === "Escape") onCancel();
         }}
       />
-      <span className="shrink-0 text-[10px] text-[#b0b0b0]">↵</span>
+      <span className="shrink-0 text-[10px] text-text-muted/60">↵</span>
     </div>
   );
 }
@@ -1279,7 +1261,7 @@ function KeyframeFields({
         <span className={`${PROP_TEXT[entry.property]} shrink-0`}>
           <DiamondIcon filled />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11px] capitalize text-[#111]">
+        <span className="min-w-0 flex-1 truncate text-[11px] capitalize text-text-primary">
           {propLabel(entry.property)}
         </span>
       </div>
@@ -1288,7 +1270,7 @@ function KeyframeFields({
         <div className="w-[76px] shrink-0">
           <NumberField
             label="s"
-            title="time in seconds"
+            title="Time"
             value={entry.t}
             step={0.1}
             min={0}
@@ -1310,7 +1292,6 @@ function KeyframeFields({
           <div className="min-w-0 flex-1">
             <NumberField
               label="from"
-              title={`value before this keyframe${axes.length > 1 ? ` (${axis})` : ""}`}
               value={at(entry.from, axis)}
               step={PROP_STEP[entry.property]}
               // Nothing precedes the first keyframe — the curve holds this value up
@@ -1319,11 +1300,10 @@ function KeyframeFields({
               onChange={(v) => onValue("from", axis, v)}
             />
           </div>
-          <span className="shrink-0 text-[10px] text-[#b0b0b0]">→</span>
+          <span className="shrink-0 text-[10px] text-text-muted/60">→</span>
           <div className="min-w-0 flex-1">
             <NumberField
               label="to"
-              title={`value at this keyframe${axes.length > 1 ? ` (${axis})` : ""}`}
               value={at(entry.to, axis)}
               step={PROP_STEP[entry.property]}
               onChange={(v) => onValue("to", axis, v)}
@@ -1335,12 +1315,8 @@ function KeyframeFields({
       <button
         type="button"
         aria-label="remove keyframe"
-        title={
-          last
-            ? `remove the only ${propLabel(entry.property)} keyframe — the property stops animating`
-            : "remove keyframe — backspace does the same"
-        }
-        className="self-end rounded px-1 text-[10px] text-[#888] hover:bg-[#f0f0f0] hover:text-[#111]"
+        title={last ? "Stops animating this property" : undefined}
+        className="self-end rounded px-1 text-[10px] text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
         onClick={onRemove}
       >
         remove

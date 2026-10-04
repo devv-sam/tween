@@ -7,20 +7,20 @@ import { useStudio } from "./store";
  * the inspector and the timeline's gutter read as the same surface — a keyframe, a
  * label, a number should not look one way on the right and another way below.
  */
-export const LABEL = "text-[10px] uppercase tracking-[0.04em] text-[#888]";
+export const LABEL = "text-[10px] uppercase tracking-[0.04em] text-text-muted";
 /** A label for one row inside a section — quieter than the section's own, so it
  *  groups the fields under it without competing with the heading above them. */
-export const SUBLABEL = "text-[9px] uppercase tracking-[0.04em] text-[#b0b0b0]";
-export const SECTION = "border-b border-[#e0e0e0] px-3 py-3";
+export const SUBLABEL = "text-[9px] uppercase tracking-[0.04em] text-text-muted/60";
+export const SECTION = "border-b border-border px-3 py-3";
 export const INPUT =
-  "min-w-0 bg-transparent text-[11px] text-[#111] tabular-nums outline-none placeholder:text-[#c0c0c0]";
+  "min-w-0 bg-transparent text-[11px] text-text-primary tabular-nums outline-none placeholder:text-text-muted/60";
 export const BOX =
-  "flex items-center gap-1.5 rounded-md border border-[#e0e0e0] px-2 h-[26px] focus-within:border-[#0d99ff]";
+  "flex items-center gap-1.5 rounded-md border border-border px-2 h-[26px] focus-within:border-accent";
 /** `BOX` with the padding pulled in, for a field holding a number and nothing else. */
 export const BOX_TIGHT =
-  "flex items-center rounded-md border border-[#e0e0e0] px-1.5 h-[26px] focus-within:border-[#0d99ff]";
+  "flex items-center rounded-md border border-border px-1.5 h-[26px] focus-within:border-accent";
 export const GHOST_BTN =
-  "rounded-md border border-[#e0e0e0] px-2 h-[26px] text-[11px] text-[#555] hover:bg-[#f5f5f5] hover:text-[#111]";
+  "rounded-md border border-border px-2 h-[26px] text-[11px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary";
 
 /** Which side of a joined pair a field is, when two of them make one control. */
 export type Join = "left" | "right";
@@ -106,7 +106,7 @@ export function NumberField({
         : "";
 
   const box = compact
-    ? "flex items-center gap-1 rounded-[3px] border border-transparent px-1 h-[18px] hover:border-[#e0e0e0] focus-within:border-[#0d99ff]"
+    ? "flex items-center gap-1 rounded-[3px] border border-transparent px-1 h-[18px] hover:border-border focus-within:border-accent"
     : tight
       ? BOX_TIGHT
       : BOX;
@@ -116,11 +116,11 @@ export function NumberField({
       className={`${box} ${joined} relative focus-within:z-10 ${
         disabled ? "opacity-60" : ""
       }`}
-      title={title ?? label}
+      title={title}
     >
       {label ? <span className={`${LABEL} shrink-0`}>{label}</span> : null}
       <input
-        className={`${INPUT} w-full text-right disabled:text-[#b0b0b0]`}
+        className={`${INPUT} w-full text-right disabled:text-text-muted/60`}
         inputMode="decimal"
         aria-label={ariaLabel}
         placeholder={mixed ? "Mixed" : undefined}
