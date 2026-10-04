@@ -6,12 +6,9 @@ import type {
   Track,
   Transform,
 } from "../core/types";
-import { renderState } from "../core/renderState";
 import { useStudio } from "./store";
 import { capitalize, typeName } from "./text";
 import {
-  MODULE_BLURB,
-  MODULE_TYPES,
   PROPS,
   PULSE_PROPS,
   baseValue,
@@ -23,10 +20,8 @@ import {
   moduleStops,
   pulseDefaults,
   stackRows,
-  stackSummary,
   type ClonerType,
   type KeyProp,
-  type ModuleType,
   type PulseProp,
   type StackRow,
 } from "./modules";
@@ -37,12 +32,10 @@ import {
   BOX,
   CloseIcon,
   GHOST_BTN,
-  INPUT,
   LABEL,
   NumberField,
   SECTION,
   SliderField,
-  SUBLABEL,
 } from "./fields";
 
 /**
@@ -599,82 +592,64 @@ function Ghost({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * The element's stack: one row per thing it carries, whether it wrote that thing or
- * borrowed it. Under the list are the two ways to get more — add one here, or take
- * what is already here and make it reusable.
- */
 export function ModuleStackSection({ track }: { track: Track }) {
   const library = useStudio((s) => s.moduleLibrary);
-  const selectedPart = useStudio((s) => s.selectedPart);
   const layerId = track.layer.id;
   const rows = stackRows(track.modules, library);
-  const hasRaw = rows.some((r) => r.kind === "raw");
-  const selected = selectedPart?.kind === "module" ? selectedPart.index : null;
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>Modules</p>
-      {rows.length === 0 ? (
-        <p className="mb-2 text-[11px] text-text-muted/60">
-          Nothing on this element yet
-        </p>
-      ) : (
-        <ul className="mb-2 flex flex-col gap-1">
+      <div className={`flex items-center justify-between${rows.length > 0 ? " mb-2" : ""}`}>
+        <p className={LABEL}>Modules</p>
+        <button
+          type="button"
+          aria-label="add pulse"
+          title="Add pulse"
+          className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
+          onClick={() => useStudio.getState().addModule(layerId, "pulse")}
+        >
+          <PlusIcon />
+        </button>
+      </div>
+      {rows.length > 0 ? (
+        <ul className="flex flex-col gap-1">
           {rows.map((row) => (
-            <ModuleRow
-              key={row.index}
-              row={row}
-              layerId={layerId}
-              selected={row.index === selected}
-            />
+            <ModuleRow key={row.index} row={row} layerId={layerId} />
           ))}
         </ul>
-      )}
-      <AddModuleButton
-        onAdd={(type) => useStudio.getState().addModule(layerId, type)}
-      />
-      {hasRaw ? <SaveStackButton layerId={layerId} /> : null}
+      ) : null}
     </section>
   );
 }
 
-function ModuleRow({
-  row,
-  layerId,
-  selected,
-}: {
-  row: StackRow;
-  layerId: string;
-  selected: boolean;
-}) {
-  const [menu, setMenu] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const store = useStudio.getState();
+function ModuleRow({ row, layerId }: { row: StackRow; layerId: string }) {
+  const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const composition = useStudio((s) => s.composition);
+  const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+  const clones = cloneCount(track?.layer.distributor);
+  const isPulse = row.kind === "raw" && row.module.type === "pulse";
   const label =
-    row.kind === "raw" ? capitalize(moduleProp(row.module)) : row.asset.name;
-  const summary =
-    row.kind === "raw" ? typeName(row.module.type) : stackSummary(row.resolved);
+    row.kind === "raw"
+      ? isPulse
+        ? `Pulse · ${capitalize((row.module.params.property as string) ?? "scale")}`
+        : typeName(row.module.type)
+      : row.asset.name;
 
   return (
-    <li className="flex flex-col gap-1">
-      <div className="flex items-center gap-1">
+    <li>
+      <div ref={rowRef} className="flex items-center gap-1">
         <button
           type="button"
-          aria-pressed={selected}
+          aria-expanded={isPulse ? open : undefined}
           className={`flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-left text-[11px] ${
-            selected
+            open
               ? "border-accent bg-accent/10 text-text-primary"
               : "border-border text-text-primary/70 hover:bg-text-primary/5"
           }`}
-          onClick={() =>
-            useStudio
-              .getState()
-              .selectPart(
-                layerId,
-                selected ? null : { kind: "module", index: row.index },
-              )
-          }
+          onClick={() => {
+            if (isPulse) setOpen((v) => !v);
+          }}
         >
           {row.kind === "linked" ? (
             <span className="shrink-0 text-accent" title="Linked module">
@@ -682,199 +657,36 @@ function ModuleRow({
             </span>
           ) : null}
           <span className="truncate">{label}</span>
-          <span className="ml-auto shrink-0 text-[10px] text-text-muted">
-            {summary}
-          </span>
         </button>
         <button
           type="button"
-          aria-label={`more for ${label}`}
-          aria-expanded={menu}
-          title="More"
+          aria-label={`remove ${label}`}
+          title="Remove"
           className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
-          onClick={() => setMenu((v) => !v)}
+          onClick={() => useStudio.getState().removeModule(layerId, row.index)}
         >
-          ···
+          <CloseIcon />
         </button>
       </div>
-
-      {menu && row.kind === "linked" ? (
-        <div className="flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
-          <MenuItem
-            onClick={() => {
-              setMenu(false);
-              useStudio.getState().openBench(row.asset.id);
-            }}
-          >
-            Edit master
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setConfirming(true);
-              setMenu(false);
-            }}
-          >
-            Detach
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setMenu(false);
-              store.removeModule(layerId, row.index);
-            }}
-          >
-            Remove
-          </MenuItem>
-        </div>
-      ) : null}
-
-      {menu && row.kind === "raw" ? (
-        <div className="flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
-          <MenuItem
-            onClick={() => {
-              setMenu(false);
-              store.removeModule(layerId, row.index);
-            }}
-          >
-            Remove
-          </MenuItem>
-        </div>
-      ) : null}
-
-      {confirming ? (
-        <div className="rounded-md border border-border bg-text-primary/[0.03] p-2">
-          <p className="mb-1.5 text-[11px] text-text-primary/70">
-            Detach from module? Changes won't sync.
-          </p>
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              className={GHOST_BTN}
-              onClick={() => {
-                setConfirming(false);
-                useStudio.getState().detachModule(layerId, row.index);
-              }}
-            >
-              Detach
-            </button>
-            <button
-              type="button"
-              className={GHOST_BTN}
-              onClick={() => setConfirming(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+      {open && isPulse && row.kind === "raw" ? (
+        <Popover
+          anchorRef={rowRef}
+          placement="left"
+          label="pulse settings"
+          draggable
+          onClose={() => setOpen(false)}
+        >
+          <PulseSettings
+            module={row.module}
+            clones={clones}
+            onParams={(patch) =>
+              useStudio.getState().setModuleParams(layerId, row.index, patch)
+            }
+            onClose={() => setOpen(false)}
+          />
+        </Popover>
       ) : null}
     </li>
-  );
-}
-
-function MenuItem({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="rounded px-1.5 py-1 text-left text-[11px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function AddModuleButton({
-  onAdd,
-}: {
-  onAdd: (type: ModuleType) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        type="button"
-        className={`${GHOST_BTN} w-full text-left`}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        + Add module
-      </button>
-      {open ? (
-        <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
-          {MODULE_TYPES.map((type) => (
-            <li key={type}>
-              <button
-                type="button"
-                className="flex w-full flex-col rounded px-1.5 py-1 text-left hover:bg-text-primary/5"
-                onClick={() => {
-                  setOpen(false);
-                  onAdd(type);
-                }}
-              >
-                <span className="text-[11px] text-text-primary">
-                  {typeName(type)}
-                </span>
-                <span className="text-[10px] text-text-muted/60">
-                  {MODULE_BLURB[type]}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </>
-  );
-}
-
-/** Take what is on the element and keep it. The raw entries leave the stack and come
- *  back as one linked row, so what runs is unchanged and now has a name. */
-function SaveStackButton({ layerId }: { layerId: string }) {
-  const [naming, setNaming] = useState(false);
-  const [name, setName] = useState("");
-
-  if (!naming) {
-    return (
-      <button
-        type="button"
-        className={`${GHOST_BTN} mt-1 w-full text-left`}
-        onClick={() => setNaming(true)}
-      >
-        Save stack as module
-      </button>
-    );
-  }
-
-  const save = () => {
-    if (!name.trim()) return;
-    useStudio.getState().saveStackAsModule(layerId, name);
-    setNaming(false);
-    setName("");
-  };
-
-  return (
-    <div className="mt-1 flex items-center gap-1.5">
-      <label className={`${BOX} min-w-0 flex-1`}>
-        <input
-          className={`${INPUT} w-full`}
-          placeholder="Name this module"
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") save();
-            if (e.key === "Escape") setNaming(false);
-          }}
-        />
-      </label>
-      <button type="button" className={GHOST_BTN} onClick={save}>
-        Save
-      </button>
-    </div>
   );
 }
 
@@ -899,16 +711,16 @@ function ChainIcon() {
   );
 }
 
-function PulseInspector({
+function PulseSettings({
   module: md,
   clones,
   onParams,
-  onRemove,
+  onClose,
 }: {
   module: ModuleData;
   clones: number;
   onParams: (patch: Record<string, unknown>) => void;
-  onRemove: () => void;
+  onClose: () => void;
 }) {
   const property = (md.params.property as PulseProp) ?? "scale";
   const rhythm = typeof md.params.rhythm === "number" ? md.params.rhythm : 1;
@@ -924,176 +736,130 @@ function PulseInspector({
   };
 
   return (
-    <section className={`${SECTION} bg-text-primary/[0.03]`}>
-      <div className="mb-2 flex items-center justify-between">
-        <p className={LABEL}>Pulse · {capitalize(property)}</p>
+    <div className="w-[264px]">
+      <div
+        data-drag-handle
+        className="relative flex cursor-grab touch-none items-center justify-between gap-1 px-3 py-2 active:cursor-grabbing"
+      >
+        <span className="text-[11px] font-medium text-text-primary">
+          Pulse · {capitalize(property)}
+        </span>
         <button
           type="button"
-          aria-label="remove pulse"
-          title="Remove"
+          aria-label="close"
           className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
-          onClick={onRemove}
+          onClick={onClose}
         >
           <CloseIcon />
         </button>
       </div>
-
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] text-text-muted">Property</span>
-          <select
-            value={property}
-            onChange={(e) => setProperty(e.target.value as PulseProp)}
-            className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
-          >
-            {PULSE_PROPS.map((p) => (
-              <option key={p} value={p}>{capitalize(p === "y" ? "Position Y" : p === "x" ? "Position X" : p)}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] text-text-muted">Min</span>
-          <NumberField label="" value={min} step={0.1} onChange={(v) => onParams({ min: v })} tight />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] text-text-muted">Max</span>
-          <NumberField label="" value={max} step={0.1} onChange={(v) => onParams({ max: v })} tight />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] text-text-muted">Rhythm</span>
-          <div className="flex flex-1 items-center gap-1">
-            <NumberField label="" value={rhythm} step={0.1} min={0.01} onChange={(v) => onParams({ rhythm: v })} tight />
-            <span className="text-[10px] text-text-muted/60">/s</span>
+      <div className="border-t border-border/60 p-3">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[10px] text-text-muted">
+              Property
+            </span>
+            <select
+              value={property}
+              onChange={(e) => setProperty(e.target.value as PulseProp)}
+              className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+            >
+              {PULSE_PROPS.map((p) => (
+                <option key={p} value={p}>
+                  {capitalize(
+                    p === "y"
+                      ? "Position Y"
+                      : p === "x"
+                        ? "Position X"
+                        : p,
+                  )}
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] text-text-muted">Stagger</span>
-          <div className="flex flex-1 items-center gap-1">
-            <NumberField label="" value={stagger} step={0.05} min={0} onChange={(v) => onParams({ stagger: v })} tight />
-            <span className="text-[10px] text-text-muted/60">s</span>
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[10px] text-text-muted">
+              Min
+            </span>
+            <NumberField
+              label=""
+              value={min}
+              step={0.1}
+              onChange={(v) => onParams({ min: v })}
+              tight
+            />
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[10px] text-text-muted">Blend</span>
-          <select
-            value={blend}
-            onChange={(e) => onParams({ blend: e.target.value })}
-            className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
-          >
-            <option value="mul">Mul</option>
-            <option value="add">Add</option>
-            <option value="set">Set</option>
-          </select>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[10px] text-text-muted">
+              Max
+            </span>
+            <NumberField
+              label=""
+              value={max}
+              step={0.1}
+              onChange={(v) => onParams({ max: v })}
+              tight
+            />
+          </div>
 
-        {!hasCloner ? (
-          <p className="text-[10px] text-text-muted/60">
-            Add a cloner to stagger across clones
-          </p>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-/**
- * The picked module, opened up.
- *
- * A raw one writes straight to the element. A linked one writes to that element's
- * overrides, one entry at a time, and shows what the master says behind every field
- * it has been told differently about — so the two readings are never in doubt.
- */
-export function ModuleInspector({
-  track,
-  index,
-}: {
-  track: Track;
-  index: number;
-}) {
-  const library = useStudio((s) => s.moduleLibrary);
-  const composition = useStudio((s) => s.composition);
-  const t = useStudio((s) => s.t);
-  const layerId = track.layer.id;
-  const clones = cloneCount(track.layer.distributor);
-  const row = stackRows(track.modules, library)[index];
-  if (!row) return null;
-
-  /** What the element reads on the frame right now — the first clone of it, which is
-   *  the one a value typed here is being judged against. */
-  const readState = (): Transform | undefined =>
-    renderState(composition, t, library).find((it) => it.id === layerId)?.state;
-
-  if (row.kind === "raw") {
-    if (row.module.type === "clonerGraph") return null;
-    if (row.module.type === "pulse") {
-      return (
-        <PulseInspector
-          module={row.module}
-          clones={clones}
-          onParams={(patch) =>
-            useStudio.getState().setModuleParams(layerId, index, patch)
-          }
-          onRemove={() => useStudio.getState().removeModule(layerId, index)}
-        />
-      );
-    }
-    return (
-      <section className={`${SECTION} bg-text-primary/[0.03]`}>
-        <p className={`${LABEL} mb-2`}>
-          {typeName(row.module.type)} · {capitalize(moduleProp(row.module))}
-        </p>
-        <ModuleParams
-          module={row.module}
-          clones={clones}
-          readState={readState}
-          onParams={(patch) =>
-            useStudio.getState().setModuleParams(layerId, index, patch)
-          }
-        />
-      </section>
-    );
-  }
-
-  return (
-    <section className={`${SECTION} bg-text-primary/[0.03]`}>
-      <div className="mb-2 flex items-center gap-1.5">
-        <span className="shrink-0 text-accent">
-          <ChainIcon />
-        </span>
-        <p className={`${LABEL} min-w-0 truncate`}>{row.asset.name}</p>
-      </div>
-      {row.resolved.map((md, entry) => (
-        <div
-          key={entry}
-          className={entry > 0 ? "mt-3 border-t border-border/60 pt-3" : ""}
-        >
-          <div className="mb-1.5 flex items-center gap-1.5">
-            <p className={SUBLABEL}>{typeName(md.type)}</p>
-            {row.link.overrides[entry] ? (
-              <span
-                className="h-1.5 w-1.5 rounded-full bg-accent"
-                title="Overridden"
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[10px] text-text-muted">
+              Rhythm
+            </span>
+            <div className="flex flex-1 items-center gap-1">
+              <NumberField
+                label=""
+                value={rhythm}
+                step={0.1}
+                min={0.01}
+                onChange={(v) => onParams({ rhythm: v })}
+                tight
               />
-            ) : null}
+              <span className="text-[10px] text-text-muted/60">/s</span>
+            </div>
           </div>
-          <ModuleParams
-            module={md}
-            clones={clones}
-            readState={readState}
-            master={row.asset.stack[entry]}
-            onParams={(patch) =>
-              useStudio
-                .getState()
-                .setLinkedOverride(layerId, index, entry, patch)
-            }
-          />
+
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[10px] text-text-muted">
+              Stagger
+            </span>
+            <div className="flex flex-1 items-center gap-1">
+              <NumberField
+                label=""
+                value={stagger}
+                step={0.05}
+                min={0}
+                onChange={(v) => onParams({ stagger: v })}
+                tight
+              />
+              <span className="text-[10px] text-text-muted/60">s</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[10px] text-text-muted">
+              Blend
+            </span>
+            <select
+              value={blend}
+              onChange={(e) => onParams({ blend: e.target.value })}
+              className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+            >
+              <option value="mul">Mul</option>
+              <option value="add">Add</option>
+              <option value="set">Set</option>
+            </select>
+          </div>
+
+          {!hasCloner ? (
+            <p className="text-[10px] text-text-muted/60">
+              Add a cloner to stagger across clones
+            </p>
+          ) : null}
         </div>
-      ))}
-    </section>
+      </div>
+    </div>
   );
 }

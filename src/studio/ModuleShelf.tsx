@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useStudio, proxyBase, type Bench } from "./store";
-import { cloneCount, stackSummary, type ModuleType } from "./modules";
-import { AddModuleButton, DistributorSection, ModuleParams } from "./ModuleStack";
+import { cloneCount, stackSummary } from "./modules";
+import { DistributorSection, ModuleParams } from "./ModuleStack";
 import { typeName } from "./text";
 import { BOX, CloseIcon, GHOST_BTN, INPUT, LABEL, SECTION, SUBLABEL } from "./fields";
 
@@ -234,7 +234,13 @@ export function BenchPanel({ bench }: { bench: Bench }) {
             ))}
           </ul>
         )}
-        <AddModuleButton onAdd={(type: ModuleType) => store.addBenchModule(type)} />
+        <button
+          type="button"
+          className={`${GHOST_BTN} w-full text-left`}
+          onClick={() => store.addBenchModule("pulse")}
+        >
+          + Add pulse
+        </button>
       </section>
 
       {bench.stack.map((md, i) => (

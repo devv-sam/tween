@@ -27,11 +27,7 @@ import {
   type KeyTarget,
   type Range,
 } from "./modules";
-import {
-  DistributorSection,
-  ModuleInspector,
-  ModuleStackSection,
-} from "./ModuleStack";
+import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EaseSelect, EasingSection } from "./EasingControls";
 import {
   MIN_SEGMENT,
@@ -348,11 +344,7 @@ function SelectField({
 
 function ElementPanel({ track, index }: { track: Track; index: number }) {
   const selectedPart = useStudio((s) => s.selectedPart);
-  const { layer, modules } = track;
-  const activeModule =
-    selectedPart?.kind === "module" && selectedPart.index < modules.length
-      ? selectedPart.index
-      : null;
+  const { layer } = track;
   const activeKeyframes =
     selectedPart?.kind === "keyframes" &&
     hasKeyframes(track, selectedPart.property)
@@ -381,10 +373,6 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       />
 
       <ModuleStackSection track={track} />
-
-      {activeModule !== null ? (
-        <ModuleInspector track={track} index={activeModule} />
-      ) : null}
     </>
   );
 }
