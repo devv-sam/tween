@@ -1,5 +1,4 @@
-import {
-  useCallback,
+import React, {
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -1564,21 +1563,16 @@ function TextEditOverlay({
   const editTrack = composition.tracks.find((tr) => tr.layer.id === editingTextId);
   const editItem = scene.find((it) => it.id === editingTextId);
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const measureRef = useRef<HTMLSpanElement>(null);
 
   const src = editTrack?.layer.source;
   const valid = editTrack && editItem && src?.kind === "text";
 
-  const resize = useCallback(() => {
+  useEffect(() => {
     const ta = taRef.current;
-    const span = measureRef.current;
-    if (!ta || !span) return;
-    span.textContent = ta.value || "​";
-    ta.style.width = span.offsetWidth + 2 + "px";
-    ta.style.height = span.offsetHeight + "px";
-  }, []);
-
-  useEffect(() => { resize(); });
+    if (!ta) return;
+    ta.style.height = "0";
+    ta.style.height = ta.scrollHeight + "px";
+  });
 
   if (!valid || src.kind !== "text") return null;
 
@@ -1589,13 +1583,13 @@ function TextEditOverlay({
   const hasBox = src.boxWidth != null;
   const hasContent = src.content.length > 0;
 
-  const fontStyle = {
+  const fontStyle: React.CSSProperties = {
     fontSize: scaledFontSize,
     fontFamily: `"${src.fontFamily}", system-ui, sans-serif`,
     fontWeight: src.fontWeight,
     lineHeight: src.lineHeight,
     letterSpacing: src.letterSpacing * screenScale,
-  } as const;
+  };
 
   return (
     <div
@@ -1606,13 +1600,8 @@ function TextEditOverlay({
         transform: `translate(-50%, -50%) rotate(${st.rotation}deg)`,
         transformOrigin: "center center",
       }}
+      onPointerDown={(e) => e.stopPropagation()}
     >
-      <span
-        ref={measureRef}
-        className="pointer-events-none invisible absolute left-0 top-0 whitespace-pre"
-        style={{ ...fontStyle, position: "absolute", visibility: "hidden" }}
-        aria-hidden="true"
-      />
       <textarea
         ref={taRef}
         autoFocus
@@ -1621,19 +1610,18 @@ function TextEditOverlay({
         style={{
           ...fontStyle,
           width: hasBox ? src.boxWidth! * screenScale : undefined,
-          minWidth: 1,
+          minWidth: scaledFontSize,
           textAlign: src.align,
           color: src.fill.type === "solid" ? src.fill.color : "#000",
           opacity: src.fill.type === "solid" ? src.fill.opacity : 1,
           caretColor: "currentColor",
-          border: hasContent ? "1px solid rgba(99,148,255,0.5)" : "none",
-          whiteSpace: hasBox ? undefined : "nowrap",
-          overflow: "hidden",
+          border: hasContent ? "1px solid var(--color-accent, #6b2d1e)" : "none",
+          overflow: "visible",
+          fieldSizing: "content" as never,
         }}
         value={src.content}
         onChange={(e) => {
           useStudio.getState().setTextProp(editingTextId, { content: e.target.value });
-          resize();
         }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -1641,7 +1629,6 @@ function TextEditOverlay({
           }
           e.stopPropagation();
         }}
-        onPointerDown={(e) => e.stopPropagation()}
       />
     </div>
   );
