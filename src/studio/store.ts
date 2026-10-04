@@ -24,6 +24,7 @@ import type {
 } from "../core/types";
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
+import { measureTextWidth } from "./fonts";
 import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
 import {
@@ -115,7 +116,7 @@ export const designSizeOf = (
     return { width: src.props.width, height: src.props.height };
   }
   if (src.kind === "text") {
-    const w = src.boxWidth ?? Math.max(src.fontSize * Math.max(src.content.length, 1) * 0.6, 48);
+    const w = src.boxWidth ?? measureTextWidth(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.letterSpacing);
     const h = src.boxHeight ?? src.fontSize * src.lineHeight;
     return { width: w, height: h };
   }

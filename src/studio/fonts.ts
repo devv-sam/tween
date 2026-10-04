@@ -35,3 +35,27 @@ export function ensureFontLoaded(family: string, weight = 400): boolean {
   void loadGoogleFont(family, weight);
   return false;
 }
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+export function measureTextWidth(
+  text: string,
+  family: string,
+  weight: number,
+  fontSize: number,
+  letterSpacing: number,
+): number {
+  if (!measureCtx) {
+    const c = document.createElement("canvas");
+    measureCtx = c.getContext("2d")!;
+  }
+  measureCtx.font = `${weight} ${fontSize}px "${family}", system-ui, sans-serif`;
+  if (letterSpacing === 0) {
+    return measureCtx.measureText(text || " ").width;
+  }
+  const chars = [...(text || " ")];
+  let w = 0;
+  for (const ch of chars) w += measureCtx.measureText(ch).width;
+  w += letterSpacing * Math.max(0, chars.length - 1);
+  return w;
+}

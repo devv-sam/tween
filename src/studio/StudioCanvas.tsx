@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -6,7 +7,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import type { SceneItem, Transform } from "../core/types";
+import type { Composition, SceneItem, Scene, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
 import { ClonerGizmo } from "./ClonerGizmo";
@@ -24,6 +25,7 @@ import {
   type Box as GroupBox,
 } from "./group";
 import { drawScene } from "../render/canvas2d";
+import { measureTextWidth } from "./fonts";
 // paintComposition inlined in useLayoutEffect for editing-text filtering
 import {
   PROXY_SIZE,
@@ -220,9 +222,7 @@ export function StudioCanvas() {
         return { width: item.source.props.width, height: item.source.props.height };
       if (item.source.kind === "text") {
         const src = item.source;
-        if (src.boxWidth && src.boxHeight)
-          return { width: src.boxWidth, height: src.boxHeight };
-        const w = src.boxWidth ?? Math.max(src.fontSize * Math.max(src.content.length, 1) * 0.6, 48);
+        const w = src.boxWidth ?? measureTextWidth(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.letterSpacing);
         const h = src.boxHeight ?? src.fontSize * src.lineHeight;
         return { width: w, height: h };
       }
@@ -1468,55 +1468,15 @@ export function StudioCanvas() {
           />
         </svg>
       ) : null}
-      {editingTextId ? (() => {
-        const editTrack = composition.tracks.find((tr) => tr.layer.id === editingTextId);
-        const editItem = scene.find((it) => it.id === editingTextId);
-        if (!editTrack || !editItem || editTrack.layer.source.kind !== "text") return null;
-        const src = editTrack.layer.source;
-        const st = editItem.state;
-        const center = compositionToScreen({ x: st.x, y: st.y }, viewport, frame, view);
-        const screenScale = scale * st.scaleX;
-        const scaledFontSize = src.fontSize * screenScale;
-        const hasBox = src.boxWidth != null;
-        return (
-          <textarea
-            autoFocus
-            className="absolute z-[5] resize-none border-none bg-transparent p-0 outline-none"
-            style={{
-              left: center.x,
-              top: center.y,
-              transform: `translate(-50%, -50%) rotate(${st.rotation}deg)`,
-              transformOrigin: "center center",
-              minWidth: hasBox ? src.boxWidth! * screenScale : scaledFontSize,
-              width: hasBox ? src.boxWidth! * screenScale : undefined,
-              minHeight: scaledFontSize * src.lineHeight,
-              fontSize: scaledFontSize,
-              fontFamily: `"${src.fontFamily}", system-ui, sans-serif`,
-              fontWeight: src.fontWeight,
-              lineHeight: src.lineHeight,
-              letterSpacing: src.letterSpacing * screenScale,
-              textAlign: src.align,
-              color: src.fill.type === "solid" ? src.fill.color : "#000",
-              opacity: src.fill.type === "solid" ? src.fill.opacity : 1,
-              caretColor: "currentColor",
-              fieldSizing: "content" as never,
-              whiteSpace: hasBox ? undefined : "nowrap",
-              overflow: "hidden",
-            }}
-            value={src.content}
-            onChange={(e) => {
-              useStudio.getState().setTextProp(editingTextId, { content: e.target.value });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                useStudio.getState().setEditingTextId(null);
-              }
-              e.stopPropagation();
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-          />
-        );
-      })() : null}
+      {editingTextId ? <TextEditOverlay
+        editingTextId={editingTextId}
+        composition={composition}
+        scene={scene}
+        viewport={viewport}
+        frame={frame}
+        view={view}
+        scale={scale}
+      /> : null}
       {selected && chrome && !clonerGroup && !editingTextId ? (
         <>
           <svg
@@ -1580,4 +1540,109 @@ function useDevicePixelRatio(): number {
   }, []);
 
   return dpr;
+}
+
+type View = { scale: number; zoom: number; panX: number; panY: number };
+
+function TextEditOverlay({
+  editingTextId,
+  composition,
+  scene,
+  viewport,
+  frame,
+  view,
+  scale,
+}: {
+  editingTextId: string;
+  composition: Composition;
+  scene: Scene;
+  viewport: Size;
+  frame: Size;
+  view: View;
+  scale: number;
+}) {
+  const editTrack = composition.tracks.find((tr) => tr.layer.id === editingTextId);
+  const editItem = scene.find((it) => it.id === editingTextId);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+
+  const src = editTrack?.layer.source;
+  const valid = editTrack && editItem && src?.kind === "text";
+
+  const resize = useCallback(() => {
+    const ta = taRef.current;
+    const span = measureRef.current;
+    if (!ta || !span) return;
+    span.textContent = ta.value || "​";
+    ta.style.width = span.offsetWidth + 2 + "px";
+    ta.style.height = span.offsetHeight + "px";
+  }, []);
+
+  useEffect(() => { resize(); });
+
+  if (!valid || src.kind !== "text") return null;
+
+  const st = editItem.state;
+  const center = compositionToScreen({ x: st.x, y: st.y }, viewport, frame, view);
+  const screenScale = scale * st.scaleX;
+  const scaledFontSize = src.fontSize * screenScale;
+  const hasBox = src.boxWidth != null;
+  const hasContent = src.content.length > 0;
+
+  const fontStyle = {
+    fontSize: scaledFontSize,
+    fontFamily: `"${src.fontFamily}", system-ui, sans-serif`,
+    fontWeight: src.fontWeight,
+    lineHeight: src.lineHeight,
+    letterSpacing: src.letterSpacing * screenScale,
+  } as const;
+
+  return (
+    <div
+      className="absolute z-[5]"
+      style={{
+        left: center.x,
+        top: center.y,
+        transform: `translate(-50%, -50%) rotate(${st.rotation}deg)`,
+        transformOrigin: "center center",
+      }}
+    >
+      <span
+        ref={measureRef}
+        className="pointer-events-none invisible absolute left-0 top-0 whitespace-pre"
+        style={{ ...fontStyle, position: "absolute", visibility: "hidden" }}
+        aria-hidden="true"
+      />
+      <textarea
+        ref={taRef}
+        autoFocus
+        rows={1}
+        className="block resize-none bg-transparent p-0 outline-none"
+        style={{
+          ...fontStyle,
+          width: hasBox ? src.boxWidth! * screenScale : undefined,
+          minWidth: 1,
+          textAlign: src.align,
+          color: src.fill.type === "solid" ? src.fill.color : "#000",
+          opacity: src.fill.type === "solid" ? src.fill.opacity : 1,
+          caretColor: "currentColor",
+          border: hasContent ? "1px solid rgba(99,148,255,0.5)" : "none",
+          whiteSpace: hasBox ? undefined : "nowrap",
+          overflow: "hidden",
+        }}
+        value={src.content}
+        onChange={(e) => {
+          useStudio.getState().setTextProp(editingTextId, { content: e.target.value });
+          resize();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            useStudio.getState().setEditingTextId(null);
+          }
+          e.stopPropagation();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
 }
