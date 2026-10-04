@@ -788,7 +788,9 @@ type StudioState = {
   setShapeProp: (layerId: string, patch: Record<string, unknown>) => void;
   clipboard: Track | null;
   copySelected: () => void;
+  cutSelected: () => void;
   pasteClipboard: () => void;
+  duplicateSelected: () => void;
   undo: () => void;
   redo: () => void;
   /** End the interaction the last edits belonged to, so the next one is its own step. */
@@ -2404,6 +2406,13 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       set({ clipboard: structuredClone(track) });
     },
 
+    cutSelected: () => {
+      const s = get();
+      if (!s.selectedId) return;
+      s.copySelected();
+      s.deleteSelected();
+    },
+
     pasteClipboard: () => {
       const { clipboard } = get();
       if (!clipboard) return;
@@ -2427,6 +2436,13 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         selectedPart: null,
         composition: { ...s.composition, tracks: [...s.composition.tracks, cloned] },
       }));
+    },
+
+    duplicateSelected: () => {
+      const s = get();
+      if (!s.selectedId) return;
+      s.copySelected();
+      s.pasteClipboard();
     },
 
     undo: () => {

@@ -503,9 +503,19 @@ export function StudioCanvas() {
         useStudio.getState().copySelected();
         return;
       }
+      if (mod && key === "x" && !editing) {
+        e.preventDefault();
+        useStudio.getState().cutSelected();
+        return;
+      }
       if (mod && key === "v" && !editing) {
         e.preventDefault();
         useStudio.getState().pasteClipboard();
+        return;
+      }
+      if (mod && key === "d" && !editing) {
+        e.preventDefault();
+        useStudio.getState().duplicateSelected();
         return;
       }
       if (editing) return;
