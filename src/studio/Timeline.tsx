@@ -212,6 +212,10 @@ export function Timeline() {
 
   const moveScrub = (e: ReactPointerEvent<HTMLElement>) => {
     if (scrubRef.current !== e.pointerId) return;
+    if (e.buttons === 0) {
+      endScrub(e);
+      return;
+    }
     scrubTo(e.clientX);
   };
 
@@ -245,6 +249,10 @@ export function Timeline() {
   const onDurationMove = (e: ReactPointerEvent<HTMLElement>) => {
     const drag = durationRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    if (e.buttons === 0) {
+      onDurationUp(e);
+      return;
+    }
     useStudio
       .getState()
       .setDuration(drag.startDuration + (e.clientX - drag.fromX) * drag.perPx);
@@ -382,6 +390,10 @@ export function Timeline() {
   const onMarqueeMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = marqueeRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    if (e.buttons === 0) {
+      onMarqueeUp(e);
+      return;
+    }
     const at = lanePoint(e);
     if (!at) return;
     if (!drag.moved && Math.abs(at.x - drag.x0) < DRAG_SLOP && Math.abs(at.y - drag.y0) < DRAG_SLOP)
@@ -510,10 +522,6 @@ export function Timeline() {
                 aria-valuenow={Number((t * duration).toFixed(2))}
                 aria-valuetext={`${formatTime(t * duration, unit)}${unit}`}
                 style={{ transform: `translateX(${playheadX}px)` }}
-                onPointerDown={beginScrub}
-                onPointerMove={moveScrub}
-                onPointerUp={endScrub}
-                onPointerCancel={endScrub}
               />
             </div>
           </div>
@@ -1004,6 +1012,10 @@ function MainBar({
       return;
     }
     if (drag.pointerId !== e.pointerId || spanPx(width) < 1) return;
+    if (e.buttons === 0) {
+      onUp(e);
+      return;
+    }
     // Retiming lands on frames. Nothing finer survives the export — frames are
     // sampled at whole steps — so the sub-frame precision only costs control.
     const snap = (v: number) => Math.round(v / frame) * frame;
@@ -1241,6 +1253,10 @@ function KeyframeTrack({
   const onDragMove = (e: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
+    if (e.buttons === 0) {
+      onDragEnd(e);
+      return;
+    }
     const dx = e.clientX - drag.fromX;
     if (!drag.moved && Math.abs(dx) < DRAG_SLOP) return;
     if (!drag.moved && drag.grab.kind === "body") {
@@ -1506,6 +1522,10 @@ function ModuleBlock({
       return;
     }
     if (drag.pointerId !== e.pointerId || spanPx(width) < 1) return;
+    if (e.buttons === 0) {
+      onUp(e);
+      return;
+    }
     const delta = (e.clientX - drag.fromX) / spanPx(width);
     const next = drag.edge
       ? trimRange(drag.start, drag.edge, drag.start[drag.edge === "start" ? 0 : 1] + delta)
