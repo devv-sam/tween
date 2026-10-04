@@ -2112,14 +2112,19 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       if (!track) return;
       const anchor = moveAnchor(layerId);
       if (!anchor) return;
-      const at =
-        renderState(composition, t, moduleLibrary).find((it) => it.id === layerId)?.state ??
-        track.layer.base;
+      const rendered = renderState(composition, t, moduleLibrary);
+      const instances = rendered.filter((it) => it.id === layerId);
+      let at: number;
+      if (instances.length > 1) {
+        const vals = instances.map((it) => it.state[axis]);
+        at = (Math.min(...vals) + Math.max(...vals)) / 2;
+      } else {
+        at = (instances[0]?.state ?? track.layer.base)[axis];
+      }
       const middle = axis === "x" ? frame.width / 2 : frame.height / 2;
-      const by = middle - at[axis];
+      const by = middle - at;
       if (by === 0) return;
       moveLayer(layerId, anchor, axis === "x" ? by : 0, axis === "y" ? by : 0);
-      // One click is one undo step — there is no gesture still in flight to keep open.
       sealHistory();
     },
 

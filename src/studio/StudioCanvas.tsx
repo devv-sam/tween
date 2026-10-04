@@ -335,6 +335,14 @@ export function StudioCanvas() {
     };
   }, [cloner, selectedId, scene, sizeOf, templateEditMode]);
 
+  /** Screen-space rect for the cloner group's dashed bounding border. */
+  const clonerGroupRect = useMemo(() => {
+    if (!clonerGroup) return null;
+    const { box } = clonerGroup;
+    const tl = compositionToScreen({ x: box.minX, y: box.minY }, viewport, frame, view);
+    const br = compositionToScreen({ x: box.maxX, y: box.maxY }, viewport, frame, view);
+    return { x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y };
+  }, [clonerGroup, viewport, frame, view]);
 
   /**
    * The picked element itself, apart from any copies of it.
@@ -1281,6 +1289,22 @@ export function StudioCanvas() {
             height: Math.abs(marquee.to.y - marquee.from.y),
           }}
         />
+      ) : null}
+      {clonerGroupRect ? (
+        <svg
+          className="studio-selection"
+          width={viewport.width}
+          height={viewport.height}
+          aria-hidden="true"
+        >
+          <rect
+            className="studio-cloner-group"
+            x={clonerGroupRect.x}
+            y={clonerGroupRect.y}
+            width={clonerGroupRect.width}
+            height={clonerGroupRect.height}
+          />
+        </svg>
       ) : null}
       {selected && chrome && !clonerGroup ? (
         <>
