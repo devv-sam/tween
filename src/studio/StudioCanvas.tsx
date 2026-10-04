@@ -24,7 +24,7 @@ import {
   type Box as GroupBox,
 } from "./group";
 import { drawScene } from "../render/canvas2d";
-import { paintComposition } from "../render/paint";
+// paintComposition inlined in useLayoutEffect for editing-text filtering
 import {
   PROXY_SIZE,
   benchComposition,
@@ -670,8 +670,8 @@ export function StudioCanvas() {
       if (!img || img.naturalWidth < 1) return undefined;
       return { source: img, width: img.naturalWidth, height: img.naturalHeight };
     };
+    const sc = renderState(painted, t, moduleLibrary);
     if (templateEditMode && selectedId) {
-      const sc = renderState(painted, t, moduleLibrary);
       let seenSource = false;
       for (const item of sc) {
         if (item.id === selectedId) {
@@ -679,10 +679,11 @@ export function StudioCanvas() {
           else item.state = { ...item.state, opacity: item.state.opacity * 0.4 };
         }
       }
-      drawScene(ctx, sc, frame.width, frame.height, imageOf);
-    } else {
-      paintComposition(ctx, painted, t, frame.width, frame.height, moduleLibrary, imageOf);
     }
+    const filtered = editingTextId
+      ? sc.filter((item) => item.id !== editingTextId)
+      : sc;
+    drawScene(ctx, filtered, frame.width, frame.height, imageOf);
     ctx.restore();
   }, [
     painted,
@@ -698,6 +699,7 @@ export function StudioCanvas() {
     imagesReady,
     templateEditMode,
     selectedId,
+    editingTextId,
   ]);
 
   /**
@@ -1472,19 +1474,23 @@ export function StudioCanvas() {
         if (!editTrack || !editItem || editTrack.layer.source.kind !== "text") return null;
         const src = editTrack.layer.source;
         const st = editItem.state;
-        const sz = sizeOf(editItem) ?? { width: 100, height: 48 };
         const center = compositionToScreen({ x: st.x, y: st.y }, viewport, frame, view);
         const screenScale = scale * st.scaleX;
+        const scaledFontSize = src.fontSize * screenScale;
+        const hasBox = src.boxWidth != null;
         return (
           <textarea
             autoFocus
             className="absolute z-[5] resize-none border-none bg-transparent p-0 outline-none"
             style={{
-              left: center.x - (sz.width * screenScale) / 2,
-              top: center.y - (sz.height * screenScale) / 2,
-              width: sz.width * screenScale,
-              height: sz.height * screenScale,
-              fontSize: src.fontSize * screenScale,
+              left: center.x,
+              top: center.y,
+              transform: `translate(-50%, -50%) rotate(${st.rotation}deg)`,
+              transformOrigin: "center center",
+              minWidth: hasBox ? src.boxWidth! * screenScale : scaledFontSize,
+              width: hasBox ? src.boxWidth! * screenScale : undefined,
+              minHeight: scaledFontSize * src.lineHeight,
+              fontSize: scaledFontSize,
               fontFamily: `"${src.fontFamily}", system-ui, sans-serif`,
               fontWeight: src.fontWeight,
               lineHeight: src.lineHeight,
@@ -1492,9 +1498,10 @@ export function StudioCanvas() {
               textAlign: src.align,
               color: src.fill.type === "solid" ? src.fill.color : "#000",
               opacity: src.fill.type === "solid" ? src.fill.opacity : 1,
-              transform: `rotate(${st.rotation}deg)`,
-              transformOrigin: "center center",
               caretColor: "currentColor",
+              fieldSizing: "content" as never,
+              whiteSpace: hasBox ? undefined : "nowrap",
+              overflow: "hidden",
             }}
             value={src.content}
             onChange={(e) => {
@@ -1510,7 +1517,7 @@ export function StudioCanvas() {
           />
         );
       })() : null}
-      {selected && chrome && !clonerGroup ? (
+      {selected && chrome && !clonerGroup && !editingTextId ? (
         <>
           <svg
             className="studio-selection"
