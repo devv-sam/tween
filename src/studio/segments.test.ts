@@ -5,6 +5,7 @@ import {
   MIN_SEGMENT,
   easeSamples,
   findSegment,
+  movedStart,
   parseSegment,
   retimedStops,
   segmentId,
@@ -119,6 +120,40 @@ describe("retiming a segment", () => {
     // A block covering half the composition: a second of segment is twice the share.
     const next = retimedStops(stops, 1, 1, [0, 0.5], 4);
     expect(next[1].t).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe("moving a segment's start", () => {
+  const stops = [{ t: 0, v: 0 }, { t: 0.5, v: 1 }, { t: 1, v: 2 }];
+
+  it("moves the source and leaves the destination where it is", () => {
+    const next = movedStart(stops, 1, 0.5, [0, 1], 2);
+    expect(next[0].t).toBeCloseTo(0.25, 6);
+    expect(next[1].t).toBe(0.5);
+    expect(next[2].t).toBe(1);
+  });
+
+  it("will not reach the destination, or pass it", () => {
+    const next = movedStart(stops, 1, 100, [0, 1], 2);
+    expect(next[0].t).toBeCloseTo(0.5 - MIN_SEGMENT / 2, 6);
+  });
+
+  it("will not cross the stop before it", () => {
+    const next = movedStart(stops, 2, 0, [0, 1], 2);
+    expect(next[1].t).toBeCloseTo(MIN_SEGMENT / 2, 6);
+  });
+
+  it("will not start before the block does", () => {
+    expect(movedStart(stops, 1, -5, [0, 1], 2)[0].t).toBe(0);
+  });
+
+  it("measures seconds against the block it sits in", () => {
+    const next = movedStart(stops, 1, 1, [0, 0.5], 4);
+    expect(next[0].t).toBeCloseTo(0.5 - MIN_SEGMENT / 2, 6);
+  });
+
+  it("has nothing to move without a source", () => {
+    expect(movedStart(stops, 0, 1, [0, 1], 2)).toBe(stops);
   });
 });
 
