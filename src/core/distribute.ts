@@ -1,7 +1,7 @@
 import type { Layer, Transform } from "./types";
 import { samplePath, type PathNode } from "./geometry";
 
-export interface Instance { base: Transform; u: number; i: number; count: number; }
+export interface Instance { base: Transform; u: number; i: number; count: number; charIndex?: number; }
 
 /** Spread over 0–1. A lone clone sits at the start rather than dividing by nothing. */
 const spread = (i: number, count: number): number => (count > 1 ? i / (count - 1) : 0);
@@ -19,6 +19,24 @@ const num = (v: unknown, fallback: number): number =>
  * from it, and dragging it would do nothing.
  */
 export function expand(layer: Layer): Instance[] {
+  const src = layer.source;
+  if (src.kind === "text" && src.perCharacter && src.content.length > 0) {
+    const chars = [...src.content];
+    const count = chars.length;
+    const advance = src.fontSize * 0.6;
+    const totalWidth = (count - 1) * (advance + src.letterSpacing);
+    return chars.map((_, i) => ({
+      base: {
+        ...layer.base,
+        x: layer.base.x - totalWidth / 2 + i * (advance + src.letterSpacing),
+      },
+      u: count > 1 ? i / (count - 1) : 0,
+      i,
+      count,
+      charIndex: i,
+    }));
+  }
+
   const d = layer.distributor;
   if (!d || d.type === "none" || d.count <= 1) {
     return [{ base: { ...layer.base }, u: 0, i: 0, count: 1 }];

@@ -1,5 +1,6 @@
-import type { Scene, Composition, RectProps, EllipseProps, FillDef, StrokeDef } from "../core/types";
+import type { Scene, Composition, RectProps, EllipseProps, FillDef, StrokeDef, TextSource } from "../core/types";
 import { fieldCenter } from "../core/fields";
+import { ensureFontLoaded } from "../studio/fonts";
 
 /** The box a shape layer draws at, before its own scale. */
 export const SHAPE_SIZE = 140;
@@ -71,6 +72,91 @@ function drawEllipse(ctx: CanvasRenderingContext2D, props: EllipseProps, opacity
   applyStroke(ctx, stroke, opacity, path);
 }
 
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function drawText(ctx: CanvasRenderingContext2D, src: TextSource, opacity: number): void {
+  ensureFontLoaded(src.fontFamily, src.fontWeight);
+  const font = `${src.fontWeight} ${src.fontSize}px "${src.fontFamily}", system-ui, sans-serif`;
+  ctx.font = font;
+  ctx.textAlign = src.align;
+  ctx.textBaseline = "top";
+
+  const leading = src.fontSize * src.lineHeight;
+  const lines = src.boxWidth
+    ? wrapLines(ctx, src.content || " ", src.boxWidth)
+    : (src.content || " ").split("\n");
+
+  const totalHeight = lines.length * leading;
+  const startY = -totalHeight / 2;
+  const alignX = src.align === "left" ? 0 : src.align === "right" ? 0 : 0;
+  let anchorX = 0;
+  if (src.boxWidth) {
+    anchorX = src.align === "left" ? -src.boxWidth / 2
+      : src.align === "right" ? src.boxWidth / 2
+      : 0;
+  }
+
+  if (src.fill.type === "solid") {
+    ctx.fillStyle = src.fill.color;
+    ctx.globalAlpha = src.fill.opacity * opacity;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const ly = startY + i * leading;
+    if (src.letterSpacing !== 0) {
+      drawLetterSpaced(ctx, lines[i], anchorX + alignX, ly, src.letterSpacing, src.align);
+    } else {
+      ctx.fillText(lines[i], anchorX + alignX, ly);
+    }
+  }
+}
+
+function drawLetterSpaced(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  spacing: number,
+  align: "left" | "center" | "right",
+): void {
+  const chars = [...text];
+  let totalWidth = 0;
+  const widths: number[] = [];
+  for (const ch of chars) {
+    const w = ctx.measureText(ch).width;
+    widths.push(w);
+    totalWidth += w;
+  }
+  totalWidth += spacing * (chars.length - 1);
+
+  let cx = align === "center" ? x - totalWidth / 2
+    : align === "right" ? x - totalWidth
+    : x;
+
+  const savedAlign = ctx.textAlign;
+  ctx.textAlign = "left";
+  for (let i = 0; i < chars.length; i++) {
+    ctx.fillText(chars[i], cx, y);
+    cx += widths[i] + spacing;
+  }
+  ctx.textAlign = savedAlign;
+}
+
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -95,11 +181,7 @@ export function drawScene(
       const img = imageOf?.(item.source.value);
       if (img) ctx.drawImage(img.source, -img.width / 2, -img.height / 2, img.width, img.height);
     } else if (item.source.kind === "text") {
-      ctx.fillStyle = "#111";
-      ctx.font = "600 48px Inter, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(item.source.value, 0, 0);
+      drawText(ctx, item.source, clamp01(s.opacity));
     } else if (item.source.kind === "rect") {
       drawRect(ctx, item.source.props, clamp01(s.opacity));
     } else if (item.source.kind === "ellipse") {

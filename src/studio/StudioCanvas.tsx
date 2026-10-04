@@ -171,6 +171,7 @@ export function StudioCanvas() {
   const selectedId = useStudio((s) => s.selectedId);
   const selectedIds = useStudio((s) => s.selectedIds);
   const templateEditMode = useStudio((s) => s.templateEditMode);
+  const editingTextId = useStudio((s) => s.editingTextId);
   const dpr = useDevicePixelRatio();
   const [imagesReady, setImagesReady] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -217,6 +218,14 @@ export function StudioCanvas() {
       if (item.source.kind === "image") return byId.get(item.source.value);
       if (item.source.kind === "rect" || item.source.kind === "ellipse")
         return { width: item.source.props.width, height: item.source.props.height };
+      if (item.source.kind === "text") {
+        const src = item.source;
+        if (src.boxWidth && src.boxHeight)
+          return { width: src.boxWidth, height: src.boxHeight };
+        const w = src.boxWidth ?? Math.max(src.fontSize * Math.max(src.content.length, 1) * 0.6, 48);
+        const h = src.boxHeight ?? src.fontSize * src.lineHeight;
+        return { width: w, height: h };
+      }
       return undefined;
     };
   }, [assets]);
@@ -541,6 +550,10 @@ export function StudioCanvas() {
       const center = { x: vp.width / 2, y: vp.height / 2 };
 
       if (e.key === "Escape") {
+        if (useStudio.getState().editingTextId) {
+          useStudio.getState().setEditingTextId(null);
+          return;
+        }
         if (useStudio.getState().templateEditMode) {
           useStudio.getState().setTemplateEditMode(false);
           return;
@@ -588,6 +601,7 @@ export function StudioCanvas() {
       if (key === "v") { useStudio.getState().setActiveTool("select"); return; }
       if (key === "r") { useStudio.getState().setActiveTool("rect"); return; }
       if (key === "o") { useStudio.getState().setActiveTool("ellipse"); return; }
+      if (key === "t") { useStudio.getState().setActiveTool("text"); return; }
 
       if (e.key === "0") {
         e.preventDefault();
@@ -728,7 +742,17 @@ export function StudioCanvas() {
     const screen = screenAt(e);
     const point = screenToComposition(screen, viewport, frame, view);
 
+    if (useStudio.getState().editingTextId) {
+      useStudio.getState().setEditingTextId(null);
+    }
+
     const tool = useStudio.getState().activeTool;
+    if (tool === "text") {
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { return; }
+      drawRef.current = { pointerId: e.pointerId, from: point, kind: "rect" };
+      setDrawPreview({ from: point, to: point, kind: "rect", shift: false });
+      return;
+    }
     if (tool === "rect" || tool === "ellipse") {
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch { return; }
       drawRef.current = { pointerId: e.pointerId, from: point, kind: tool };
@@ -1056,6 +1080,11 @@ export function StudioCanvas() {
       return;
     }
     const track = composition.tracks.find((tr) => tr.layer.id === id);
+    if (track?.layer.source.kind === "text") {
+      useStudio.getState().setSelectedIds([id]);
+      useStudio.getState().setEditingTextId(id);
+      return;
+    }
     const d = track?.layer.distributor;
     if (d && d.type !== "none" && d.count > 1) {
       useStudio.getState().setSelectedIds([id]);
@@ -1108,10 +1137,27 @@ export function StudioCanvas() {
       if (e.currentTarget.hasPointerCapture(d.pointerId)) {
         e.currentTarget.releasePointerCapture(d.pointerId);
       }
+      const currentTool = useStudio.getState().activeTool;
       const to = screenToComposition(screenAt(e), viewport, frame, view);
       let dx = to.x - d.from.x;
       let dy = to.y - d.from.y;
       const MIN_DRAG = 4 / scale;
+
+      if (currentTool === "text") {
+        let newId: string;
+        if (Math.abs(dx) < MIN_DRAG && Math.abs(dy) < MIN_DRAG) {
+          newId = useStudio.getState().addText(d.from.x, d.from.y);
+        } else {
+          const w = Math.abs(dx);
+          const h = Math.abs(dy);
+          const cx = d.from.x + dx / 2;
+          const cy = d.from.y + dy / 2;
+          newId = useStudio.getState().addText(cx, cy, w, h);
+        }
+        useStudio.getState().setEditingTextId(newId);
+        return;
+      }
+
       if (Math.abs(dx) < MIN_DRAG && Math.abs(dy) < MIN_DRAG) {
         dx = 160; dy = 160;
       }
@@ -1420,6 +1466,50 @@ export function StudioCanvas() {
           />
         </svg>
       ) : null}
+      {editingTextId ? (() => {
+        const editTrack = composition.tracks.find((tr) => tr.layer.id === editingTextId);
+        const editItem = scene.find((it) => it.id === editingTextId);
+        if (!editTrack || !editItem || editTrack.layer.source.kind !== "text") return null;
+        const src = editTrack.layer.source;
+        const st = editItem.state;
+        const sz = sizeOf(editItem) ?? { width: 100, height: 48 };
+        const center = compositionToScreen({ x: st.x, y: st.y }, viewport, frame, view);
+        const screenScale = scale * st.scaleX;
+        return (
+          <textarea
+            autoFocus
+            className="absolute z-[5] resize-none border-none bg-transparent p-0 outline-none"
+            style={{
+              left: center.x - (sz.width * screenScale) / 2,
+              top: center.y - (sz.height * screenScale) / 2,
+              width: sz.width * screenScale,
+              height: sz.height * screenScale,
+              fontSize: src.fontSize * screenScale,
+              fontFamily: `"${src.fontFamily}", system-ui, sans-serif`,
+              fontWeight: src.fontWeight,
+              lineHeight: src.lineHeight,
+              letterSpacing: src.letterSpacing * screenScale,
+              textAlign: src.align,
+              color: src.fill.type === "solid" ? src.fill.color : "#000",
+              opacity: src.fill.type === "solid" ? src.fill.opacity : 1,
+              transform: `rotate(${st.rotation}deg)`,
+              transformOrigin: "center center",
+              caretColor: "currentColor",
+            }}
+            value={src.content}
+            onChange={(e) => {
+              useStudio.getState().setTextProp(editingTextId, { content: e.target.value });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                useStudio.getState().setEditingTextId(null);
+              }
+              e.stopPropagation();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          />
+        );
+      })() : null}
       {selected && chrome && !clonerGroup ? (
         <>
           <svg

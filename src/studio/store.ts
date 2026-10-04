@@ -18,6 +18,7 @@ import type {
   LinkedModule,
   ModuleAsset,
   ModuleData,
+  TextSource,
   Track,
   Transform,
 } from "../core/types";
@@ -112,6 +113,11 @@ export const designSizeOf = (
   const src = layer.source;
   if (src.kind === "rect" || src.kind === "ellipse") {
     return { width: src.props.width, height: src.props.height };
+  }
+  if (src.kind === "text") {
+    const w = src.boxWidth ?? Math.max(src.fontSize * Math.max(src.content.length, 1) * 0.6, 48);
+    const h = src.boxHeight ?? src.fontSize * src.lineHeight;
+    return { width: w, height: h };
   }
   if (src.kind !== "image") return undefined;
   const asset = assets.find((a) => a.id === src.value);
@@ -530,7 +536,21 @@ export function benchComposition(bench: Bench, comp: Composition, frame: Size): 
 
 export const PROXY_ID = "__bench-proxy";
 
-export type ActiveTool = "select" | "rect" | "ellipse";
+export type ActiveTool = "select" | "rect" | "ellipse" | "text";
+
+export interface FontMeta {
+  family: string;
+  variants: string[];
+  category: string;
+}
+
+const FALLBACK_FONTS: FontMeta[] = [
+  { family: "Inter", variants: ["regular", "700"], category: "sans-serif" },
+  { family: "Playfair Display", variants: ["regular", "700"], category: "serif" },
+  { family: "JetBrains Mono", variants: ["regular", "700"], category: "monospace" },
+  { family: "Bricolage Grotesque", variants: ["regular", "700"], category: "display" },
+  { family: "Plus Jakarta Sans", variants: ["regular", "700"], category: "sans-serif" },
+];
 
 const DEFAULT_FILL: FillDef = { type: "solid", color: "#D9D9D9", opacity: 1 };
 const DEFAULT_STROKE: StrokeDef = { enabled: false, color: "#000000", opacity: 1, width: 2, position: "center", dashOffset: 0 };
@@ -545,7 +565,7 @@ function defaultEllipseProps(w: number, h: number): EllipseProps {
 
 type StudioState = {
   activeTool: ActiveTool;
-  shapeCounters: { rect: number; ellipse: number };
+  shapeCounters: { rect: number; ellipse: number; text: number };
   composition: Composition;
   /**
    * Saved behaviours, kept beside the composition rather than inside it: a library is
@@ -786,6 +806,13 @@ type StudioState = {
   setActiveTool: (tool: ActiveTool) => void;
   addShape: (kind: "rect" | "ellipse", x: number, y: number, w: number, h: number) => string;
   setShapeProp: (layerId: string, patch: Record<string, unknown>) => void;
+  fonts: FontMeta[];
+  fontsLoading: boolean;
+  fetchFonts: () => Promise<void>;
+  addText: (x: number, y: number, boxWidth?: number, boxHeight?: number) => string;
+  setTextProp: (layerId: string, patch: Partial<TextSource>) => void;
+  editingTextId: string | null;
+  setEditingTextId: (id: string | null) => void;
   clipboard: Track | null;
   copySelected: () => void;
   cutSelected: () => void;
@@ -898,7 +925,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
 
   return {
     activeTool: "select",
-    shapeCounters: { rect: 0, ellipse: 0 },
+    shapeCounters: { rect: 0, ellipse: 0, text: 0 },
     composition: emptyComposition(),
     moduleLibrary: [],
     bench: null,
@@ -2395,6 +2422,83 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         },
       }));
     },
+
+    fonts: FALLBACK_FONTS,
+    fontsLoading: false,
+
+    fetchFonts: async () => {
+      const key = import.meta.env.VITE_GOOGLE_FONTS_API_KEY;
+      if (!key) return;
+      set({ fontsLoading: true });
+      try {
+        const res = await fetch(
+          `https://www.googleapis.com/webfonts/v1/webfonts?key=${key}&sort=popularity`,
+        );
+        const { items } = await res.json();
+        if (Array.isArray(items)) {
+          set({
+            fonts: items.map((f: { family: string; variants: string[]; category: string }) => ({
+              family: f.family,
+              variants: f.variants,
+              category: f.category,
+            })),
+          });
+        }
+      } catch {
+        // keep fallback fonts
+      } finally {
+        set({ fontsLoading: false });
+      }
+    },
+
+    addText: (x, y, boxWidth, boxHeight) => {
+      const id = crypto.randomUUID();
+      const counters = { ...get().shapeCounters };
+      counters.text += 1;
+      const name = `Text ${counters.text}`;
+      const source: TextSource = {
+        kind: "text",
+        content: "",
+        fontFamily: "Inter",
+        fontWeight: 400,
+        fontSize: 48,
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        align: "center",
+        fill: { type: "solid", color: "#1A0A00", opacity: 1 },
+        perCharacter: false,
+        ...(boxWidth !== undefined ? { boxWidth, boxHeight } : {}),
+      };
+      const track: Track = {
+        layer: { id, name, source, base: { x, y, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 } },
+        modules: [],
+      };
+      edit(null, (s) => ({
+        ...pick([id]),
+        selectedPart: null,
+        activeTool: "select",
+        shapeCounters: counters,
+        composition: { ...s.composition, tracks: [...s.composition.tracks, track] },
+      }));
+      return id;
+    },
+
+    setTextProp: (layerId, patch) => {
+      edit(`text:${layerId}`, (s) => ({
+        composition: {
+          ...s.composition,
+          tracks: s.composition.tracks.map((tr) => {
+            if (tr.layer.id !== layerId) return tr;
+            const src = tr.layer.source;
+            if (src.kind !== "text") return tr;
+            return { ...tr, layer: { ...tr.layer, source: { ...src, ...patch } } };
+          }),
+        },
+      }));
+    },
+
+    editingTextId: null,
+    setEditingTextId: (id) => set({ editingTextId: id }),
 
     clipboard: null,
 
