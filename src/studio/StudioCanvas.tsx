@@ -24,7 +24,7 @@ import {
   type Box as GroupBox,
 } from "./group";
 import { drawScene } from "../render/canvas2d";
-import { measureTextWidth, getOpenTypeFont, otCharPositions, otMeasureWidth, loadOpenTypeFont } from "./fonts";
+import { measureTextWidth, measureTextHeight, getOpenTypeFont, otCharPositions, otMeasureWidth, loadOpenTypeFont } from "./fonts";
 // paintComposition inlined in useLayoutEffect for editing-text filtering
 import {
   PROXY_SIZE,
@@ -50,6 +50,8 @@ import {
   hitTest,
   regionAngle,
   resizeFrom,
+  handleAffectsX,
+  handleAffectsY,
   ROTATE_SNAP,
   rotateCursor,
   rotateFrom,
@@ -222,7 +224,7 @@ export function StudioCanvas() {
       if (item.source.kind === "text") {
         const src = item.source;
         const w = src.boxWidth ?? measureTextWidth(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.letterSpacing);
-        const h = src.boxHeight ?? src.fontSize * src.lineHeight;
+        const h = src.boxHeight ?? measureTextHeight(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.lineHeight, src.letterSpacing, src.boxWidth);
         return { width: w, height: h };
       }
       return undefined;
@@ -1033,6 +1035,32 @@ export function StudioCanvas() {
 
     // Shift flips the lock for the duration of the drag, the usual canvas convention.
     const lock = drag.lockAspect !== e.shiftKey;
+
+    // Text elements: resize changes the box dimensions, not the transform scale.
+    const store = useStudio.getState();
+    const track = store.composition.tracks.find((tr) => tr.layer.id === drag.id);
+    if (track?.layer.source.kind === "text") {
+      const src = track.layer.source;
+      const isAutoWidth = src.boxWidth == null;
+      const isAutoHeight = src.boxWidth != null && src.boxHeight == null;
+
+      if (isAutoWidth) return;
+      if (isAutoHeight && !handleAffectsX(drag.handle)) return;
+
+      const next = resizeFrom(drag.startRendered, drag.size, drag.handle, point, lock);
+      const newWidth = drag.size.width * next.scaleX;
+      const newHeight = drag.size.height * next.scaleY;
+      const patch: Partial<typeof src> = {};
+      if (handleAffectsX(drag.handle)) patch.boxWidth = Math.max(newWidth, 1);
+      if (!isAutoHeight && handleAffectsY(drag.handle)) patch.boxHeight = Math.max(newHeight, 1);
+      store.setTextProp(drag.id, patch);
+      captureTransform(drag.id, {
+        x: drag.startBase.x + (next.x - drag.startRendered.x),
+        y: drag.startBase.y + (next.y - drag.startRendered.y),
+      });
+      return;
+    }
+
     // Handles sit on the rendered box, but the edit lands on `base`. Applying the
     // result as a delta keeps any offset an active module contributed.
     const next = resizeFrom(
@@ -1146,10 +1174,9 @@ export function StudioCanvas() {
           newId = useStudio.getState().addText(d.from.x, d.from.y);
         } else {
           const w = Math.abs(dx);
-          const h = Math.abs(dy);
           const cx = d.from.x + dx / 2;
           const cy = d.from.y + dy / 2;
-          newId = useStudio.getState().addText(cx, cy, w, h);
+          newId = useStudio.getState().addText(cx, cy, w);
         }
         useStudio.getState().setEditingTextId(newId);
         return;
@@ -1186,28 +1213,6 @@ export function StudioCanvas() {
     dragRef.current = null;
     setRotating(false);
     setAlignment(null);
-    if (drag.mode === "resize") {
-      const store = useStudio.getState();
-      const track = store.composition.tracks.find((tr) => tr.layer.id === drag.id);
-      if (track?.layer.source.kind === "text") {
-        const base = track.layer.base;
-        const absX = Math.abs(base.scaleX);
-        const absY = Math.abs(base.scaleY);
-        if (absX !== 1 || absY !== 1) {
-          const src = track.layer.source;
-          store.setTextProp(drag.id, {
-            fontSize: src.fontSize * absY,
-            letterSpacing: src.letterSpacing * absY,
-            ...(src.boxWidth != null ? { boxWidth: src.boxWidth * absX } : {}),
-            ...(src.boxHeight != null ? { boxHeight: src.boxHeight * absY } : {}),
-          });
-          store.captureTransform(drag.id, {
-            scaleX: base.scaleX < 0 ? -1 : 1,
-            scaleY: base.scaleY < 0 ? -1 : 1,
-          });
-        }
-      }
-    }
     // The whole drag was one edit; releasing closes it.
     useStudio.getState().sealHistory();
     if (e.currentTarget.hasPointerCapture(drag.pointerId)) {

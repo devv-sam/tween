@@ -135,6 +135,53 @@ export function measureTextWidth(
   return w;
 }
 
+export function measureTextHeight(
+  text: string,
+  family: string,
+  weight: number,
+  fontSize: number,
+  lineHeight: number,
+  letterSpacing: number,
+  boxWidth?: number,
+): number {
+  const content = text || " ";
+  let lineCount: number;
+  if (boxWidth != null) {
+    const font = getOpenTypeFont(family, weight);
+    if (font) {
+      lineCount = wrapLines(font, content, fontSize, letterSpacing, boxWidth).length;
+    } else {
+      lineCount = content.split("\n").length;
+    }
+  } else {
+    lineCount = content.split("\n").length;
+  }
+  return lineCount * fontSize * lineHeight;
+}
+
+function wrapLines(
+  font: opentype.Font,
+  text: string,
+  fontSize: number,
+  letterSpacing: number,
+  maxWidth: number,
+): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (line && otMeasureWidth(font, test, fontSize, letterSpacing) > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
 // ---------------------------------------------------------------------------
 // opentype metric helpers
 // ---------------------------------------------------------------------------

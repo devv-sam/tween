@@ -810,7 +810,7 @@ type StudioState = {
   fonts: FontMeta[];
   fontsLoading: boolean;
   fetchFonts: () => Promise<void>;
-  addText: (x: number, y: number, boxWidth?: number, boxHeight?: number) => string;
+  addText: (x: number, y: number, boxWidth?: number) => string;
   setTextProp: (layerId: string, patch: Partial<TextSource>) => void;
   editingTextId: string | null;
   setEditingTextId: (id: string | null) => void;
@@ -2456,7 +2456,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       }
     },
 
-    addText: (x, y, boxWidth, boxHeight) => {
+    addText: (x, y, boxWidth) => {
       const id = crypto.randomUUID();
       const counters = { ...get().shapeCounters };
       counters.text += 1;
@@ -2472,7 +2472,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         align: "center",
         fill: { type: "solid", color: "#1A0A00", opacity: 1 },
         perCharacter: false,
-        ...(boxWidth !== undefined ? { boxWidth, boxHeight } : {}),
+        ...(boxWidth !== undefined ? { boxWidth } : {}),
       };
       const track: Track = {
         layer: { id, name, source, base: { x, y, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 } },
