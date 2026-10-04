@@ -107,17 +107,10 @@ function ElementPanels({
   return (
     <>
       <Toolbar />
-      {/* The composition is always there to edit, so it stays put and the element's
-          own panel stacks under it rather than replacing it. */}
-      <CompositionPanel />
-      {/* One element opens its own panel; several open the little that can honestly
-          be said about several at once. `selectedId` is null while more than one is
-          picked, so the two are never both on screen. */}
       {track ? <ElementPanel track={track} index={index} /> : null}
       {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
-      {/* Exclusive with the element panels above: picking a span clears the element,
-          so at most one of the two is ever standing. */}
       {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
+      <CompositionPanel />
     </>
   );
 }
@@ -364,7 +357,7 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       />
 
       {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
-        <ShapeSection track={track} />
+        <ShapeSection track={track} activeKeyframes={activeKeyframes} />
       ) : null}
 
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
@@ -686,27 +679,31 @@ function ElementSection({
         </>
       ) : null}
 
-      <p className={`${SUBLABEL} mb-1`}>Opacity</p>
-      <div className="grid grid-cols-2 gap-x-1.5">
-        {cell(
-          "opacity",
-          <NumberField
-            label="O"
-            value={layer.base.opacity}
-            step={PROP_STEP.opacity}
-            min={0}
-            max={1}
-            onChange={(v) =>
-              useStudio.getState().setLayerBase(layer.id, { opacity: v })
-            }
-          />,
-        )}
-      </div>
+      {layerSrc.kind !== "rect" && layerSrc.kind !== "ellipse" ? (
+        <>
+          <p className={`${SUBLABEL} mb-1`}>Opacity</p>
+          <div className="grid grid-cols-2 gap-x-1.5">
+            {cell(
+              "opacity",
+              <NumberField
+                label="O"
+                value={layer.base.opacity}
+                step={PROP_STEP.opacity}
+                min={0}
+                max={1}
+                onChange={(v) =>
+                  useStudio.getState().setLayerBase(layer.id, { opacity: v })
+                }
+              />,
+            )}
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }
 
-function ShapeSection({ track }: { track: Track }) {
+function ShapeSection({ track, activeKeyframes }: { track: Track; activeKeyframes: KeyTarget | null }) {
   const { layer } = track;
   const src = layer.source;
   if (src.kind !== "rect" && src.kind !== "ellipse") return null;
@@ -717,6 +714,12 @@ function ShapeSection({ track }: { track: Track }) {
     set({ fill: { ...props.fill, ...patch } });
   const setStroke = (patch: Partial<StrokeDef>) =>
     set({ stroke: { ...props.stroke, ...patch } });
+
+  const cell = (target: KeyTarget, field: ReactNode) => (
+    <KeyCell layerId={layer.id} target={target} track={track} activeKeyframes={activeKeyframes}>
+      {field}
+    </KeyCell>
+  );
 
   return (
     <>
@@ -732,6 +735,17 @@ function ShapeSection({ track }: { track: Track }) {
               <NumberField label="Sweep" value={src.props.sweepAngle} step={1} min={0} max={360} onChange={(v) => set({ sweepAngle: v })} />
               <NumberField label="Start" value={src.props.startAngle} step={1} min={0} max={360} onChange={(v) => set({ startAngle: v })} />
             </>
+          )}
+          {cell(
+            "opacity",
+            <NumberField
+              label="O"
+              value={layer.base.opacity}
+              step={PROP_STEP.opacity}
+              min={0}
+              max={1}
+              onChange={(v) => useStudio.getState().setLayerBase(layer.id, { opacity: v })}
+            />,
           )}
         </div>
       </section>
