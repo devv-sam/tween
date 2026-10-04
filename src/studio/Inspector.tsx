@@ -107,10 +107,10 @@ function ElementPanels({
   return (
     <>
       <Toolbar />
+      <CompositionPanel />
       {track ? <ElementPanel track={track} index={index} /> : null}
       {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
       {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
-      <CompositionPanel />
     </>
   );
 }
