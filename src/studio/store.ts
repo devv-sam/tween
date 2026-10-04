@@ -2499,7 +2499,25 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     },
 
     editingTextId: null,
-    setEditingTextId: (id) => set({ editingTextId: id }),
+    setEditingTextId: (id) => {
+      const prev = get().editingTextId;
+      if (prev && !id) {
+        const track = get().composition.tracks.find((tr) => tr.layer.id === prev);
+        if (track?.layer.source.kind === "text" && !track.layer.source.content.trim()) {
+          edit(null, (s) => ({
+            ...pick([]),
+            selectedPart: null,
+            composition: {
+              ...s.composition,
+              tracks: s.composition.tracks.filter((tr) => tr.layer.id !== prev),
+            },
+          }));
+          set({ editingTextId: null });
+          return;
+        }
+      }
+      set({ editingTextId: id });
+    },
 
     clipboard: null,
 
