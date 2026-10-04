@@ -118,8 +118,12 @@ function drawText(ctx: CanvasRenderingContext2D, src: TextSource, opacity: numbe
   const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
 
   if (otFont) {
-    drawTextOT(ctx, otFont, src, opacity);
-    return;
+    try {
+      drawTextOT(ctx, otFont, src, opacity);
+      return;
+    } catch {
+      // unsupported GSUB/GPOS table — fall through to canvas text
+    }
   }
 
   drawTextFallback(ctx, src, opacity);
@@ -167,9 +171,11 @@ function drawTextOT(
       let cx = lx;
       for (let gi = 0; gi < glyphs.length; gi++) {
         const g = glyphs[gi];
-        const path = g.getPath(cx, ly, src.fontSize);
-        path.fill = ctx.fillStyle as string;
-        path.draw(ctx);
+        if (g.getPath) {
+          const path = g.getPath(cx, ly, src.fontSize);
+          path.fill = ctx.fillStyle as string;
+          path.draw(ctx);
+        }
         cx += (g.advanceWidth ?? 0) * scale + src.letterSpacing;
       }
     } else {

@@ -146,7 +146,12 @@ export function otMeasureWidth(
   letterSpacing: number,
 ): number {
   const scale = fontSize / font.unitsPerEm;
-  const glyphs = font.stringToGlyphs(text);
+  let glyphs: opentype.Glyph[];
+  try {
+    glyphs = font.stringToGlyphs(text);
+  } catch {
+    return text.length * fontSize * 0.6 + letterSpacing * Math.max(0, text.length - 1);
+  }
   let w = 0;
   for (const g of glyphs) w += (g.advanceWidth ?? 0) * scale;
   w += letterSpacing * Math.max(0, glyphs.length - 1);
@@ -182,7 +187,17 @@ export function otCharPositions(
   letterSpacing: number,
 ): number[] {
   const scale = fontSize / font.unitsPerEm;
-  const glyphs = font.stringToGlyphs(text);
+  let glyphs: opentype.Glyph[];
+  try {
+    glyphs = font.stringToGlyphs(text);
+  } catch {
+    const fallbackAdv = fontSize * 0.6;
+    const positions: number[] = [0];
+    for (let i = 0; i < text.length; i++) {
+      positions.push((i + 1) * fallbackAdv + i * letterSpacing);
+    }
+    return positions;
+  }
   const positions: number[] = [0];
   let x = 0;
   for (let i = 0; i < glyphs.length; i++) {

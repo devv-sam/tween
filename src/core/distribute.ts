@@ -26,13 +26,20 @@ export function expand(layer: Layer): Instance[] {
     const count = chars.length;
     const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
     const advances: number[] = [];
+    let useOT = false;
     if (otFont) {
-      const scale = src.fontSize / otFont.unitsPerEm;
-      for (const ch of chars) {
-        const g = otFont.charToGlyph(ch);
-        advances.push((g.advanceWidth ?? 0) * scale);
+      try {
+        const scale = src.fontSize / otFont.unitsPerEm;
+        for (const ch of chars) {
+          const g = otFont.charToGlyph(ch);
+          advances.push((g.advanceWidth ?? 0) * scale);
+        }
+        useOT = true;
+      } catch {
+        advances.length = 0;
       }
-    } else {
+    }
+    if (!useOT) {
       const fallback = src.fontSize * 0.6;
       for (let i = 0; i < count; i++) advances.push(fallback);
     }

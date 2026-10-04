@@ -1609,6 +1609,20 @@ function TextEditOverlay({
     const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
     if (!otFont) return;
 
+    try {
+      drawCursorOT(ctx, otFont, src, editItem, dpr);
+    } catch {
+      // unsupported opentype table — cursor not drawn
+    }
+  };
+
+  const drawCursorOT = (
+    ctx: CanvasRenderingContext2D,
+    otFont: import("opentype.js").Font,
+    src: import("../core/types").TextSource,
+    editItem: SceneItem,
+    dpr: number,
+  ) => {
     const st = editItem.state;
     const screenScale = scale * st.scaleX;
     const center = compositionToScreen({ x: st.x, y: st.y }, viewport, frame, view);
