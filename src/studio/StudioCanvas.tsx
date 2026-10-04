@@ -487,7 +487,8 @@ export function StudioCanvas() {
       // keystroke there is already in the composition, so the studio's own undo is
       // the one that can take the edit back — the field just has to let go first.
       const key = e.key.toLowerCase();
-      const undoing = (e.metaKey || e.ctrlKey) && key === "z";
+      const mod = e.metaKey || e.ctrlKey;
+      const undoing = mod && key === "z";
       const redoing = (e.ctrlKey && !e.metaKey && key === "y") || (undoing && e.shiftKey);
       if (undoing || redoing) {
         e.preventDefault();
@@ -495,6 +496,16 @@ export function StudioCanvas() {
         const { undo, redo } = useStudio.getState();
         if (redoing) redo();
         else undo();
+        return;
+      }
+      if (mod && key === "c" && !editing) {
+        e.preventDefault();
+        useStudio.getState().copySelected();
+        return;
+      }
+      if (mod && key === "v" && !editing) {
+        e.preventDefault();
+        useStudio.getState().pasteClipboard();
         return;
       }
       if (editing) return;

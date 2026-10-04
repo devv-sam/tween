@@ -786,6 +786,9 @@ type StudioState = {
   setActiveTool: (tool: ActiveTool) => void;
   addShape: (kind: "rect" | "ellipse", x: number, y: number, w: number, h: number) => string;
   setShapeProp: (layerId: string, patch: Record<string, unknown>) => void;
+  clipboard: Track | null;
+  copySelected: () => void;
+  pasteClipboard: () => void;
   undo: () => void;
   redo: () => void;
   /** End the interaction the last edits belonged to, so the next one is its own step. */
@@ -2388,6 +2391,41 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
             return tr;
           }),
         },
+      }));
+    },
+
+    clipboard: null,
+
+    copySelected: () => {
+      const { selectedId, composition } = get();
+      if (!selectedId) return;
+      const track = composition.tracks.find((tr) => tr.layer.id === selectedId);
+      if (!track) return;
+      set({ clipboard: structuredClone(track) });
+    },
+
+    pasteClipboard: () => {
+      const { clipboard } = get();
+      if (!clipboard) return;
+      const id = crypto.randomUUID();
+      const PASTE_OFFSET = 20;
+      const cloned: Track = {
+        ...structuredClone(clipboard),
+        layer: {
+          ...structuredClone(clipboard.layer),
+          id,
+          name: clipboard.layer.name ? `${clipboard.layer.name} copy` : undefined,
+          base: {
+            ...clipboard.layer.base,
+            x: clipboard.layer.base.x + PASTE_OFFSET,
+            y: clipboard.layer.base.y + PASTE_OFFSET,
+          },
+        },
+      };
+      edit(null, (s) => ({
+        ...pick([id]),
+        selectedPart: null,
+        composition: { ...s.composition, tracks: [...s.composition.tracks, cloned] },
       }));
     },
 
