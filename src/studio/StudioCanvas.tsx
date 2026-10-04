@@ -1186,6 +1186,28 @@ export function StudioCanvas() {
     dragRef.current = null;
     setRotating(false);
     setAlignment(null);
+    if (drag.mode === "resize") {
+      const store = useStudio.getState();
+      const track = store.composition.tracks.find((tr) => tr.layer.id === drag.id);
+      if (track?.layer.source.kind === "text") {
+        const base = track.layer.base;
+        const absX = Math.abs(base.scaleX);
+        const absY = Math.abs(base.scaleY);
+        if (absX !== 1 || absY !== 1) {
+          const src = track.layer.source;
+          store.setTextProp(drag.id, {
+            fontSize: src.fontSize * absY,
+            letterSpacing: src.letterSpacing * absY,
+            ...(src.boxWidth != null ? { boxWidth: src.boxWidth * absX } : {}),
+            ...(src.boxHeight != null ? { boxHeight: src.boxHeight * absY } : {}),
+          });
+          store.captureTransform(drag.id, {
+            scaleX: base.scaleX < 0 ? -1 : 1,
+            scaleY: base.scaleY < 0 ? -1 : 1,
+          });
+        }
+      }
+    }
     // The whole drag was one edit; releasing closes it.
     useStudio.getState().sealHistory();
     if (e.currentTarget.hasPointerCapture(drag.pointerId)) {

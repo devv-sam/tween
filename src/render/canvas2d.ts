@@ -271,19 +271,33 @@ export function drawScene(
     ctx.globalAlpha = clamp01(s.opacity);
     ctx.translate(s.x, s.y);
     ctx.rotate((s.rotation * Math.PI) / 180);
-    ctx.scale(s.scaleX, s.scaleY);
-    if (item.source.kind === "image") {
-      const img = imageOf?.(item.source.value);
-      if (img) ctx.drawImage(img.source, -img.width / 2, -img.height / 2, img.width, img.height);
-    } else if (item.source.kind === "text") {
-      drawText(ctx, item.source, clamp01(s.opacity));
-    } else if (item.source.kind === "rect") {
-      drawRect(ctx, item.source.props, clamp01(s.opacity));
-    } else if (item.source.kind === "ellipse") {
-      drawEllipse(ctx, item.source.props, clamp01(s.opacity));
+    if (item.source.kind === "text") {
+      const absX = Math.abs(s.scaleX);
+      const absY = Math.abs(s.scaleY);
+      ctx.scale(
+        (s.scaleX < 0 ? -1 : 1) * (absY > 0 ? absX / absY : 1),
+        s.scaleY < 0 ? -1 : 1,
+      );
+      drawText(ctx, {
+        ...item.source,
+        fontSize: item.source.fontSize * absY,
+        letterSpacing: item.source.letterSpacing * absY,
+        boxWidth: item.source.boxWidth != null ? item.source.boxWidth * absY : undefined,
+        boxHeight: item.source.boxHeight != null ? item.source.boxHeight * absY : undefined,
+      }, clamp01(s.opacity));
     } else {
-      ctx.fillStyle = colorFor(item.source.value);
-      ctx.fillRect(-SIZE / 2, -SIZE / 2, SIZE, SIZE);
+      ctx.scale(s.scaleX, s.scaleY);
+      if (item.source.kind === "image") {
+        const img = imageOf?.(item.source.value);
+        if (img) ctx.drawImage(img.source, -img.width / 2, -img.height / 2, img.width, img.height);
+      } else if (item.source.kind === "rect") {
+        drawRect(ctx, item.source.props, clamp01(s.opacity));
+      } else if (item.source.kind === "ellipse") {
+        drawEllipse(ctx, item.source.props, clamp01(s.opacity));
+      } else {
+        ctx.fillStyle = colorFor(item.source.value);
+        ctx.fillRect(-SIZE / 2, -SIZE / 2, SIZE, SIZE);
+      }
     }
     ctx.restore();
   }
