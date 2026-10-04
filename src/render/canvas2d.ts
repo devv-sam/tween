@@ -1,6 +1,6 @@
 import type { Scene, Composition, RectProps, EllipseProps, FillDef, StrokeDef, TextSource } from "../core/types";
 import { fieldCenter } from "../core/fields";
-import { ensureFontLoaded } from "../studio/fonts";
+import { ensureFontLoaded, ensureOpenTypeFont, getOpenTypeFont, otMeasureWidth } from "../studio/fonts";
 
 /** The box a shape layer draws at, before its own scale. */
 export const SHAPE_SIZE = 140;
@@ -72,7 +72,30 @@ function drawEllipse(ctx: CanvasRenderingContext2D, props: EllipseProps, opacity
   applyStroke(ctx, stroke, opacity, path);
 }
 
-function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+function wrapLinesOT(
+  font: import("opentype.js").Font,
+  text: string,
+  fontSize: number,
+  letterSpacing: number,
+  maxWidth: number,
+): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (line && otMeasureWidth(font, test, fontSize, letterSpacing) > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function wrapLinesFallback(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let line = "";
@@ -91,19 +114,85 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
 
 function drawText(ctx: CanvasRenderingContext2D, src: TextSource, opacity: number): void {
   ensureFontLoaded(src.fontFamily, src.fontWeight);
-  const font = `${src.fontWeight} ${src.fontSize}px "${src.fontFamily}", system-ui, sans-serif`;
-  ctx.font = font;
+  ensureOpenTypeFont(src.fontFamily, src.fontWeight);
+  const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
+
+  if (otFont) {
+    drawTextOT(ctx, otFont, src, opacity);
+    return;
+  }
+
+  drawTextFallback(ctx, src, opacity);
+}
+
+function drawTextOT(
+  ctx: CanvasRenderingContext2D,
+  font: import("opentype.js").Font,
+  src: TextSource,
+  opacity: number,
+): void {
+  const scale = src.fontSize / font.unitsPerEm;
+  const ascender = font.ascender * scale;
+  const leading = src.fontSize * src.lineHeight;
+
+  const lines = src.boxWidth
+    ? wrapLinesOT(font, src.content || " ", src.fontSize, src.letterSpacing, src.boxWidth)
+    : (src.content || " ").split("\n");
+
+  const totalHeight = lines.length * leading;
+  const startY = -totalHeight / 2;
+
+  if (src.fill.type === "solid") {
+    ctx.fillStyle = src.fill.color;
+    ctx.globalAlpha = src.fill.opacity * opacity;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineText = lines[i];
+    const lineWidth = otMeasureWidth(font, lineText, src.fontSize, src.letterSpacing);
+    let lx: number;
+    if (src.boxWidth) {
+      lx = src.align === "left" ? -src.boxWidth / 2
+        : src.align === "right" ? src.boxWidth / 2 - lineWidth
+        : -lineWidth / 2;
+    } else {
+      lx = src.align === "left" ? 0
+        : src.align === "right" ? -lineWidth
+        : -lineWidth / 2;
+    }
+    const ly = startY + i * leading + ascender;
+
+    if (src.letterSpacing !== 0) {
+      const glyphs = font.stringToGlyphs(lineText);
+      let cx = lx;
+      for (let gi = 0; gi < glyphs.length; gi++) {
+        const g = glyphs[gi];
+        const path = g.getPath(cx, ly, src.fontSize);
+        path.fill = ctx.fillStyle as string;
+        path.draw(ctx);
+        cx += (g.advanceWidth ?? 0) * scale + src.letterSpacing;
+      }
+    } else {
+      const path = font.getPath(lineText, lx, ly, src.fontSize);
+      path.fill = ctx.fillStyle as string;
+      path.draw(ctx);
+    }
+  }
+}
+
+function drawTextFallback(ctx: CanvasRenderingContext2D, src: TextSource, opacity: number): void {
+  const cssFont = `${src.fontWeight} ${src.fontSize}px "${src.fontFamily}", system-ui, sans-serif`;
+  ctx.font = cssFont;
   ctx.textAlign = src.align;
   ctx.textBaseline = "top";
 
   const leading = src.fontSize * src.lineHeight;
   const lines = src.boxWidth
-    ? wrapLines(ctx, src.content || " ", src.boxWidth)
+    ? wrapLinesFallback(ctx, src.content || " ", src.boxWidth)
     : (src.content || " ").split("\n");
 
   const totalHeight = lines.length * leading;
   const startY = -totalHeight / 2;
-  const alignX = src.align === "left" ? 0 : src.align === "right" ? 0 : 0;
   let anchorX = 0;
   if (src.boxWidth) {
     anchorX = src.align === "left" ? -src.boxWidth / 2
@@ -119,14 +208,14 @@ function drawText(ctx: CanvasRenderingContext2D, src: TextSource, opacity: numbe
   for (let i = 0; i < lines.length; i++) {
     const ly = startY + i * leading;
     if (src.letterSpacing !== 0) {
-      drawLetterSpaced(ctx, lines[i], anchorX + alignX, ly, src.letterSpacing, src.align);
+      drawLetterSpacedFallback(ctx, lines[i], anchorX, ly, src.letterSpacing, src.align);
     } else {
-      ctx.fillText(lines[i], anchorX + alignX, ly);
+      ctx.fillText(lines[i], anchorX, ly);
     }
   }
 }
 
-function drawLetterSpaced(
+function drawLetterSpacedFallback(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,

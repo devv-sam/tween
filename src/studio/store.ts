@@ -24,7 +24,7 @@ import type {
 } from "../core/types";
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
-import { measureTextWidth } from "./fonts";
+import { measureTextWidth, registerFontFiles, loadOpenTypeFont } from "./fonts";
 import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
 import {
@@ -2437,6 +2437,9 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         );
         const { items } = await res.json();
         if (Array.isArray(items)) {
+          for (const f of items) {
+            if (f.files) registerFontFiles(f.family, f.files);
+          }
           set({
             fonts: items.map((f: { family: string; variants: string[]; category: string }) => ({
               family: f.family,
@@ -2444,6 +2447,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
               category: f.category,
             })),
           });
+          void loadOpenTypeFont("Inter", 400);
         }
       } catch {
         // keep fallback fonts

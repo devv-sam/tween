@@ -1,5 +1,6 @@
 import type { Layer, Transform } from "./types";
 import { samplePath, type PathNode } from "./geometry";
+import { getOpenTypeFont } from "../studio/fonts";
 
 export interface Instance { base: Transform; u: number; i: number; count: number; charIndex?: number; }
 
@@ -23,12 +24,31 @@ export function expand(layer: Layer): Instance[] {
   if (src.kind === "text" && src.perCharacter && src.content.length > 0) {
     const chars = [...src.content];
     const count = chars.length;
-    const advance = src.fontSize * 0.6;
-    const totalWidth = (count - 1) * (advance + src.letterSpacing);
+    const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
+    const advances: number[] = [];
+    if (otFont) {
+      const scale = src.fontSize / otFont.unitsPerEm;
+      for (const ch of chars) {
+        const g = otFont.charToGlyph(ch);
+        advances.push((g.advanceWidth ?? 0) * scale);
+      }
+    } else {
+      const fallback = src.fontSize * 0.6;
+      for (let i = 0; i < count; i++) advances.push(fallback);
+    }
+    let totalWidth = 0;
+    for (const a of advances) totalWidth += a;
+    totalWidth += src.letterSpacing * Math.max(0, count - 1);
+    const positions: number[] = [0];
+    let cx = 0;
+    for (let i = 0; i < count - 1; i++) {
+      cx += advances[i] + src.letterSpacing;
+      positions.push(cx);
+    }
     return chars.map((_, i) => ({
       base: {
         ...layer.base,
-        x: layer.base.x - totalWidth / 2 + i * (advance + src.letterSpacing),
+        x: layer.base.x - totalWidth / 2 + positions[i],
       },
       u: count > 1 ? i / (count - 1) : 0,
       i,
