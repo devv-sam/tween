@@ -161,6 +161,7 @@ export function StudioCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag | null>(null);
+  const textClickRef = useRef<((pt: Point) => void) | null>(null);
 
   const composition = useStudio((s) => s.composition);
   const moduleLibrary = useStudio((s) => s.moduleLibrary);
@@ -741,7 +742,14 @@ export function StudioCanvas() {
     const screen = screenAt(e);
     const point = screenToComposition(screen, viewport, frame, view);
 
-    if (useStudio.getState().editingTextId) {
+    const editId = useStudio.getState().editingTextId;
+    if (editId) {
+      const editItem = scene.find((it) => it.id === editId);
+      const editSize = editItem && sizeOf(editItem);
+      if (editItem && editSize && containsPoint(editItem.state, editSize, point)) {
+        textClickRef.current?.(point);
+        return;
+      }
       useStudio.getState().setEditingTextId(null);
     }
 
@@ -935,6 +943,18 @@ export function StudioCanvas() {
     }
 
     if (!drag) {
+      const editId = useStudio.getState().editingTextId;
+      if (editId) {
+        const point = screenToComposition(screen, viewport, frame, view);
+        const editItem = scene.find((it) => it.id === editId);
+        const editSize = editItem && sizeOf(editItem);
+        if (editItem && editSize && containsPoint(editItem.state, editSize, point)) {
+          setCursor("text");
+        } else {
+          setCursor(null);
+        }
+        return;
+      }
       if (useStudio.getState().activeTool !== "select") {
         setCursor("crosshair");
         return;
@@ -1493,6 +1513,7 @@ export function StudioCanvas() {
         frame={frame}
         view={view}
         scale={scale}
+        clickRef={textClickRef}
       /> : null}
       {selected && chrome && !clonerGroup && !editingTextId ? (
         <>
@@ -1570,6 +1591,7 @@ function TextEditOverlay({
   frame,
   view,
   scale,
+  clickRef,
 }: {
   editingTextId: string;
   composition: Composition;
@@ -1579,6 +1601,7 @@ function TextEditOverlay({
   frame: Size;
   view: View;
   scale: number;
+  clickRef: React.MutableRefObject<((pt: Point) => void) | null>;
 }) {
   const editTrack = composition.tracks.find((tr) => tr.layer.id === editingTextId);
   const editItem = scene.find((it) => it.id === editingTextId);
@@ -1608,6 +1631,61 @@ function TextEditOverlay({
     if (!valid || src?.kind !== "text") return;
     void loadOpenTypeFont(src.fontFamily, src.fontWeight);
   }, [valid, src?.kind === "text" ? src.fontFamily : "", src?.kind === "text" ? src.fontWeight : 0]);
+
+  useEffect(() => {
+    if (!valid || src?.kind !== "text" || !editItem) {
+      clickRef.current = null;
+      return () => { clickRef.current = null; };
+    }
+    const srcRef = src;
+    const itemRef = editItem;
+    clickRef.current = (pt: Point) => {
+      const ta = taRef.current;
+      if (!ta) return;
+      const otFont = getOpenTypeFont(srcRef.fontFamily, srcRef.fontWeight);
+      if (!otFont) { ta.focus(); return; }
+      const st = itemRef.state;
+      const localX = pt.x - st.x;
+      const localY = pt.y - st.y;
+      const content = srcRef.content || "";
+      const lines = content.split("\n");
+      const leading = srcRef.fontSize * srcRef.lineHeight;
+      const totalHeight = lines.length * leading;
+      const sz = sizeOf(itemRef) ?? { width: 0, height: totalHeight };
+      const startY = -sz.height / 2;
+      let lineIdx = Math.floor((localY - startY) / leading);
+      lineIdx = Math.max(0, Math.min(lineIdx, lines.length - 1));
+      const line = lines[lineIdx];
+      const positions = otCharPositions(otFont, line, srcRef.fontSize, srcRef.letterSpacing);
+      const lineWidth = positions[positions.length - 1] ?? 0;
+      let lineX: number;
+      if (srcRef.boxWidth) {
+        lineX = srcRef.align === "left" ? -sz.width / 2
+          : srcRef.align === "right" ? sz.width / 2 - lineWidth
+          : -lineWidth / 2;
+      } else {
+        lineX = srcRef.align === "left" ? -sz.width / 2
+          : srcRef.align === "right" ? -lineWidth / 2
+          : -lineWidth / 2;
+      }
+      const relX = localX - lineX;
+      let col = line.length;
+      for (let i = 0; i < positions.length - 1; i++) {
+        const mid = (positions[i] + positions[i + 1]) / 2;
+        if (relX < mid) { col = i; break; }
+      }
+      let charOffset = 0;
+      for (let i = 0; i < lineIdx; i++) charOffset += lines[i].length + 1;
+      const pos = charOffset + col;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+      setCursorPos(pos);
+      setSelStart(pos);
+      setSelEnd(pos);
+      blinkRef.current = true;
+    };
+    return () => { clickRef.current = null; };
+  });
 
   useEffect(() => {
     blinkRef.current = true;
