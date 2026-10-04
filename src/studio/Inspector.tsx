@@ -357,10 +357,14 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       />
 
       {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
-        <ShapeSection track={track} activeKeyframes={activeKeyframes} />
+        <ShapeDimsSection track={track} activeKeyframes={activeKeyframes} />
       ) : null}
 
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
+
+      {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
+        <ShapeFillStrokeSection track={track} />
+      ) : null}
 
       {/* The list of keyframes is on the timeline, under the element it belongs to.
           What is left here is the editor for whichever one is picked. */}
@@ -706,7 +710,54 @@ function ElementSection({
   );
 }
 
-function ShapeSection({ track, activeKeyframes }: { track: Track; activeKeyframes: KeyTarget | null }) {
+function ShapeDimsSection({ track, activeKeyframes }: { track: Track; activeKeyframes: KeyTarget | null }) {
+  const { layer } = track;
+  const src = layer.source;
+  if (src.kind !== "rect" && src.kind !== "ellipse") return null;
+  const props = src.props;
+  const set = (patch: Record<string, unknown>) =>
+    useStudio.getState().setShapeProp(layer.id, patch);
+
+  const cell = (target: KeyTarget, field: ReactNode) => (
+    <KeyCell layerId={layer.id} target={target} track={track} activeKeyframes={activeKeyframes}>
+      {field}
+    </KeyCell>
+  );
+
+  return (
+    <section className={SECTION}>
+      <p className={`${SUBLABEL} mb-1`}>Shape</p>
+      <div className="mb-1 flex items-center gap-1.5">
+        {cell("scaleX", <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />)}
+        {cell("scaleY", <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />)}
+        <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
+      </div>
+      <div className="mb-1 grid grid-cols-2 gap-x-1.5 gap-y-1">
+        {src.kind === "rect" ? (
+          <NumberField label="R" value={src.props.cornerRadius} step={1} min={0} onChange={(v) => set({ cornerRadius: v })} />
+        ) : (
+          <>
+            <NumberField label="Sweep" value={src.props.sweepAngle} step={1} min={0} max={360} onChange={(v) => set({ sweepAngle: v })} />
+            <NumberField label="Start" value={src.props.startAngle} step={1} min={0} max={360} onChange={(v) => set({ startAngle: v })} />
+          </>
+        )}
+        {cell(
+          "opacity",
+          <NumberField
+            label="O"
+            value={layer.base.opacity}
+            step={PROP_STEP.opacity}
+            min={0}
+            max={1}
+            onChange={(v) => useStudio.getState().setLayerBase(layer.id, { opacity: v })}
+          />,
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ShapeFillStrokeSection({ track }: { track: Track }) {
   const { layer } = track;
   const src = layer.source;
   if (src.kind !== "rect" && src.kind !== "ellipse") return null;
@@ -718,44 +769,8 @@ function ShapeSection({ track, activeKeyframes }: { track: Track; activeKeyframe
   const setStroke = (patch: Partial<StrokeDef>) =>
     set({ stroke: { ...props.stroke, ...patch } });
 
-  const cell = (target: KeyTarget, field: ReactNode) => (
-    <KeyCell layerId={layer.id} target={target} track={track} activeKeyframes={activeKeyframes}>
-      {field}
-    </KeyCell>
-  );
-
   return (
     <>
-      <section className={SECTION}>
-        <p className={`${SUBLABEL} mb-1`}>Shape</p>
-        <div className="mb-1 flex items-center gap-1.5">
-          {cell("scaleX", <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />)}
-          {cell("scaleY", <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />)}
-          <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
-        </div>
-        <div className="mb-1 grid grid-cols-2 gap-x-1.5 gap-y-1">
-          {src.kind === "rect" ? (
-            <NumberField label="R" value={src.props.cornerRadius} step={1} min={0} onChange={(v) => set({ cornerRadius: v })} />
-          ) : (
-            <>
-              <NumberField label="Sweep" value={src.props.sweepAngle} step={1} min={0} max={360} onChange={(v) => set({ sweepAngle: v })} />
-              <NumberField label="Start" value={src.props.startAngle} step={1} min={0} max={360} onChange={(v) => set({ startAngle: v })} />
-            </>
-          )}
-          {cell(
-            "opacity",
-            <NumberField
-              label="O"
-              value={layer.base.opacity}
-              step={PROP_STEP.opacity}
-              min={0}
-              max={1}
-              onChange={(v) => useStudio.getState().setLayerBase(layer.id, { opacity: v })}
-            />,
-          )}
-        </div>
-      </section>
-
       <section className={SECTION}>
         <p className={`${SUBLABEL} mb-1`}>Fill</p>
         <div className="mb-2 flex items-center gap-1.5">
