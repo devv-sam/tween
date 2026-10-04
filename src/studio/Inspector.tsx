@@ -28,7 +28,6 @@ import {
   type Range,
 } from "./modules";
 import {
-  AnimateClonesSection,
   DistributorSection,
   ModuleInspector,
   ModuleStackSection,
@@ -379,11 +378,7 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       <DistributorSection
         distributor={layer.distributor}
         onChange={(d) => useStudio.getState().setDistributor(layer.id, d)}
-      >
-        {layer.distributor && layer.distributor.type !== "none" ? (
-          <AnimateClonesSection track={track} />
-        ) : null}
-      </DistributorSection>
+      />
 
       <ModuleStackSection track={track} />
 

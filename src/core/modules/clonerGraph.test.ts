@@ -4,7 +4,7 @@ import { getModule } from "../registry";
 import type { Transform, EvalCtx } from "../types";
 
 const base: Transform = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
-const ctx = (u: number, localT = 0): EvalCtx => ({ t: 0, localT, u, i: 0, count: 3, field: () => 0 });
+const ctx = (u: number, localT = 0): EvalCtx => ({ t: 0, tSec: 0, localT, u, i: 0, count: 3, field: () => 0 });
 const g = getModule("clonerGraph");
 
 describe("clonerGraph", () => {

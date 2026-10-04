@@ -23,6 +23,7 @@ import {
   unionBox,
   type Box as GroupBox,
 } from "./group";
+import { drawScene } from "../render/canvas2d";
 import { paintComposition } from "../render/paint";
 import {
   PROXY_SIZE,
@@ -169,6 +170,7 @@ export function StudioCanvas() {
   const view = useStudio((s) => s.view);
   const selectedId = useStudio((s) => s.selectedId);
   const selectedIds = useStudio((s) => s.selectedIds);
+  const templateEditMode = useStudio((s) => s.templateEditMode);
   const dpr = useDevicePixelRatio();
   const [imagesReady, setImagesReady] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -301,6 +303,51 @@ export function StudioCanvas() {
   }, [selectedId, bench, composition, assets]);
 
   /**
+   * The union of every clone when a cloner is selected and the author is not
+   * editing the template. Gives group-style chrome (one box around the whole
+   * spread) and means a drag moves everything at once.
+   */
+  const clonerGroup = useMemo(() => {
+    if (!cloner || !selectedId || templateEditMode) return null;
+    const items = scene.filter((it) => it.id === selectedId);
+    if (items.length < 2) return null;
+    const boxes: GroupBox[] = [];
+    for (const item of items) {
+      const sz = sizeOf(item);
+      if (!sz) continue;
+      const b = boundsOf(item.state, sz);
+      boxes.push(b);
+    }
+    const box = unionBox(boxes);
+    if (!box) return null;
+    const centre = boxCentre(box);
+    return {
+      box,
+      state: {
+        x: centre.x,
+        y: centre.y,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        opacity: 1,
+      } as Transform,
+      size: { width: box.maxX - box.minX, height: box.maxY - box.minY },
+    };
+  }, [cloner, selectedId, scene, sizeOf, templateEditMode]);
+
+  const clonerGroupChrome = useMemo(() => {
+    if (!clonerGroup) return null;
+    const toScreen = (p: Point) => compositionToScreen(p, viewport, frame, view);
+    const at = handlePositions(clonerGroup.state, clonerGroup.size);
+    const handles = {} as Record<Handle, Point>;
+    for (const k of HANDLES) handles[k] = toScreen(at[k]);
+    return {
+      outline: cornerPoints(clonerGroup.state, clonerGroup.size).map(toScreen),
+      handles,
+    };
+  }, [clonerGroup, viewport, frame, view]);
+
+  /**
    * The picked element itself, apart from any copies of it.
    *
    * A cloned element appears in the scene once per clone, and the first of those is
@@ -324,6 +371,16 @@ export function StudioCanvas() {
     if (!intrinsic) return null;
     return { item, size: intrinsic };
   }, [scene, solo, selectedId, sizeOf]);
+
+  /** The source element's outline when the cloner group is shown, drawn with a
+   *  thicker stroke so the author knows which copy is the anchor. */
+  const sourceChrome = useMemo(() => {
+    if (!clonerGroup || !solo) return null;
+    const sz = sizeOf(solo);
+    if (!sz) return null;
+    const toScreen = (p: Point) => compositionToScreen(p, viewport, frame, view);
+    return { outline: cornerPoints(solo.state, sz).map(toScreen) };
+  }, [clonerGroup, solo, sizeOf, viewport, frame, view]);
 
   /**
    * Every other element on the frame, as a box to line up against.
@@ -466,6 +523,10 @@ export function StudioCanvas() {
       const center = { x: vp.width / 2, y: vp.height / 2 };
 
       if (e.key === "Escape") {
+        if (useStudio.getState().templateEditMode) {
+          useStudio.getState().setTemplateEditMode(false);
+          return;
+        }
         if (picked.length > 0) select(null);
         return;
       }
@@ -564,15 +625,24 @@ export function StudioCanvas() {
     ctx.beginPath();
     ctx.rect(0, 0, frame.width, frame.height);
     ctx.clip();
-    paintComposition(ctx, painted, t, frame.width, frame.height, moduleLibrary, (id) => {
+    const imageOf = (id: string) => {
       const img = getCachedImage(id);
       if (!img || img.naturalWidth < 1) return undefined;
-      return {
-        source: img,
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-      };
-    });
+      return { source: img, width: img.naturalWidth, height: img.naturalHeight };
+    };
+    if (templateEditMode && selectedId) {
+      const sc = renderState(painted, t, moduleLibrary);
+      let seenSource = false;
+      for (const item of sc) {
+        if (item.id === selectedId) {
+          if (!seenSource) seenSource = true;
+          else item.state = { ...item.state, opacity: item.state.opacity * 0.4 };
+        }
+      }
+      drawScene(ctx, sc, frame.width, frame.height, imageOf);
+    } else {
+      paintComposition(ctx, painted, t, frame.width, frame.height, moduleLibrary, imageOf);
+    }
     ctx.restore();
   }, [
     painted,
@@ -586,6 +656,8 @@ export function StudioCanvas() {
     origin.y,
     scale,
     imagesReady,
+    templateEditMode,
+    selectedId,
   ]);
 
   /**
@@ -703,7 +775,7 @@ export function StudioCanvas() {
       }
     }
 
-    if (selected) {
+    if (selected && !clonerGroup) {
       const grip = gripAtScreen(
         selected.item.state,
         selected.size,
@@ -799,6 +871,12 @@ export function StudioCanvas() {
     }
 
     if (!drag) {
+      if (clonerGroup) {
+        const point = screenToComposition(screen, viewport, frame, view);
+        const under = hitTest(scene, sizeOf, point) ?? runAt(point);
+        setCursor(under === selectedId ? "move" : null);
+        return;
+      }
       if (!selected) {
         setCursor(null);
         return;
@@ -932,6 +1010,13 @@ export function StudioCanvas() {
       useStudio.getState().resetZoom();
       return;
     }
+    const track = composition.tracks.find((tr) => tr.layer.id === id);
+    const d = track?.layer.distributor;
+    if (d && d.type !== "none" && d.count > 1) {
+      useStudio.getState().setSelectedIds([id]);
+      useStudio.getState().setTemplateEditMode(true);
+      return;
+    }
     void useStudio.getState().detachPart(id, point);
   };
 
@@ -954,10 +1039,15 @@ export function StudioCanvas() {
       maxX: Math.max(a.x, b.x),
       maxY: Math.max(a.y, b.y),
     };
+    const seen = new Set<string>();
     const caught: string[] = [];
     for (const item of scene) {
+      if (seen.has(item.id)) continue;
       const size = sizeOf(item);
-      if (size && overlaps(boundsOf(item.state, size), over)) caught.push(item.id);
+      if (size && overlaps(boundsOf(item.state, size), over)) {
+        seen.add(item.id);
+        caught.push(item.id);
+      }
     }
     // A rectangle that caught nothing is how you let go of everything — which is also
     // what a plain click on empty canvas is, being a rectangle of no size.
@@ -1115,6 +1205,11 @@ export function StudioCanvas() {
           </button>
         </div>
       ) : null}
+      {templateEditMode ? (
+        <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-md bg-amber-500/90 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm">
+          Editing template — Esc to return
+        </div>
+      ) : null}
       {/* Guides live here rather than in the painted frame: they are something the
           author is shown while dragging, not something the composition contains, so
           nothing that renders or exports a frame can ever see them. */}
@@ -1192,6 +1287,40 @@ export function StudioCanvas() {
           })}
         </svg>
       ) : null}
+      {/* A cloner spread, boxed as one. The source gets a thicker outline so the
+          author knows which copy is the anchor everything is arranged around. */}
+      {clonerGroup && clonerGroupChrome ? (
+        <svg
+          className="studio-selection"
+          width={viewport.width}
+          height={viewport.height}
+          aria-hidden="true"
+        >
+          {sourceChrome ? (
+            <polygon
+              style={{ fill: "none", stroke: "var(--color-accent)", strokeWidth: 2.5 }}
+              points={sourceChrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
+            />
+          ) : null}
+          <polygon
+            className="studio-selection-outline"
+            points={clonerGroupChrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
+          />
+          {CORNERS.map((k) => {
+            const p = clonerGroupChrome.handles[k];
+            return (
+              <rect
+                key={k}
+                className="studio-handle"
+                x={p.x - HANDLE_SIZE / 2}
+                y={p.y - HANDLE_SIZE / 2}
+                width={HANDLE_SIZE}
+                height={HANDLE_SIZE}
+              />
+            );
+          })}
+        </svg>
+      ) : null}
       {/* The rectangle being drawn, while it is being drawn. */}
       {marquee ? (
         <div
@@ -1207,7 +1336,7 @@ export function StudioCanvas() {
           }}
         />
       ) : null}
-      {selected && chrome ? (
+      {selected && chrome && !clonerGroup ? (
         <>
           <svg
             className="studio-selection"

@@ -13,24 +13,21 @@ import {
   MODULE_BLURB,
   MODULE_TYPES,
   PROPS,
-  CLONE_ANIM_PROPS,
-  CLONE_ANIM_LABEL,
+  PULSE_PROPS,
   baseValue,
   CLONER_BLURB,
   CLONER_TYPES,
   cloneCount,
-  cloneAnimations,
-  cloneAnimProp,
-  cloneAnimIndexStops,
-  cloneAnimTimeStops,
   defaultDistributor,
   moduleProp,
   moduleStops,
+  pulseDefaults,
   stackRows,
   stackSummary,
   type ClonerType,
   type KeyProp,
   type ModuleType,
+  type PulseProp,
   type StackRow,
 } from "./modules";
 import { addNode } from "./gizmo";
@@ -39,7 +36,6 @@ import { StopList } from "./StopList";
 import {
   BOX,
   CloseIcon,
-  DiamondPlusIcon,
   GHOST_BTN,
   INPUT,
   LABEL,
@@ -67,11 +63,9 @@ import {
 export function DistributorSection({
   distributor: d,
   onChange,
-  children,
 }: {
   distributor: Distributor | undefined;
   onChange: (d: Distributor | null) => void;
-  children?: React.ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
   const [fresh, setFresh] = useState(false);
@@ -120,8 +114,6 @@ export function DistributorSection({
           onOpened={() => setFresh(false)}
         />
       ) : null}
-
-      {children}
     </section>
   );
 }
@@ -502,176 +494,6 @@ function DistributorParams({
   );
 }
 
-/**
- * Clone animation entries, shown as a sub-section of the cloner config. Each entry
- * drives one property across clones with an index curve (spatial) and time keyframes
- * (motion), connected by the delay stagger.
- */
-export function AnimateClonesSection({ track }: { track: Track }) {
-  const [picking, setPicking] = useState(false);
-  const layerId = track.layer.id;
-  const entries = cloneAnimations(track.modules);
-  const usedProps = new Set(entries.map(({ md }) => cloneAnimProp(md)));
-  const available = CLONE_ANIM_PROPS.filter((p) => !usedProps.has(p));
-
-  return (
-    <div className="mt-3 border-t border-border/60 pt-2">
-      <p className={SUBLABEL}>Animate clones</p>
-      {entries.length > 0 ? (
-        <div className="mt-2 flex flex-col gap-3">
-          {entries.map(({ index, md }) => (
-            <CloneAnimEntry
-              key={index}
-              track={track}
-              index={index}
-              md={md}
-            />
-          ))}
-        </div>
-      ) : null}
-      {available.length > 0 ? (
-        <>
-          <button
-            type="button"
-            className={`${GHOST_BTN} mt-2 w-full text-left`}
-            onClick={() => setPicking((v) => !v)}
-          >
-            + Add property
-          </button>
-          {picking ? (
-            <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
-              {available.map((prop) => (
-                <li key={prop}>
-                  <button
-                    type="button"
-                    className="flex w-full rounded px-1.5 py-1 text-left text-[11px] text-text-primary hover:bg-text-primary/5"
-                    onClick={() => {
-                      setPicking(false);
-                      useStudio.getState().addCloneAnimation(layerId, prop);
-                    }}
-                  >
-                    {CLONE_ANIM_LABEL[prop]}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function CloneAnimEntry({
-  track,
-  index,
-  md,
-}: {
-  track: Track;
-  index: number;
-  md: ModuleData;
-}) {
-  const composition = useStudio((s) => s.composition);
-  const library = useStudio((s) => s.moduleLibrary);
-  const t = useStudio((s) => s.t);
-  const layerId = track.layer.id;
-  const prop = cloneAnimProp(md);
-  const indexStops = cloneAnimIndexStops(md);
-  const timeStops = cloneAnimTimeStops(md);
-  const delay = typeof md.params.delay === "number" ? md.params.delay : 0;
-
-  const readState = (): Transform | undefined =>
-    renderState(composition, t, library).find((it) => it.id === layerId)?.state;
-
-  const onParams = (patch: Record<string, unknown>) =>
-    useStudio.getState().setModuleParams(layerId, index, patch);
-
-  return (
-    <div className="rounded-md border border-border/60 bg-text-primary/[0.02] px-2 py-2">
-      <div className="flex items-center justify-between">
-        <p className={`${SUBLABEL} uppercase tracking-wide`}>{CLONE_ANIM_LABEL[prop]}</p>
-        <button
-          type="button"
-          aria-label={`remove ${CLONE_ANIM_LABEL[prop]} animation`}
-          title="Remove"
-          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
-          onClick={() => useStudio.getState().removeModule(layerId, index)}
-        >
-          <CloseIcon />
-        </button>
-      </div>
-
-      {indexStops.length > 0 ? (
-        <div className="mt-2">
-          <StopList
-            readState={readState}
-            axes={[{ prop: prop === "x" ? "x" : prop as KeyProp, stops: indexStops }]}
-            range={md.range}
-            onChange={(next) => onParams({ indexStops: next[0] })}
-          />
-        </div>
-      ) : (
-        <button
-          type="button"
-          className={`${GHOST_BTN} mt-2 w-full text-left text-[10px]`}
-          onClick={() =>
-            onParams({
-              indexStops: [
-                { t: 0, v: baseValue(readState() ?? track.layer.base, prop === "x" ? "x" : prop as KeyProp) },
-                { t: 1, v: baseValue(readState() ?? track.layer.base, prop === "x" ? "x" : prop as KeyProp) },
-              ],
-            })
-          }
-        >
-          + Add index curve
-        </button>
-      )}
-
-      <div className="mt-2">
-        <NumberField
-          label="Delay"
-          value={delay}
-          step={0.01}
-          min={0}
-          max={1}
-          onChange={(v) => onParams({ delay: v })}
-        />
-        <p className="mt-0.5 text-[10px] text-text-muted/60">
-          Staggers clones across time. 0 = simultaneous
-        </p>
-      </div>
-
-      <div className="mt-2">
-        <div className="flex items-center justify-between">
-          <p className={SUBLABEL}>Keyframes</p>
-          <button
-            type="button"
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
-            onClick={() => {
-              const state = readState();
-              const v = state ? baseValue(state, prop === "x" ? "x" : prop as KeyProp) : 1;
-              const { t: playhead } = useStudio.getState();
-              const duration = composition.duration;
-              const span = md.range[1] - md.range[0];
-              const local = span > 0 ? Math.max(0, Math.min(1, (playhead / duration - md.range[0]) / span)) : 0;
-              const newStops = [...timeStops, { t: local, v }].sort((a, b) => a.t - b.t);
-              onParams({ timeStops: newStops });
-            }}
-          >
-            <DiamondPlusIcon />
-            Add keyframe
-          </button>
-        </div>
-        <StopList
-          readState={readState}
-          axes={[{ prop: prop === "x" ? "x" : prop as KeyProp, stops: timeStops }]}
-          range={md.range}
-          onChange={(next) => onParams({ timeStops: next[0] })}
-        />
-      </div>
-    </div>
-  );
-}
 
 /**
  * One module's own controls: what it drives, how it staggers across clones, and its
@@ -786,13 +608,9 @@ export function ModuleStackSection({ track }: { track: Track }) {
   const library = useStudio((s) => s.moduleLibrary);
   const selectedPart = useStudio((s) => s.selectedPart);
   const layerId = track.layer.id;
-  const allRows = stackRows(track.modules, library);
-  const rows = allRows.filter(
-    (r) => !(r.kind === "raw" && r.module.type === "clonerGraph"),
-  );
+  const rows = stackRows(track.modules, library);
   const hasRaw = rows.some((r) => r.kind === "raw");
   const selected = selectedPart?.kind === "module" ? selectedPart.index : null;
-  const hasCloner = track.layer.distributor && track.layer.distributor.type !== "none";
 
   return (
     <section className={SECTION}>
@@ -813,11 +631,6 @@ export function ModuleStackSection({ track }: { track: Track }) {
           ))}
         </ul>
       )}
-      {hasCloner ? (
-        <p className="mb-2 text-[10px] leading-snug text-text-muted/60">
-          These modules apply to all clones simultaneously. To stagger, use animate clones above.
-        </p>
-      ) : null}
       <AddModuleButton
         onAdd={(type) => useStudio.getState().addModule(layerId, type)}
       />
@@ -1086,6 +899,108 @@ function ChainIcon() {
   );
 }
 
+function PulseInspector({
+  module: md,
+  clones,
+  onParams,
+  onRemove,
+}: {
+  module: ModuleData;
+  clones: number;
+  onParams: (patch: Record<string, unknown>) => void;
+  onRemove: () => void;
+}) {
+  const property = (md.params.property as PulseProp) ?? "scale";
+  const rhythm = typeof md.params.rhythm === "number" ? md.params.rhythm : 1;
+  const stagger = typeof md.params.stagger === "number" ? md.params.stagger : 0;
+  const min = typeof md.params.min === "number" ? md.params.min : 0.8;
+  const max = typeof md.params.max === "number" ? md.params.max : 1.2;
+  const blend = (md.params.blend as string) ?? "mul";
+  const hasCloner = clones > 1;
+
+  const setProperty = (p: PulseProp) => {
+    const d = pulseDefaults(p);
+    onParams({ property: p, min: d.min, max: d.max, blend: d.blend });
+  };
+
+  return (
+    <section className={`${SECTION} bg-text-primary/[0.03]`}>
+      <div className="mb-2 flex items-center justify-between">
+        <p className={LABEL}>Pulse · {capitalize(property)}</p>
+        <button
+          type="button"
+          aria-label="remove pulse"
+          title="Remove"
+          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
+          onClick={onRemove}
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[10px] text-text-muted">Property</span>
+          <select
+            value={property}
+            onChange={(e) => setProperty(e.target.value as PulseProp)}
+            className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+          >
+            {PULSE_PROPS.map((p) => (
+              <option key={p} value={p}>{capitalize(p === "y" ? "Position Y" : p === "x" ? "Position X" : p)}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[10px] text-text-muted">Min</span>
+          <NumberField label="" value={min} step={0.1} onChange={(v) => onParams({ min: v })} tight />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[10px] text-text-muted">Max</span>
+          <NumberField label="" value={max} step={0.1} onChange={(v) => onParams({ max: v })} tight />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[10px] text-text-muted">Rhythm</span>
+          <div className="flex flex-1 items-center gap-1">
+            <NumberField label="" value={rhythm} step={0.1} min={0.01} onChange={(v) => onParams({ rhythm: v })} tight />
+            <span className="text-[10px] text-text-muted/60">/s</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[10px] text-text-muted">Stagger</span>
+          <div className="flex flex-1 items-center gap-1">
+            <NumberField label="" value={stagger} step={0.05} min={0} onChange={(v) => onParams({ stagger: v })} tight />
+            <span className="text-[10px] text-text-muted/60">s</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[10px] text-text-muted">Blend</span>
+          <select
+            value={blend}
+            onChange={(e) => onParams({ blend: e.target.value })}
+            className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-1.5 py-1 text-[11px] text-text-primary outline-none focus:border-accent"
+          >
+            <option value="mul">Mul</option>
+            <option value="add">Add</option>
+            <option value="set">Set</option>
+          </select>
+        </div>
+
+        {!hasCloner ? (
+          <p className="text-[10px] text-text-muted/60">
+            Add a cloner to stagger across clones
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 /**
  * The picked module, opened up.
  *
@@ -1115,6 +1030,18 @@ export function ModuleInspector({
 
   if (row.kind === "raw") {
     if (row.module.type === "clonerGraph") return null;
+    if (row.module.type === "pulse") {
+      return (
+        <PulseInspector
+          module={row.module}
+          clones={clones}
+          onParams={(patch) =>
+            useStudio.getState().setModuleParams(layerId, index, patch)
+          }
+          onRemove={() => useStudio.getState().removeModule(layerId, index)}
+        />
+      );
+    }
     return (
       <section className={`${SECTION} bg-text-primary/[0.03]`}>
         <p className={`${LABEL} mb-2`}>

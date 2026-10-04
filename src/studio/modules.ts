@@ -295,7 +295,7 @@ export type BlockView = {
    * element dragging a block should not move the same motion everywhere else.
    */
   linked: boolean;
-  cloneAnim: boolean;
+  generative: boolean;
 };
 
 export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
@@ -308,7 +308,7 @@ export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
     stops: set.stops,
     standalone: true,
     linked: false,
-    cloneAnim: false,
+    generative: false,
   });
   // A fixed order rather than whatever order the sets were authored in, so a block
   // stays in the lane the eye last found it in. Position leads, as it does in the
@@ -327,15 +327,20 @@ export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
     const linked = isLinked(em);
     for (const md of resolveModule(em, library)) {
       const isCloneAnim = md.type === "clonerGraph";
+      const isPulse = md.type === "pulse";
+      const isGenerative = isCloneAnim || isPulse;
       out.push({
         part: { kind: "module", index },
         prop: moduleProp(md),
-        label: isCloneAnim ? capitalize(moduleProp(md)) : moduleLabel(md),
+        label: isPulse
+          ? `~ ${capitalize(moduleProp(md))}`
+          : isCloneAnim ? capitalize(moduleProp(md))
+          : moduleLabel(md),
         range: md.range,
-        stops: isCloneAnim ? cloneAnimTimeStops(md) : moduleStops(md),
+        stops: isCloneAnim ? cloneAnimTimeStops(md) : isPulse ? [] : moduleStops(md),
         standalone: false,
         linked,
-        cloneAnim: isCloneAnim,
+        generative: isGenerative,
       });
     }
   });
@@ -389,12 +394,13 @@ export const moduleLabel = (md: ModuleData): string => moduleProp(md);
  * yet, so one added here could only ever point at a field that does not exist. It
  * stays out of the menu until there is something for it to read.
  */
-export const MODULE_TYPES = ["keyframes"] as const;
+export const MODULE_TYPES = ["keyframes", "pulse"] as const;
 export type ModuleType = (typeof MODULE_TYPES)[number];
 
 /** What each type reads on the axis it is driven by, for the menu. */
 export const MODULE_BLURB: Record<ModuleType, string> = {
   keyframes: "A curve over the module's own time",
+  pulse: "Continuous rhythm across clones",
 };
 
 /**
@@ -403,6 +409,7 @@ export const MODULE_BLURB: Record<ModuleType, string> = {
  * thing to start from.
  */
 export function newModule(type: ModuleType, base: Transform, range: Range = [0, 1]): ModuleData {
+  if (type === "pulse") return newPulseModule("scale", range);
   const property: KeyProp = "scale";
   return {
     type,
@@ -415,6 +422,28 @@ export function newModule(type: ModuleType, base: Transform, range: Range = [0, 
     },
   };
 }
+
+export const PULSE_PROPS = ["scale", "opacity", "y", "x", "rotation"] as const;
+export type PulseProp = (typeof PULSE_PROPS)[number];
+
+const PULSE_DEFAULTS: Record<PulseProp, { min: number; max: number; blend: string }> = {
+  scale: { min: 0.8, max: 1.2, blend: "mul" },
+  opacity: { min: 0, max: 1, blend: "mul" },
+  y: { min: -10, max: 10, blend: "add" },
+  x: { min: -10, max: 10, blend: "add" },
+  rotation: { min: -15, max: 15, blend: "add" },
+};
+
+export function newPulseModule(property: PulseProp, range: Range = [0, 1]): ModuleData {
+  const d = PULSE_DEFAULTS[property];
+  return {
+    type: "pulse",
+    range,
+    params: { property, rhythm: 1, stagger: 0, min: d.min, max: d.max, blend: d.blend },
+  };
+}
+
+export const pulseDefaults = (property: PulseProp) => PULSE_DEFAULTS[property];
 
 export const CLONE_ANIM_PROPS = ["scale", "opacity", "rotation", "x"] as const;
 export type CloneAnimProp = (typeof CLONE_ANIM_PROPS)[number];

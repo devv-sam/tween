@@ -931,7 +931,7 @@ function PropertyLabel({
             </div>
           ))}
         </div>
-      ) : block.cloneAnim ? null : (
+      ) : block.generative ? null : (
         <span className="ml-auto pr-1 text-[10px] text-text-muted/60">Module</span>
       )}
     </div>
