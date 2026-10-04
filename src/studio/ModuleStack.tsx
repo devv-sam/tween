@@ -13,10 +13,16 @@ import {
   MODULE_BLURB,
   MODULE_TYPES,
   PROPS,
+  CLONE_ANIM_PROPS,
+  CLONE_ANIM_LABEL,
   baseValue,
   CLONER_BLURB,
   CLONER_TYPES,
   cloneCount,
+  cloneAnimations,
+  cloneAnimProp,
+  cloneAnimIndexStops,
+  cloneAnimTimeStops,
   defaultDistributor,
   moduleProp,
   moduleStops,
@@ -33,6 +39,7 @@ import { StopList } from "./StopList";
 import {
   BOX,
   CloseIcon,
+  DiamondPlusIcon,
   GHOST_BTN,
   INPUT,
   LABEL,
@@ -60,9 +67,11 @@ import {
 export function DistributorSection({
   distributor: d,
   onChange,
+  children,
 }: {
   distributor: Distributor | undefined;
   onChange: (d: Distributor | null) => void;
+  children?: React.ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
   const [fresh, setFresh] = useState(false);
@@ -111,6 +120,8 @@ export function DistributorSection({
           onOpened={() => setFresh(false)}
         />
       ) : null}
+
+      {children}
     </section>
   );
 }
@@ -492,6 +503,177 @@ function DistributorParams({
 }
 
 /**
+ * Clone animation entries, shown as a sub-section of the cloner config. Each entry
+ * drives one property across clones with an index curve (spatial) and time keyframes
+ * (motion), connected by the delay stagger.
+ */
+export function AnimateClonesSection({ track }: { track: Track }) {
+  const [picking, setPicking] = useState(false);
+  const layerId = track.layer.id;
+  const entries = cloneAnimations(track.modules);
+  const usedProps = new Set(entries.map(({ md }) => cloneAnimProp(md)));
+  const available = CLONE_ANIM_PROPS.filter((p) => !usedProps.has(p));
+
+  return (
+    <div className="mt-3 border-t border-border/60 pt-2">
+      <p className={SUBLABEL}>Animate clones</p>
+      {entries.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-3">
+          {entries.map(({ index, md }) => (
+            <CloneAnimEntry
+              key={index}
+              track={track}
+              index={index}
+              md={md}
+            />
+          ))}
+        </div>
+      ) : null}
+      {available.length > 0 ? (
+        <>
+          <button
+            type="button"
+            className={`${GHOST_BTN} mt-2 w-full text-left`}
+            onClick={() => setPicking((v) => !v)}
+          >
+            + Add property
+          </button>
+          {picking ? (
+            <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
+              {available.map((prop) => (
+                <li key={prop}>
+                  <button
+                    type="button"
+                    className="flex w-full rounded px-1.5 py-1 text-left text-[11px] text-text-primary hover:bg-text-primary/5"
+                    onClick={() => {
+                      setPicking(false);
+                      useStudio.getState().addCloneAnimation(layerId, prop);
+                    }}
+                  >
+                    {CLONE_ANIM_LABEL[prop]}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function CloneAnimEntry({
+  track,
+  index,
+  md,
+}: {
+  track: Track;
+  index: number;
+  md: ModuleData;
+}) {
+  const composition = useStudio((s) => s.composition);
+  const library = useStudio((s) => s.moduleLibrary);
+  const t = useStudio((s) => s.t);
+  const layerId = track.layer.id;
+  const prop = cloneAnimProp(md);
+  const indexStops = cloneAnimIndexStops(md);
+  const timeStops = cloneAnimTimeStops(md);
+  const delay = typeof md.params.delay === "number" ? md.params.delay : 0;
+
+  const readState = (): Transform | undefined =>
+    renderState(composition, t, library).find((it) => it.id === layerId)?.state;
+
+  const onParams = (patch: Record<string, unknown>) =>
+    useStudio.getState().setModuleParams(layerId, index, patch);
+
+  return (
+    <div className="rounded-md border border-border/60 bg-text-primary/[0.02] px-2 py-2">
+      <div className="flex items-center justify-between">
+        <p className={`${SUBLABEL} uppercase tracking-wide`}>{CLONE_ANIM_LABEL[prop]}</p>
+        <button
+          type="button"
+          aria-label={`remove ${CLONE_ANIM_LABEL[prop]} animation`}
+          title="Remove"
+          className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
+          onClick={() => useStudio.getState().removeModule(layerId, index)}
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      {indexStops.length > 0 ? (
+        <div className="mt-2">
+          <StopList
+            readState={readState}
+            axes={[{ prop: prop === "x" ? "x" : prop as KeyProp, stops: indexStops }]}
+            range={md.range}
+            onChange={(next) => onParams({ indexStops: next[0] })}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={`${GHOST_BTN} mt-2 w-full text-left text-[10px]`}
+          onClick={() =>
+            onParams({
+              indexStops: [
+                { t: 0, v: baseValue(readState() ?? track.layer.base, prop === "x" ? "x" : prop as KeyProp) },
+                { t: 1, v: baseValue(readState() ?? track.layer.base, prop === "x" ? "x" : prop as KeyProp) },
+              ],
+            })
+          }
+        >
+          + Add index curve
+        </button>
+      )}
+
+      <div className="mt-2">
+        <NumberField
+          label="Delay"
+          value={delay}
+          step={0.01}
+          min={0}
+          max={1}
+          onChange={(v) => onParams({ delay: v })}
+        />
+        <p className="mt-0.5 text-[10px] text-text-muted/60">
+          Staggers clones across time. 0 = simultaneous
+        </p>
+      </div>
+
+      <div className="mt-2">
+        <div className="flex items-center justify-between">
+          <p className={SUBLABEL}>Keyframes</p>
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
+            onClick={() => {
+              const state = readState();
+              const v = state ? baseValue(state, prop === "x" ? "x" : prop as KeyProp) : 1;
+              const { t: playhead } = useStudio.getState();
+              const duration = composition.duration;
+              const span = md.range[1] - md.range[0];
+              const local = span > 0 ? Math.max(0, Math.min(1, (playhead / duration - md.range[0]) / span)) : 0;
+              const newStops = [...timeStops, { t: local, v }].sort((a, b) => a.t - b.t);
+              onParams({ timeStops: newStops });
+            }}
+          >
+            <DiamondPlusIcon />
+            Add keyframe
+          </button>
+        </div>
+        <StopList
+          readState={readState}
+          axes={[{ prop: prop === "x" ? "x" : prop as KeyProp, stops: timeStops }]}
+          range={md.range}
+          onChange={(next) => onParams({ timeStops: next[0] })}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
  * One module's own controls: what it drives, how it staggers across clones, and its
  * curve. Shared by the element inspector and the bench, because a module being
  * configured is the same thing in both places.
@@ -604,9 +786,13 @@ export function ModuleStackSection({ track }: { track: Track }) {
   const library = useStudio((s) => s.moduleLibrary);
   const selectedPart = useStudio((s) => s.selectedPart);
   const layerId = track.layer.id;
-  const rows = stackRows(track.modules, library);
+  const allRows = stackRows(track.modules, library);
+  const rows = allRows.filter(
+    (r) => !(r.kind === "raw" && r.module.type === "clonerGraph"),
+  );
   const hasRaw = rows.some((r) => r.kind === "raw");
   const selected = selectedPart?.kind === "module" ? selectedPart.index : null;
+  const hasCloner = track.layer.distributor && track.layer.distributor.type !== "none";
 
   return (
     <section className={SECTION}>
@@ -627,6 +813,11 @@ export function ModuleStackSection({ track }: { track: Track }) {
           ))}
         </ul>
       )}
+      {hasCloner ? (
+        <p className="mb-2 text-[10px] leading-snug text-text-muted/60">
+          These modules apply to all clones simultaneously. To stagger, use animate clones above.
+        </p>
+      ) : null}
       <AddModuleButton
         onAdd={(type) => useStudio.getState().addModule(layerId, type)}
       />
@@ -923,6 +1114,7 @@ export function ModuleInspector({
     renderState(composition, t, library).find((it) => it.id === layerId)?.state;
 
   if (row.kind === "raw") {
+    if (row.module.type === "clonerGraph") return null;
     return (
       <section className={`${SECTION} bg-text-primary/[0.03]`}>
         <p className={`${LABEL} mb-2`}>

@@ -2,7 +2,7 @@ import { clamp } from "../core/math";
 import { sampleStops, type Stop } from "../core/curve";
 import { defaultEase, type StopEase } from "../core/easing";
 import { isLinked, resolveModule } from "../core/library";
-import { typeName } from "./text";
+import { capitalize, typeName } from "./text";
 import type {
   Distributor,
   DistributorType,
@@ -295,6 +295,7 @@ export type BlockView = {
    * element dragging a block should not move the same motion everywhere else.
    */
   linked: boolean;
+  cloneAnim: boolean;
 };
 
 export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
@@ -307,6 +308,7 @@ export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
     stops: set.stops,
     standalone: true,
     linked: false,
+    cloneAnim: false,
   });
   // A fixed order rather than whatever order the sets were authored in, so a block
   // stays in the lane the eye last found it in. Position leads, as it does in the
@@ -324,14 +326,16 @@ export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
   track.modules.forEach((em, index) => {
     const linked = isLinked(em);
     for (const md of resolveModule(em, library)) {
+      const isCloneAnim = md.type === "clonerGraph";
       out.push({
         part: { kind: "module", index },
         prop: moduleProp(md),
-        label: moduleLabel(md),
+        label: isCloneAnim ? capitalize(moduleProp(md)) : moduleLabel(md),
         range: md.range,
-        stops: moduleStops(md),
+        stops: isCloneAnim ? cloneAnimTimeStops(md) : moduleStops(md),
         standalone: false,
         linked,
+        cloneAnim: isCloneAnim,
       });
     }
   });
@@ -385,13 +389,12 @@ export const moduleLabel = (md: ModuleData): string => moduleProp(md);
  * yet, so one added here could only ever point at a field that does not exist. It
  * stays out of the menu until there is something for it to read.
  */
-export const MODULE_TYPES = ["keyframes", "clonerGraph"] as const;
+export const MODULE_TYPES = ["keyframes"] as const;
 export type ModuleType = (typeof MODULE_TYPES)[number];
 
 /** What each type reads on the axis it is driven by, for the menu. */
 export const MODULE_BLURB: Record<ModuleType, string> = {
   keyframes: "A curve over the module's own time",
-  clonerGraph: "A curve over the clone index",
 };
 
 /**
@@ -407,11 +410,51 @@ export function newModule(type: ModuleType, base: Transform, range: Range = [0, 
     params: {
       property,
       stops: defaultStops(baseValue(base, property)),
-      blend: type === "clonerGraph" ? "mul" : "set",
+      blend: "set",
       delay: 0,
     },
   };
 }
+
+export const CLONE_ANIM_PROPS = ["scale", "opacity", "rotation", "x"] as const;
+export type CloneAnimProp = (typeof CLONE_ANIM_PROPS)[number];
+
+export const CLONE_ANIM_LABEL: Record<CloneAnimProp, string> = {
+  scale: "Scale",
+  opacity: "Opacity",
+  rotation: "Rotation",
+  x: "Position offset",
+};
+
+export function newCloneAnimation(property: CloneAnimProp, base: Transform, range: Range = [0, 1]): ModuleData {
+  return {
+    type: "clonerGraph",
+    range,
+    params: {
+      property,
+      indexStops: [],
+      timeStops: defaultStops(baseValue(base, property === "x" ? "x" : property)),
+      blend: "mul",
+      delay: 0,
+    },
+  };
+}
+
+export const cloneAnimations = (modules: ElementModule[]): { index: number; md: ModuleData }[] =>
+  modules
+    .map((em, index) => ({ index, md: em as ModuleData }))
+    .filter(({ md }) => md.type === "clonerGraph");
+
+export const cloneAnimProp = (md: ModuleData): CloneAnimProp => {
+  const p = md.params.property;
+  return typeof p === "string" && (CLONE_ANIM_PROPS as readonly string[]).includes(p) ? p as CloneAnimProp : "scale";
+};
+
+export const cloneAnimIndexStops = (md: ModuleData): Stop[] =>
+  Array.isArray(md.params.indexStops) ? (md.params.indexStops as Stop[]) : [];
+
+export const cloneAnimTimeStops = (md: ModuleData): Stop[] =>
+  Array.isArray(md.params.timeStops) ? (md.params.timeStops as Stop[]) : [];
 
 /** How many copies of a thing a module is running against. One means no stagger to
  *  configure, so the delay field stays away. */

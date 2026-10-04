@@ -494,6 +494,7 @@ describe("retiming an element as one set", () => {
     stops: ts.map((t) => ({ t, v: t })),
     standalone: true,
     linked: false,
+    cloneAnim: false,
   });
 
   const mod = (index: number, range: Range): BlockView => ({
@@ -504,6 +505,7 @@ describe("retiming an element as one set", () => {
     stops: [],
     standalone: false,
     linked: false,
+    cloneAnim: false,
   });
 
   const timesOf = (edit: TimeEdit) =>

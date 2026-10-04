@@ -42,9 +42,11 @@ import {
   secondsToT,
   shiftStops,
   newModule,
+  newCloneAnimation,
   slideTrackEdits,
   stopAtTime,
   stretchTrackEdits,
+  type CloneAnimProp,
   type DesignSize,
   type KeyProp,
   type KeyTarget,
@@ -637,6 +639,7 @@ type StudioState = {
   setKeyframeRange: (layerId: string, target: KeyTarget, range: Range) => void;
   setSeparatePosition: (layerId: string, separate: boolean) => void;
   addModule: (layerId: string, type: ModuleType) => void;
+  addCloneAnimation: (layerId: string, property: CloneAnimProp) => void;
   removeModule: (layerId: string, index: number) => void;
   setModuleParams: (layerId: string, index: number, patch: Record<string, unknown>) => void;
   setModuleRange: (layerId: string, index: number, range: Range) => void;
@@ -1331,11 +1334,24 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         const track = s.composition.tracks.find((tr) => tr.layer.id === layerId);
         if (!track) return {};
         return {
-          // The new one is what you came to configure, so it opens picked.
           selectedPart: { kind: "module", index: track.modules.length },
           ...patchTrack(s.composition, layerId, (tr) => ({
             ...tr,
             modules: [...tr.modules, newModule(type, tr.layer.base)],
+          })),
+        };
+      });
+    },
+
+    addCloneAnimation: (layerId, property) => {
+      edit(null, (s) => {
+        const track = s.composition.tracks.find((tr) => tr.layer.id === layerId);
+        if (!track) return {};
+        return {
+          selectedPart: { kind: "module", index: track.modules.length },
+          ...patchTrack(s.composition, layerId, (tr) => ({
+            ...tr,
+            modules: [...tr.modules, newCloneAnimation(property, tr.layer.base)],
           })),
         };
       });

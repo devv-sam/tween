@@ -80,7 +80,7 @@ describe("saving a stack as a module", () => {
   it("bundles the raw entries and links them back", () => {
     const id = seed();
     useStudio.getState().addModule(id, "keyframes");
-    useStudio.getState().addModule(id, "clonerGraph");
+    useStudio.getState().addCloneAnimation(id, "scale");
     useStudio.getState().saveStackAsModule(id, "  card fan  ");
 
     expect(library()).toHaveLength(1);
