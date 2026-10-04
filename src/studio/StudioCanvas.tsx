@@ -1093,25 +1093,25 @@ export function StudioCanvas() {
             }px) translateX(-50%)`,
           }}
         >
-          proxy
+          Proxy
         </div>
       ) : null}
       {pendingAttach ? (
         <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-bg px-2.5 py-2 text-[11px] shadow-[0_2px_8px_rgba(0,0,0,.1)]">
-          <span className="text-text-primary/70">replace existing distributor?</span>
+          <span className="text-text-primary/70">Replace existing distributor?</span>
           <button
             type="button"
             className={GHOST_BTN}
             onClick={() => useStudio.getState().resolveAttach(true)}
           >
-            replace
+            Replace
           </button>
           <button
             type="button"
             className={GHOST_BTN}
             onClick={() => useStudio.getState().resolveAttach(false)}
           >
-            keep
+            Keep
           </button>
         </div>
       ) : null}

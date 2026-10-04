@@ -2,6 +2,7 @@ import { clamp } from "../core/math";
 import { sampleStops, type Stop } from "../core/curve";
 import { defaultEase, type StopEase } from "../core/easing";
 import { isLinked, resolveModule } from "../core/library";
+import { typeName } from "./text";
 import type {
   Distributor,
   DistributorType,
@@ -339,7 +340,7 @@ export function trackBlocks(track: Track, library: ModuleAsset[]): BlockView[] {
 
 /** What a saved module is made of, said in one line: its entries' types, in order. */
 export const stackSummary = (stack: ModuleData[]): string =>
-  stack.map((md) => md.type).join(" · ");
+  stack.map((md) => typeName(md.type)).join(" · ");
 
 /**
  * One row of the element's module stack — what the inspector lists, which is one row
@@ -389,8 +390,8 @@ export type ModuleType = (typeof MODULE_TYPES)[number];
 
 /** What each type reads on the axis it is driven by, for the menu. */
 export const MODULE_BLURB: Record<ModuleType, string> = {
-  keyframes: "a curve over the module's own time",
-  clonerGraph: "a curve over the clone index",
+  keyframes: "A curve over the module's own time",
+  clonerGraph: "A curve over the clone index",
 };
 
 /**
@@ -424,9 +425,9 @@ export type ClonerType = Exclude<DistributorType, "none">;
 export const CLONER_TYPES: ClonerType[] = ["path", "grid", "radial"];
 
 export const CLONER_BLURB: Record<ClonerType, string> = {
-  path: "along a line",
-  grid: "in rows and columns",
-  radial: "around a ring",
+  path: "Along a line",
+  grid: "In rows and columns",
+  radial: "Around a ring",
 };
 
 /**

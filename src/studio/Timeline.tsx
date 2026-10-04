@@ -924,7 +924,7 @@ function PropertyLabel({
           ))}
         </div>
       ) : (
-        <span className="ml-auto pr-1 text-[10px] text-text-muted/60">module</span>
+        <span className="ml-auto pr-1 text-[10px] text-text-muted/60">Module</span>
       )}
     </div>
   );
