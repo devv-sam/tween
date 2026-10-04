@@ -321,6 +321,21 @@ function ClonerIcon({ type }: { type: DistributorType }) {
   );
 }
 
+/** A small sine wave — the rhythm a pulse module repeats. */
+function PulseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="13" height="13" fill="none" aria-hidden="true">
+      <path
+        d="M2 10 C4 4, 6 4, 8 10 S12 16, 14 10 S16 4, 18 10"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 /** Lucide `plus`, at the size the section headers use. */
 function PlusIcon() {
   return (
@@ -654,6 +669,10 @@ function ModuleRow({ row, layerId }: { row: StackRow; layerId: string }) {
           {row.kind === "linked" ? (
             <span className="shrink-0 text-accent" title="Linked module">
               <ChainIcon />
+            </span>
+          ) : isPulse ? (
+            <span className="shrink-0 opacity-60">
+              <PulseIcon />
             </span>
           ) : null}
           <span className="truncate">{label}</span>

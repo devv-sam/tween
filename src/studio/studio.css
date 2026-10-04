@@ -824,6 +824,16 @@ circle.studio-gizmo-handle.is-on {
   cursor: grabbing;
 }
 
+/* The union box around a cloner set. Dashed purple to distinguish it from a regular
+   selection: this is an arrangement, not a single element. */
+.studio-cloner-group {
+  fill: none;
+  stroke: var(--gizmo-place);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.55;
+}
+
 /* One picked element inside a group box. Quieter than the box around them: it says
    what is in the selection without competing with the thing being dragged. */
 .studio-group-member {

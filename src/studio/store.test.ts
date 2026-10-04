@@ -589,6 +589,19 @@ describe("centring an element on the frame", () => {
     // Read at 200 mid-curve; centring moved it the rest of the way to the middle.
     expect(at?.v).toBe(centre().x);
   });
+
+  it("centres the whole cloner group, not just the source", () => {
+    const id = layer().id;
+    state().setDistributor(id, { type: "grid", count: 9, params: { cols: 3, gapX: 100, gapY: 100 } });
+    // Source is at 200; grid spans 200 ± 100 → [100, 300]. Group centre is 200.
+    // Move source off-centre first.
+    state().setLayerBase(id, { x: 100 });
+    // Grid now spans [0, 200], group centre = 100. Frame centre = 400.
+    state().centreLayer(id, "x");
+    // The group centre should now be at frame centre (400).
+    // Source moved by 300, so base.x = 100 + 300 = 400.
+    expect(layer().base.x).toBe(centre().x);
+  });
 });
 
 describe("picking more than one element", () => {
