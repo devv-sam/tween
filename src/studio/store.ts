@@ -2418,12 +2418,21 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       if (!clipboard) return;
       const id = crypto.randomUUID();
       const PASTE_OFFSET = 20;
+      const baseName = clipboard.layer.name?.replace(/\s*\d+$/, "") ?? "";
+      const existing = get().composition.tracks;
+      let max = 0;
+      for (const tr of existing) {
+        const n = tr.layer.name;
+        if (!n) continue;
+        const m = n.match(new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(\\d+)$`));
+        if (m) max = Math.max(max, Number(m[1]));
+      }
       const cloned: Track = {
         ...structuredClone(clipboard),
         layer: {
           ...structuredClone(clipboard.layer),
           id,
-          name: clipboard.layer.name ? `${clipboard.layer.name} copy` : undefined,
+          name: baseName ? `${baseName} ${max + 1}` : undefined,
           base: {
             ...clipboard.layer.base,
             x: clipboard.layer.base.x + PASTE_OFFSET,
