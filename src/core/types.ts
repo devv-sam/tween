@@ -75,7 +75,44 @@ export interface Distributor {
   params?: Record<string, unknown>;
 }
 
-export type LayerSource = { kind: "image" | "text" | "shape"; value: string };
+export interface FillDef {
+  type: "solid" | "none";
+  color: string;
+  opacity: number;
+}
+
+export interface StrokeDef {
+  enabled: boolean;
+  color: string;
+  opacity: number;
+  width: number;
+  position: "inside" | "center" | "outside";
+  dashOffset: number;
+}
+
+export interface RectProps {
+  width: number;
+  height: number;
+  cornerRadius: number;
+  fill: FillDef;
+  stroke: StrokeDef;
+}
+
+export interface EllipseProps {
+  width: number;
+  height: number;
+  sweepAngle: number;
+  startAngle: number;
+  fill: FillDef;
+  stroke: StrokeDef;
+}
+
+export type LayerSource =
+  | { kind: "image"; value: string }
+  | { kind: "text"; value: string }
+  | { kind: "shape"; value: string }
+  | { kind: "rect"; props: RectProps }
+  | { kind: "ellipse"; props: EllipseProps };
 
 export interface Layer {
   id: string;

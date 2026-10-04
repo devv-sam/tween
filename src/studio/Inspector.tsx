@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Track, Transform } from "../core/types";
+import type { FillDef, StrokeDef, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
@@ -361,6 +361,10 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
         activeKeyframes={activeKeyframes}
       />
 
+      {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
+        <ShapeSection track={track} />
+      ) : null}
+
       <BaseTransform track={track} activeKeyframes={activeKeyframes} />
 
       {/* The list of keyframes is on the timeline, under the element it belongs to.
@@ -589,9 +593,10 @@ function ElementSection({
   const library = useStudio((s) => s.moduleLibrary);
   const t = useStudio((s) => s.t);
   const { layer } = track;
+  const layerSrc = layer.source;
   const asset =
-    layer.source.kind === "image"
-      ? assets.find((a) => a.id === layer.source.value)
+    layerSrc.kind === "image"
+      ? assets.find((a) => a.id === layerSrc.value)
       : undefined;
   const size = designSizeOf(assets, layer);
   // Only an element that *is* one part of a drawing has a node to name. What is left
@@ -696,6 +701,100 @@ function ElementSection({
         )}
       </div>
     </section>
+  );
+}
+
+function ShapeSection({ track }: { track: Track }) {
+  const { layer } = track;
+  const src = layer.source;
+  if (src.kind !== "rect" && src.kind !== "ellipse") return null;
+  const props = src.props;
+  const set = (patch: Record<string, unknown>) =>
+    useStudio.getState().setShapeProp(layer.id, patch);
+  const setFill = (patch: Partial<FillDef>) =>
+    set({ fill: { ...props.fill, ...patch } });
+  const setStroke = (patch: Partial<StrokeDef>) =>
+    set({ stroke: { ...props.stroke, ...patch } });
+
+  return (
+    <>
+      <section className={SECTION}>
+        <p className={`${SUBLABEL} mb-1`}>Shape</p>
+        <div className="mb-2 grid grid-cols-2 gap-x-1.5 gap-y-1">
+          <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />
+          <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />
+          {src.kind === "rect" ? (
+            <NumberField label="R" value={src.props.cornerRadius} step={1} min={0} onChange={(v) => set({ cornerRadius: v })} />
+          ) : (
+            <>
+              <NumberField label="Sweep" value={src.props.sweepAngle} step={1} min={0} max={360} onChange={(v) => set({ sweepAngle: v })} />
+              <NumberField label="Start" value={src.props.startAngle} step={1} min={0} max={360} onChange={(v) => set({ startAngle: v })} />
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className={SECTION}>
+        <p className={`${SUBLABEL} mb-1`}>Fill</p>
+        <div className="mb-2 flex items-center gap-1.5">
+          <input
+            type="color"
+            value={props.fill.color}
+            className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
+            onChange={(e) => setFill({ color: e.target.value })}
+          />
+          <input
+            className={INPUT}
+            value={props.fill.color}
+            onChange={(e) => {
+              const v = normalizeHex(e.target.value);
+              if (v) setFill({ color: v });
+            }}
+          />
+          <NumberField label="A" value={props.fill.opacity} step={0.01} min={0} max={1} onChange={(v) => setFill({ opacity: v })} />
+        </div>
+      </section>
+
+      <section className={SECTION}>
+        <p className={`${SUBLABEL} mb-1`}>Stroke</p>
+        <div className="mb-1 flex items-center gap-1.5">
+          <label className="flex items-center gap-1 text-[11px] text-text-muted">
+            <input
+              type="checkbox"
+              checked={props.stroke.enabled}
+              className="accent-accent"
+              onChange={(e) => setStroke({ enabled: e.target.checked })}
+            />
+            Enabled
+          </label>
+        </div>
+        {props.stroke.enabled ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                value={props.stroke.color}
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
+                onChange={(e) => setStroke({ color: e.target.value })}
+              />
+              <input
+                className={INPUT}
+                value={props.stroke.color}
+                onChange={(e) => {
+                  const v = normalizeHex(e.target.value);
+                  if (v) setStroke({ color: v });
+                }}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-x-1.5">
+              <NumberField label="W" value={props.stroke.width} step={0.5} min={0} onChange={(v) => setStroke({ width: v })} />
+              <NumberField label="A" value={props.stroke.opacity} step={0.01} min={0} max={1} onChange={(v) => setStroke({ opacity: v })} />
+              <NumberField label="Dash" value={props.stroke.dashOffset} step={1} min={0} onChange={(v) => setStroke({ dashOffset: v })} />
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </>
   );
 }
 

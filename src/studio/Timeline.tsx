@@ -281,9 +281,10 @@ export function Timeline() {
   // Only what animates: being on the canvas is not a reason to hold a lane here.
   const rows = composition.tracks
     .map((track, i) => {
+      const trackSrc = track.layer.source;
       const asset =
-        track.layer.source.kind === "image"
-          ? assets.find((a) => a.id === track.layer.source.value)
+        trackSrc.kind === "image"
+          ? assets.find((a) => a.id === trackSrc.value)
           : undefined;
       const blocks = trackBlocks(track, moduleLibrary);
       return {
