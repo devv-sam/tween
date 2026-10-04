@@ -24,7 +24,7 @@ import type {
 } from "../core/types";
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
-import { measureTextWidth, registerFontFiles, loadOpenTypeFont } from "./fonts";
+import { measureTextWidth, measureTextHeight, registerFontFiles, loadOpenTypeFont } from "./fonts";
 import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
 import {
@@ -2518,6 +2518,20 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
           }));
           set({ editingTextId: null });
           return;
+        }
+        if (track?.layer.source.kind === "text") {
+          const src = track.layer.source;
+          try {
+            const patch: Record<string, number> = {};
+            if (src.boxWidth == null) {
+              patch.boxWidth = measureTextWidth(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.letterSpacing);
+            }
+            const h = measureTextHeight(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.lineHeight, src.letterSpacing, src.boxWidth ?? patch.boxWidth);
+            patch.boxHeight = h;
+            get().setTextProp(prev, patch);
+          } catch {
+            // font measurement unavailable — leave box dimensions unset
+          }
         }
       }
       set({ editingTextId: id });

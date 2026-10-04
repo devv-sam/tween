@@ -177,6 +177,19 @@ function wrapLines(
     } else {
       line = test;
     }
+    if (otMeasureWidth(font, line, fontSize, letterSpacing) > maxWidth) {
+      const chars = [...line];
+      line = "";
+      for (const ch of chars) {
+        const next = line + ch;
+        if (line && otMeasureWidth(font, next, fontSize, letterSpacing) > maxWidth) {
+          lines.push(line);
+          line = ch;
+        } else {
+          line = next;
+        }
+      }
+    }
   }
   if (line) lines.push(line);
   return lines.length ? lines : [""];

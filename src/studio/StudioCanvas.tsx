@@ -1041,18 +1041,12 @@ export function StudioCanvas() {
     const track = store.composition.tracks.find((tr) => tr.layer.id === drag.id);
     if (track?.layer.source.kind === "text") {
       const src = track.layer.source;
-      const isAutoWidth = src.boxWidth == null;
-      const isAutoHeight = src.boxWidth != null && src.boxHeight == null;
-
-      if (isAutoWidth) return;
-      if (isAutoHeight && !handleAffectsX(drag.handle)) return;
-
       const next = resizeFrom(drag.startRendered, drag.size, drag.handle, point, lock);
       const newWidth = drag.size.width * next.scaleX;
       const newHeight = drag.size.height * next.scaleY;
       const patch: Partial<typeof src> = {};
       if (handleAffectsX(drag.handle)) patch.boxWidth = Math.max(newWidth, 1);
-      if (!isAutoHeight && handleAffectsY(drag.handle)) patch.boxHeight = Math.max(newHeight, 1);
+      if (handleAffectsY(drag.handle)) patch.boxHeight = Math.max(newHeight, 1);
       store.setTextProp(drag.id, patch);
       captureTransform(drag.id, {
         x: drag.startBase.x + (next.x - drag.startRendered.x),

@@ -90,6 +90,19 @@ function wrapLinesOT(
     } else {
       line = test;
     }
+    if (otMeasureWidth(font, line, fontSize, letterSpacing) > maxWidth) {
+      const chars = [...line];
+      line = "";
+      for (const ch of chars) {
+        const next = line + ch;
+        if (line && otMeasureWidth(font, next, fontSize, letterSpacing) > maxWidth) {
+          lines.push(line);
+          line = ch;
+        } else {
+          line = next;
+        }
+      }
+    }
   }
   if (line) lines.push(line);
   return lines.length ? lines : [""];
@@ -106,6 +119,19 @@ function wrapLinesFallback(ctx: CanvasRenderingContext2D, text: string, maxWidth
       line = word;
     } else {
       line = test;
+    }
+    if (ctx.measureText(line).width > maxWidth) {
+      const chars = [...line];
+      line = "";
+      for (const ch of chars) {
+        const next = line + ch;
+        if (line && ctx.measureText(next).width > maxWidth) {
+          lines.push(line);
+          line = ch;
+        } else {
+          line = next;
+        }
+      }
     }
   }
   if (line) lines.push(line);
@@ -144,7 +170,8 @@ function drawTextOT(
     : (src.content || " ").split("\n");
 
   const totalHeight = lines.length * leading;
-  const startY = -totalHeight / 2;
+  const boxH = src.boxHeight ?? totalHeight;
+  const startY = -boxH / 2;
 
   if (src.fill.type === "solid") {
     ctx.fillStyle = src.fill.color;
@@ -198,7 +225,8 @@ function drawTextFallback(ctx: CanvasRenderingContext2D, src: TextSource, opacit
     : (src.content || " ").split("\n");
 
   const totalHeight = lines.length * leading;
-  const startY = -totalHeight / 2;
+  const boxH = src.boxHeight ?? totalHeight;
+  const startY = -boxH / 2;
   let anchorX = 0;
   if (src.boxWidth) {
     anchorX = src.align === "left" ? -src.boxWidth / 2
