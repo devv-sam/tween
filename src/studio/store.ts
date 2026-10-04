@@ -67,7 +67,7 @@ import {
   type History,
 } from "./history";
 import { clampDuration, clampTimelineZoom } from "./ruler";
-import { parseSegment, retimedStops, type SegmentRef } from "./segments";
+import { movedStart, parseSegment, retimedStops, type SegmentRef } from "./segments";
 import {
   DEFAULT_FRAME,
   DEFAULT_VIEW_SCALE,
@@ -615,6 +615,9 @@ type StudioState = {
   /** How long the segment takes, in seconds. Moves its destination stop; the source
    *  stays put. */
   setSegmentDuration: (segmentId: string, seconds: number) => void;
+  /** Where the segment begins on the ruler, in seconds. Moves its source stop; the
+   *  destination stays put, so the segment grows or shrinks to meet it. */
+  setSegmentStart: (segmentId: string, seconds: number) => void;
   /** Where the segment is heading. `axis` names which half of a position is written;
    *  every other property only has the one. */
   setSegmentValue: (segmentId: string, axis: "x" | "y", v: number) => void;
@@ -1161,6 +1164,34 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
             keyframes[axis] = {
               ...set,
               stops: set.stops.map((st, i) => (i === ref.index ? { ...st, t } : st)),
+            };
+          }
+          return { ...tr, keyframes };
+        }),
+      );
+    },
+
+    setSegmentStart: (segmentId, seconds) => {
+      const ref = parseSegment(segmentId);
+      if (!ref) return;
+      const { composition } = get();
+      const track = composition.tracks.find((tr) => tr.layer.id === ref.layerId);
+      if (!track) return;
+      const axes = ref.property === "position" ? ["x", "y"] : [ref.property];
+      const lead = track.keyframes?.[axes[0]];
+      if (!lead) return;
+      const moved = movedStart(lead.stops, ref.index, seconds, lead.range, composition.duration);
+      const t = moved[ref.index - 1]?.t;
+      if (t === undefined) return;
+      edit(`segment-start:${segmentId}`, (s) =>
+        patchTrack(s.composition, ref.layerId, (tr) => {
+          const keyframes: Record<string, KeyframeSet> = { ...(tr.keyframes ?? {}) };
+          for (const axis of axes) {
+            const set = keyframes[axis];
+            if (!set) continue;
+            keyframes[axis] = {
+              ...set,
+              stops: set.stops.map((st, i) => (i === ref.index - 1 ? { ...st, t } : st)),
             };
           }
           return { ...tr, keyframes };

@@ -1230,6 +1230,47 @@ describe("picking the span between two keyframes", () => {
     expect(stopsOf("rotation").map((s) => s.t)).toEqual([0, 0.25, 1]);
   });
 
+  it("moves the source when the start changes, and holds the destination", () => {
+    const id = keyed();
+    state().setSegmentStart(segmentId({ layerId: id, property: "rotation", index: 1 }), 0.75);
+
+    // Three seconds of composition: 0.75s is a quarter of the way in.
+    expect(stopsOf("rotation").map((s) => s.t)).toEqual([0.25, 0.5, 1]);
+  });
+
+  it("will not carry a start past the keyframe it leads to", () => {
+    const id = keyed();
+    state().setSegmentStart(segmentId({ layerId: id, property: "rotation", index: 1 }), 99);
+
+    const [first, second] = stopsOf("rotation");
+    expect(first.t).toBeLessThan(second.t);
+    expect(second.t).toBe(0.5);
+  });
+
+  it("moves both axes of a position's start together", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    state().setPositionStops(id, {
+      x: [{ t: 0, v: 0 }, { t: 0.5, v: 300 }],
+      y: [{ t: 0, v: 0 }, { t: 0.5, v: 120 }],
+    });
+    state().sealHistory();
+
+    state().setSegmentStart(segmentId({ layerId: id, property: "position", index: 1 }), 0.6);
+    expect(stopsOf("x").map((s) => s.t)).toEqual(stopsOf("y").map((s) => s.t));
+    expect(stopsOf("x")[0].t).toBeCloseTo(0.2, 6);
+  });
+
+  it("is one step to undo for a start that was dragged", () => {
+    const id = keyed();
+    const seg = segmentId({ layerId: id, property: "rotation", index: 1 });
+    state().setSegmentStart(seg, 0.3);
+    state().setSegmentStart(seg, 0.6);
+    state().sealHistory();
+    state().undo();
+    expect(stopsOf("rotation").map((s) => s.t)).toEqual([0, 0.5, 1]);
+  });
+
   it("keeps both axes of a position in lockstep when one is retimed", () => {
     const id = layer().id;
     state().addKeyframes(id, "position");

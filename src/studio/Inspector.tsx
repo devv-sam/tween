@@ -159,7 +159,7 @@ function SegmentPanel({ ids }: { ids: string[] }) {
         </button>
       </div>
 
-      {one ? <SegmentDuration segment={one} /> : null}
+      {one ? <SegmentTimes segment={one} /> : null}
 
       <EasingSection
         ease={sharedEase(picked)}
@@ -171,18 +171,28 @@ function SegmentPanel({ ids }: { ids: string[] }) {
   );
 }
 
-function SegmentDuration({ segment }: { segment: SegmentView }) {
+function SegmentTimes({ segment }: { segment: SegmentView }) {
   return (
     <div className="mt-2">
-      <p className={LABEL}>Duration</p>
-      <div className="mt-1.5 w-[86px]">
+      <p className={LABEL}>Time</p>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
         <NumberField
-          label="s"
-          value={segment.to - segment.from}
+          label="Start"
+          title="Seconds"
+          value={segment.from}
           step={0.05}
-          min={MIN_SEGMENT}
+          min={0}
+          max={segment.to - MIN_SEGMENT}
+          onChange={(v) => useStudio.getState().setSegmentStart(segment.id, v)}
+        />
+        <NumberField
+          label="End"
+          title="Seconds"
+          value={segment.to}
+          step={0.05}
+          min={segment.from + MIN_SEGMENT}
           onChange={(v) =>
-            useStudio.getState().setSegmentDuration(segment.id, v)
+            useStudio.getState().setSegmentDuration(segment.id, v - segment.from)
           }
         />
       </div>

@@ -6,6 +6,7 @@ import {
   TRACK_PROPS,
   positionSets,
   propLabel,
+  secondsToT,
   stopSeconds,
   type KeyTarget,
   type Range,
@@ -170,6 +171,19 @@ export function retimedStops(stops: Stop[], index: number, seconds: number, rang
   const hi = next ? next.t : 1;
   const t = clamp(source.t + seconds / span, lo, Math.max(lo, hi));
   return stops.map((s, i) => (i === index ? { ...s, t } : s));
+}
+
+export function movedStart(stops: Stop[], index: number, seconds: number, range: Range, duration: number): Stop[] {
+  const span = (range[1] - range[0]) * duration;
+  if (span <= 0) return stops;
+  const source = stops[index - 1];
+  const destination = stops[index];
+  if (!source || !destination) return stops;
+  const before = stops[index - 2];
+  const lo = before ? before.t + MIN_SEGMENT / span : 0;
+  const hi = destination.t - MIN_SEGMENT / span;
+  const t = clamp(secondsToT(seconds, range, duration), lo, Math.max(lo, hi));
+  return stops.map((s, i) => (i === index - 1 ? { ...s, t } : s));
 }
 
 /** Points across a segment, as a share of its own box: 0 at the source, 1 at the
