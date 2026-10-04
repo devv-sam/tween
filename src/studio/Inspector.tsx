@@ -526,7 +526,7 @@ function SelectionKeyButton({
       }`}
       onClick={() => useStudio.getState().keySelection(ids, target)}
     >
-      <DiamondIcon filled={keyframed} />
+      <DiamondIcon filled={keyframed} size={10} />
     </button>
   );
 }
@@ -550,7 +550,7 @@ function KeyCell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1">
+    <div className="flex min-w-0 flex-1 items-center gap-0.5">
       <div className="min-w-0 flex-1">{children}</div>
       <KeyframeButton
         layerId={layerId}
@@ -631,10 +631,13 @@ function ElementSection({
           to once the composition's settings are sitting right above them. The two
           centring buttons ride the same line: they act on the whole element rather
           than on any one field under it, which is what the heading names. */}
-      <div className="mb-2 flex items-center gap-1">
-        <p className={`${LABEL} min-w-0 flex-1 truncate`} title={name}>
-          {name}
-        </p>
+      <div className={`flex items-center gap-1 ${layerSrc.kind === "rect" || layerSrc.kind === "ellipse" ? "" : "mb-2"}`}>
+        <input
+          className={`${LABEL} min-w-0 flex-1 truncate bg-transparent outline-none focus:text-text-primary`}
+          value={name}
+          title={name}
+          onChange={(e) => useStudio.getState().renameLayer(layer.id, e.target.value)}
+        />
         <CentreButton layerId={layer.id} axis="x" />
         <CentreButton layerId={layer.id} axis="y" />
       </div>
@@ -725,9 +728,12 @@ function ShapeSection({ track, activeKeyframes }: { track: Track; activeKeyframe
     <>
       <section className={SECTION}>
         <p className={`${SUBLABEL} mb-1`}>Shape</p>
-        <div className="mb-2 grid grid-cols-2 gap-x-1.5 gap-y-1">
-          <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />
-          <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />
+        <div className="mb-1 flex items-center gap-1.5">
+          {cell("scaleX", <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />)}
+          {cell("scaleY", <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />)}
+          <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
+        </div>
+        <div className="mb-1 grid grid-cols-2 gap-x-1.5 gap-y-1">
           {src.kind === "rect" ? (
             <NumberField label="R" value={src.props.cornerRadius} step={1} min={0} onChange={(v) => set({ cornerRadius: v })} />
           ) : (
@@ -1074,7 +1080,7 @@ function KeyframeButton({
       aria-label={`${label}: ${target}`}
       aria-pressed={selected}
       title={label}
-      className={`grid h-3.75 w-3.75 shrink-0 place-items-center rounded-md  ${keyframed ? PROP_TEXT[target] : "text-text-muted/60 hover:text-text-primary/70"}`}
+      className={`grid h-3 w-3 shrink-0 place-items-center rounded ${keyframed ? PROP_TEXT[target] : "text-text-muted/60 hover:text-text-primary/70"}`}
       onClick={() => {
         const store = useStudio.getState();
         if (!keyframed) return store.addKeyframes(layerId, target);
@@ -1084,7 +1090,7 @@ function KeyframeButton({
         );
       }}
     >
-      <DiamondIcon filled={keyframed} />
+      <DiamondIcon filled={keyframed} size={10} />
     </button>
   );
 }
