@@ -1,10 +1,18 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { clamp } from "../core/math";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { POPOVER_GAP, fitInViewport } from "./cardFit";
 
 /** Where the card sits against the thing that opened it. */
 export type Placement = "left" | "below";
 
-const GAP = 8;
+const GAP = POPOVER_GAP;
 
 /** Every ancestor that can scroll the anchor out from under the card. */
 function scrollParentsOf(el: HTMLElement | null): HTMLElement[] {
@@ -29,6 +37,7 @@ export function Popover({
   anchorRef,
   placement,
   label,
+  draggable,
   onClose,
   children,
 }: {
@@ -36,24 +45,38 @@ export function Popover({
   placement: Placement;
   /** Named for the screen reader, since the card is a sibling of nothing. */
   label: string;
+  /** Can be moved by any `data-drag-handle` element in it, pressed on itself. */
+  draggable?: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  const [moved, setMoved] = useState<{ left: number; top: number } | null>(null);
+  const movedRef = useRef(false);
+  movedRef.current = moved !== null;
 
   useLayoutEffect(() => {
     const place = () => {
       const anchor = anchorRef.current?.getBoundingClientRect();
       const box = boxRef.current?.getBoundingClientRect();
-      if (!anchor || !box) return;
+      if (!box) return;
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      if (movedRef.current) {
+        setMoved((m) => {
+          if (!m) return m;
+          const fit = fitInViewport({ x: m.left, y: m.top }, box, viewport);
+          return { left: fit.x, top: fit.y };
+        });
+        return;
+      }
+      if (!anchor) return;
       const left =
         placement === "left" ? anchor.left - box.width - GAP : anchor.right - box.width;
       const top = placement === "left" ? anchor.top : anchor.bottom + 4;
-      setAt({
-        left: clamp(left, GAP, Math.max(GAP, window.innerWidth - box.width - GAP)),
-        top: clamp(top, GAP, Math.max(GAP, window.innerHeight - box.height - GAP)),
-      });
+      const fit = fitInViewport({ x: left, y: top }, box, viewport);
+      setAt({ left: fit.x, top: fit.y });
     };
     place();
     window.addEventListener("resize", place);
@@ -81,6 +104,41 @@ export function Popover({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (!draggable || e.button !== 0) return;
+    const handle = (e.target as HTMLElement).closest("[data-drag-handle]");
+    if (!handle || handle !== e.target) return;
+    const box = boxRef.current?.getBoundingClientRect();
+    if (!box) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      return;
+    }
+    dragRef.current = { pointerId: e.pointerId, dx: e.clientX - box.left, dy: e.clientY - box.top };
+  };
+
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    const box = boxRef.current?.getBoundingClientRect();
+    if (!drag || drag.pointerId !== e.pointerId || !box) return;
+    const fit = fitInViewport(
+      { x: e.clientX - drag.dx, y: e.clientY - drag.dy },
+      box,
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    setMoved({ left: fit.x, top: fit.y });
+  };
+
+  const endDrag = (e: PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
   return (
     <>
       {/* Anywhere else closes it — what a card over a panel has to do, and what a
@@ -93,7 +151,11 @@ export function Popover({
         className="fixed z-50 rounded-[9px] border border-border bg-bg shadow-[0_6px_20px_rgba(0,0,0,.14)]"
         // Measured against the anchor, so there is nothing static to put in a class.
         // Held off-screen for the first frame rather than flashing at the corner.
-        style={at ?? { left: -9999, top: -9999 }}
+        style={moved ?? at ?? { left: -9999, top: -9999 }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
       >
         {children}
       </div>

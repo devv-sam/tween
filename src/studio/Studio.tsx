@@ -137,7 +137,7 @@ function AssetShelf({
       />
       {assets.length === 0 ? (
         <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-text-muted/60">
-          Nothing here yet. Import png, jpg, webp, or svg.
+          Nothing here yet. Import PNG, JPG, WebP, or SVG.
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 px-3 pt-1 pb-3.5">

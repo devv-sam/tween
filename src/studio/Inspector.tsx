@@ -146,8 +146,8 @@ function SegmentPanel({ ids }: { ids: string[] }) {
   return (
     <section className={SECTION}>
       <div className="flex items-baseline gap-1.5">
-        <p className={LABEL}>{one ? "segment" : `${picked.length} segments`}</p>
-        <span className="min-w-0 flex-1 truncate text-[10px] lowercase text-text-muted/60">
+        <p className={LABEL}>{one ? "Segment" : `${picked.length} segments`}</p>
+        <span className="min-w-0 flex-1 truncate text-[10px] capitalize text-text-muted/60">
           {label}
         </span>
         <button
@@ -155,7 +155,7 @@ function SegmentPanel({ ids }: { ids: string[] }) {
           className="rounded px-1 text-[10px] text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
           onClick={() => useStudio.getState().setSelectedSegments([])}
         >
-          clear
+          Clear
         </button>
       </div>
 
@@ -165,7 +165,7 @@ function SegmentPanel({ ids }: { ids: string[] }) {
         ease={sharedEase(picked)}
         mixed={!easesAgree(picked)}
         onChange={write}
-        note={one ? undefined : `applying to ${picked.length} segments`}
+        note={one ? undefined : `Applying to ${picked.length} segments`}
       />
     </section>
   );
@@ -174,7 +174,7 @@ function SegmentPanel({ ids }: { ids: string[] }) {
 function SegmentDuration({ segment }: { segment: SegmentView }) {
   return (
     <div className="mt-2">
-      <p className={LABEL}>duration</p>
+      <p className={LABEL}>Duration</p>
       <div className="mt-1.5 w-[86px]">
         <NumberField
           label="s"
@@ -204,12 +204,12 @@ function CompositionPanel() {
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>composition</p>
+      <p className={`${LABEL} mb-2`}>Composition</p>
       {/* The right column carries the widest values — a resolution, a hex — so it
           takes the room the left one does not need. */}
       <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
         <SelectField
-          label="fps"
+          label="FPS"
           value={String(fps)}
           onChange={(v) => useStudio.getState().setFps(Number(v))}
           options={FPS_CHOICES.map((f) => ({
@@ -223,7 +223,7 @@ function CompositionPanel() {
         <BackgroundField value={background ?? "#ffffff"} />
 
         <SelectField
-          label="res"
+          label="Res"
           title="Resolution"
           value={resolutionKey(frame)}
           onChange={(v) => {
@@ -289,7 +289,7 @@ function ZoomField() {
 
   return (
     <SelectField
-      label="zoom"
+      label="Zoom"
       value={String(current)}
       onChange={(v) => {
         const { viewport, zoomAroundPoint } = useStudio.getState();
@@ -419,7 +419,7 @@ function SelectionPanel({ ids }: { ids: string[] }) {
 
   const axis = (prop: "x" | "y", join: Join) => (
     <NumberField
-      label={prop}
+      label={prop.toUpperCase()}
       title={read[prop] === null ? "Type to set all" : undefined}
       value={read[prop] ?? 0}
       mixed={read[prop] === null}
@@ -438,7 +438,7 @@ function SelectionPanel({ ids }: { ids: string[] }) {
       {/* Position is one property with two fields here too, and one diamond keys the
           pair. The axes are not split apart: that is a per-element choice, and the
           place to make it is the element. */}
-      <p className={`${SUBLABEL} mb-1`}>position</p>
+      <p className={`${SUBLABEL} mb-1`}>Position</p>
       <div className="mb-2 flex items-center gap-1.5">
         <div className="flex min-w-0 flex-1">
           <div className="min-w-0 flex-1">{axis("x", "left")}</div>
@@ -451,11 +451,11 @@ function SelectionPanel({ ids }: { ids: string[] }) {
         />
       </div>
 
-      <p className={`${SUBLABEL} mb-1`}>rotation</p>
+      <p className={`${SUBLABEL} mb-1`}>Rotation</p>
       <div className="mb-2 flex items-center gap-1.5">
         <div className="min-w-0 flex-1">
           <NumberField
-            label="r"
+            label="R"
             title={read.rotation === null ? "Type to set all" : undefined}
             value={read.rotation ?? 0}
             mixed={read.rotation === null}
@@ -474,11 +474,11 @@ function SelectionPanel({ ids }: { ids: string[] }) {
         />
       </div>
 
-      <p className={`${SUBLABEL} mb-1`}>opacity</p>
+      <p className={`${SUBLABEL} mb-1`}>Opacity</p>
       <div className="flex items-center gap-1.5">
         <div className="min-w-0 flex-1">
           <NumberField
-            label="o"
+            label="O"
             title={read.opacity === null ? "Type to set all" : undefined}
             value={read.opacity ?? 1}
             mixed={read.opacity === null}
@@ -645,7 +645,7 @@ function ElementSection({
           from, and nothing about the drawing is edited from here. */}
       {part ? (
         <>
-          <p className={`${SUBLABEL} mb-1`}>node</p>
+          <p className={`${SUBLABEL} mb-1`}>Node</p>
           <div className={`${BOX} mb-2 justify-between`} title={part.name}>
             <span className="min-w-0 truncate text-[11px] text-text-primary/70">
               {part.name}
@@ -656,7 +656,7 @@ function ElementSection({
 
       {size ? (
         <>
-          <p className={`${SUBLABEL} mb-1`}>dimensions</p>
+          <p className={`${SUBLABEL} mb-1`}>Dimensions</p>
           <div className="mb-2 flex items-center gap-1.5">
             {cell(
               "scaleX",
@@ -681,12 +681,12 @@ function ElementSection({
         </>
       ) : null}
 
-      <p className={`${SUBLABEL} mb-1`}>opacity</p>
+      <p className={`${SUBLABEL} mb-1`}>Opacity</p>
       <div className="grid grid-cols-2 gap-x-1.5">
         {cell(
           "opacity",
           <NumberField
-            label="o"
+            label="O"
             value={layer.base.opacity}
             step={PROP_STEP.opacity}
             min={0}
@@ -810,7 +810,7 @@ function SizeField({
 
   return (
     <NumberField
-      label={axis === "scaleX" ? "w" : "h"}
+      label={axis === "scaleX" ? "W" : "H"}
       value={toDisplay(axis, state[axis], size)}
       step={PROP_STEP[axis]}
       min={0}
@@ -877,7 +877,7 @@ function BaseTransform({
 
   const x = (join?: Join) => (
     <NumberField
-      label="x"
+      label="X"
       value={base.x}
       onChange={(v) => set({ x: v })}
       join={join}
@@ -885,7 +885,7 @@ function BaseTransform({
   );
   const y = (join?: Join) => (
     <NumberField
-      label="y"
+      label="Y"
       value={base.y}
       onChange={(v) => set({ y: v })}
       join={join}
@@ -894,11 +894,11 @@ function BaseTransform({
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>transform</p>
+      <p className={`${LABEL} mb-2`}>Transform</p>
       {/* Position is one property with two fields: one diamond keyframes the pair,
           and the toggle beside it is how you ask for the axes apart. Two fields on
           one row want saying what they are together. */}
-      <p className={`${SUBLABEL} mb-1`}>position</p>
+      <p className={`${SUBLABEL} mb-1`}>Position</p>
       <div className="mb-2 flex items-center gap-1.5">
         {separate ? (
           <>
@@ -924,12 +924,12 @@ function BaseTransform({
         <SeparateButton layerId={id} separate={separate} />
       </div>
 
-      <p className={`${SUBLABEL} mb-1`}>rotation</p>
+      <p className={`${SUBLABEL} mb-1`}>Rotation</p>
       <div className="grid grid-cols-2 gap-x-1.5">
         {cell(
           "rotation",
           <NumberField
-            label="r"
+            label="R"
             value={base.rotation}
             onChange={(v) => set({ rotation: v })}
           />,
@@ -1134,7 +1134,7 @@ function KeyframeEditor({ track }: { track: Track }) {
       layerId,
       entries: selectedKeys,
     });
-    setToast("module saved (coming soon)");
+    setToast("Module saved (coming soon)");
     setNaming(false);
     useStudio.getState().setSelectedKeys([]);
   };
@@ -1144,13 +1144,13 @@ function KeyframeEditor({ track }: { track: Track }) {
   return (
     <section className={SECTION}>
       <div className="flex items-center gap-1">
-        <p className={LABEL}>keyframe</p>
+        <p className={LABEL}>Keyframe</p>
         <button
           type="button"
           className="ml-auto rounded px-1 text-[10px] text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
           onClick={() => useStudio.getState().setSelectedKeys([])}
         >
-          clear
+          Clear
         </button>
       </div>
 
@@ -1180,7 +1180,7 @@ function KeyframeEditor({ track }: { track: Track }) {
               className={`${GHOST_BTN} mt-2 w-full`}
               onClick={() => setNaming(true)}
             >
-              save as module
+              Save as module
             </button>
           )}
         </>
@@ -1213,7 +1213,7 @@ function ModuleNameField({
       <input
         autoFocus
         className={`${INPUT} w-full`}
-        placeholder="name this module"
+        placeholder="Name this module"
         aria-label="name this module"
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -1287,11 +1287,11 @@ function KeyframeFields({
       {axes.map((axis) => (
         <div key={axis} className="flex items-center gap-1">
           {axes.length > 1 ? (
-            <span className={`${SUBLABEL} w-[8px] shrink-0`}>{axis}</span>
+            <span className={`${SUBLABEL} w-[8px] shrink-0`}>{axis.toUpperCase()}</span>
           ) : null}
           <div className="min-w-0 flex-1">
             <NumberField
-              label="from"
+              label="From"
               value={at(entry.from, axis)}
               step={PROP_STEP[entry.property]}
               // Nothing precedes the first keyframe — the curve holds this value up
@@ -1303,7 +1303,7 @@ function KeyframeFields({
           <span className="shrink-0 text-[10px] text-text-muted/60">→</span>
           <div className="min-w-0 flex-1">
             <NumberField
-              label="to"
+              label="To"
               value={at(entry.to, axis)}
               step={PROP_STEP[entry.property]}
               onChange={(v) => onValue("to", axis, v)}
@@ -1319,7 +1319,7 @@ function KeyframeFields({
         className="self-end rounded px-1 text-[10px] text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
         onClick={onRemove}
       >
-        remove
+        Remove
       </button>
     </div>
   );

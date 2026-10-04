@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState, type PointerEvent } from "react";
 import { clamp } from "../core/math";
 import { useStudio } from "./store";
+import { THUMB_INSET, sliderFraction, sliderValueAt } from "./slider";
 
 /**
  * The chrome every control in the studio's panels is built from. One place for it so
@@ -157,6 +158,115 @@ export function NumberField({
   );
 }
 
+export function SliderField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef<number | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const fraction = sliderFraction(value, min, max);
+
+  const slideTo = (clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const next = sliderValueAt(clientX, rect.left, rect.width, min, max, step);
+    if (next !== null) onChange(next);
+  };
+
+  const endDrag = (e: PointerEvent<HTMLDivElement>) => {
+    if (dragging.current !== e.pointerId) return;
+    dragging.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    useStudio.getState().sealHistory();
+  };
+
+  const nudge = (by: number) => onChange(Number((value + by).toFixed(4)));
+
+  return (
+    <div
+      className="group flex h-[26px] cursor-ew-resize touch-none select-none items-center gap-2 rounded-[7px] border border-transparent bg-text-primary/5 px-2 focus-within:border-accent"
+      onPointerDown={(e) => {
+        if (e.button !== 0 || e.target instanceof HTMLInputElement) return;
+        e.preventDefault();
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          return;
+        }
+        dragging.current = e.pointerId;
+        slideTo(e.clientX);
+      }}
+      onPointerMove={(e) => {
+        if (dragging.current === e.pointerId) slideTo(e.clientX);
+      }}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+    >
+      <span className={`${LABEL} shrink-0`}>{label}</span>
+      <div ref={trackRef} className="relative h-full min-w-0 flex-1">
+        <span
+          role="slider"
+          tabIndex={0}
+          aria-label={label}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          aria-valuenow={value}
+          className="absolute top-1/2 h-[14px] w-[4px] -translate-y-1/2 rounded-full bg-text-muted/60 group-hover:bg-text-muted focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
+          style={{
+            left: `calc(${THUMB_INSET}px + ${fraction} * (100% - ${THUMB_INSET * 2}px) - 2px)`,
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            e.preventDefault();
+            nudge((e.shiftKey ? 10 : 1) * step * (e.key === "ArrowRight" ? 1 : -1));
+          }}
+          onBlur={() => useStudio.getState().sealHistory()}
+        />
+      </div>
+      <input
+        className={`${INPUT} w-11 cursor-text text-right`}
+        inputMode="decimal"
+        aria-label={`${label} value`}
+        value={draft ?? String(Math.round(value))}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const n = Number(e.target.value);
+          if (e.target.value.trim() !== "" && Number.isFinite(n)) onChange(n);
+        }}
+        onBlur={() => {
+          setDraft(null);
+          useStudio.getState().sealHistory();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Escape") {
+            setDraft(null);
+            e.currentTarget.blur();
+            return;
+          }
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+          e.preventDefault();
+          setDraft(null);
+          nudge((e.shiftKey ? 10 : 1) * step * (e.key === "ArrowUp" ? 1 : -1));
+        }}
+      />
+    </div>
+  );
+}
+
 /** Lucide `diamond` / `diamond-plus` / `diamond-minus` — a keyframe is a diamond
  *  everywhere in the studio, so everything that makes or picks one carries the shape. */
 export function DiamondIcon({ filled, size = 13 }: { filled: boolean; size?: number }) {
@@ -217,6 +327,25 @@ export function DiamondMinusIcon() {
 }
 
 /** Lucide `chevron-right`, turned by the caller when what it opens is open. */
+export function CloseIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="11"
+      height="11"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
 export function ChevronIcon() {
   return (
     <svg

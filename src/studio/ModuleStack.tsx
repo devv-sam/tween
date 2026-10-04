@@ -1,7 +1,14 @@
-import { useRef, useState } from "react";
-import type { Distributor, DistributorType, ModuleData, Track, Transform } from "../core/types";
+import { useEffect, useRef, useState } from "react";
+import type {
+  Distributor,
+  DistributorType,
+  ModuleData,
+  Track,
+  Transform,
+} from "../core/types";
 import { renderState } from "../core/renderState";
 import { useStudio } from "./store";
+import { capitalize, typeName } from "./text";
 import {
   MODULE_BLURB,
   MODULE_TYPES,
@@ -23,7 +30,17 @@ import {
 import { addNode } from "./gizmo";
 import { Popover } from "./Popover";
 import { StopList } from "./StopList";
-import { BOX, GHOST_BTN, INPUT, LABEL, NumberField, SECTION, SUBLABEL } from "./fields";
+import {
+  BOX,
+  CloseIcon,
+  GHOST_BTN,
+  INPUT,
+  LABEL,
+  NumberField,
+  SECTION,
+  SliderField,
+  SUBLABEL,
+} from "./fields";
 
 /**
  * The cloners on an element.
@@ -48,12 +65,13 @@ export function DistributorSection({
   onChange: (d: Distributor | null) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [fresh, setFresh] = useState(false);
   const addRef = useRef<HTMLButtonElement>(null);
 
   return (
     <section className={SECTION}>
       <div className={`flex items-center justify-between${d ? " mb-2" : ""}`}>
-        <p className={LABEL}>cloners</p>
+        <p className={LABEL}>Cloners</p>
         <button
           ref={addRef}
           type="button"
@@ -78,13 +96,21 @@ export function DistributorSection({
           <ClonerMenu
             onPick={(type) => {
               setAdding(false);
+              setFresh(true);
               onChange(defaultDistributor(type));
             }}
           />
         </Popover>
       ) : null}
 
-      {d ? <ClonerRow distributor={d} onChange={onChange} /> : null}
+      {d ? (
+        <ClonerRow
+          distributor={d}
+          onChange={onChange}
+          openOnMount={fresh}
+          onOpened={() => setFresh(false)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -93,12 +119,22 @@ export function DistributorSection({
 function ClonerRow({
   distributor: d,
   onChange,
+  openOnMount,
+  onOpened,
 }: {
   distributor: Distributor;
   onChange: (d: Distributor | null) => void;
+  openOnMount: boolean;
+  onOpened: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openOnMount) return;
+    setOpen(true);
+    onOpened();
+  }, [openOnMount]);
 
   return (
     <div ref={rowRef} className="flex items-center gap-1">
@@ -116,7 +152,7 @@ function ClonerRow({
         <span className="shrink-0 opacity-70">
           <ClonerIcon type={d.type} />
         </span>
-        <span className="truncate">{d.type}</span>
+        <span className="truncate">{capitalize(d.type)}</span>
       </button>
       <button
         type="button"
@@ -125,13 +161,14 @@ function ClonerRow({
         className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
         onClick={() => onChange(null)}
       >
-        ×
+        <CloseIcon />
       </button>
       {open ? (
         <Popover
           anchorRef={rowRef}
           placement="left"
           label={`${d.type} cloner`}
+          draggable
           onClose={() => setOpen(false)}
         >
           <ClonerSettings
@@ -158,18 +195,21 @@ function ClonerSettings({
   const [switching, setSwitching] = useState(false);
 
   return (
-    <div className="w-[214px]">
-      <div className="relative flex items-center gap-1 px-2 py-1.5">
+    <div className="w-[264px]">
+      <div
+        data-drag-handle
+        className="relative flex cursor-grab touch-none items-center justify-between gap-1 px-3 py-2 active:cursor-grabbing"
+      >
         <button
           type="button"
           aria-expanded={switching}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[5px] px-1 py-0.5 text-left text-[11px] text-text-primary hover:bg-text-primary/5"
+          className="flex min-w-0 items-center gap-1.5 rounded-[5px] px-1 py-0.5 text-left text-[11px] text-text-primary hover:bg-text-primary/5"
           onClick={() => setSwitching((v) => !v)}
         >
           <span className="shrink-0 opacity-70">
             <ClonerIcon type={d.type} />
           </span>
-          <span className="truncate">{d.type}</span>
+          <span className="truncate">{capitalize(d.type)}</span>
           <span className="shrink-0 text-text-muted">
             <ChevronDownIcon />
           </span>
@@ -180,12 +220,12 @@ function ClonerSettings({
           className="grid h-[20px] w-[20px] shrink-0 place-items-center rounded text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
           onClick={onClose}
         >
-          ×
+          <CloseIcon />
         </button>
         {switching ? (
           // Inside the card, so plain absolute placement is safe — nothing here
           // scrolls or clips the way the panel behind it does.
-          <div className="absolute left-1 right-1 top-[30px] z-10 rounded-[7px] border border-border bg-bg p-1 shadow-[0_4px_14px_rgba(0,0,0,.12)]">
+          <div className="absolute left-2 right-2 top-[34px] z-30 rounded-[7px] border border-border bg-bg p-1 shadow-[0_4px_14px_rgba(0,0,0,.12)]">
             <ClonerMenu
               compact
               onPick={(type) => {
@@ -199,16 +239,7 @@ function ClonerSettings({
         ) : null}
       </div>
 
-      <div className="border-t border-border/60 p-2">
-        <NumberField
-          label="count"
-          value={d.count}
-          step={1}
-          min={1}
-          max={200}
-          precision={0}
-          onChange={(v) => onChange({ ...d, count: Math.max(1, Math.round(v)) })}
-        />
+      <div className="border-t border-border/60 p-3">
         <DistributorParams distributor={d} onChange={onChange} />
       </div>
     </div>
@@ -239,7 +270,7 @@ function ClonerMenu({
               <ClonerIcon type={type} />
             </span>
             <span className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
-              <span>{type}</span>
+              <span>{capitalize(type)}</span>
               {compact ? null : (
                 <span className="shrink-0 text-[9px] opacity-60">
                   {CLONER_BLURB[type]}
@@ -257,10 +288,34 @@ function ClonerMenu({
 function ClonerIcon({ type }: { type: DistributorType }) {
   const dots =
     type === "grid"
-      ? [[4, 4], [10, 4], [16, 4], [4, 10], [10, 10], [16, 10], [4, 16], [10, 16], [16, 16]]
+      ? [
+          [4, 4],
+          [10, 4],
+          [16, 4],
+          [4, 10],
+          [10, 10],
+          [16, 10],
+          [4, 16],
+          [10, 16],
+          [16, 16],
+        ]
       : type === "radial"
-        ? [[10, 3], [15, 5], [17, 10], [15, 15], [10, 17], [5, 15], [3, 10], [5, 5]]
-        : [[3, 10], [7, 10], [11, 10], [15, 10]];
+        ? [
+            [10, 3],
+            [15, 5],
+            [17, 10],
+            [15, 15],
+            [10, 17],
+            [5, 15],
+            [3, 10],
+            [5, 5],
+          ]
+        : [
+            [3, 10],
+            [7, 10],
+            [11, 10],
+            [15, 10],
+          ];
   return (
     <svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true">
       {dots.map(([cx, cy], i) => (
@@ -324,9 +379,21 @@ function DistributorParams({
   const set = (patch: Record<string, unknown>) =>
     onChange({ ...d, params: { ...p, ...patch } });
 
+  const count = (
+    <NumberField
+      label="Count"
+      value={d.count}
+      step={1}
+      min={1}
+      max={200}
+      precision={0}
+      onChange={(v) => onChange({ ...d, count: Math.max(1, Math.round(v)) })}
+    />
+  );
+
   const align = (
     <label className={`${BOX} col-span-2 justify-between`}>
-      <span className={LABEL}>face along</span>
+      <span className={LABEL}>Face along</span>
       <input
         type="checkbox"
         className="accent-accent"
@@ -338,9 +405,10 @@ function DistributorParams({
 
   if (d.type === "grid") {
     return (
-      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="col-span-2">{count}</div>
         <NumberField
-          label="cols"
+          label="Cols"
           value={num("cols", Math.ceil(Math.sqrt(d.count)))}
           step={1}
           min={1}
@@ -348,19 +416,54 @@ function DistributorParams({
           onChange={(v) => set({ cols: Math.max(1, Math.round(v)) })}
         />
         <div />
-        <NumberField label="gap x" value={num("gapX", 100)} step={1} onChange={(v) => set({ gapX: v })} />
-        <NumberField label="gap y" value={num("gapY", 100)} step={1} onChange={(v) => set({ gapY: v })} />
+        <div className="col-span-2 flex flex-col gap-2">
+          <SliderField
+            label="Gap X"
+            value={num("gapX", 100)}
+            min={0}
+            max={600}
+            onChange={(v) => set({ gapX: Math.max(0, v) })}
+          />
+          <SliderField
+            label="Gap Y"
+            value={num("gapY", 100)}
+            min={0}
+            max={600}
+            onChange={(v) => set({ gapY: Math.max(0, v) })}
+          />
+        </div>
       </div>
     );
   }
 
   if (d.type === "radial") {
     return (
-      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-        <NumberField label="radius" value={num("radius", 200)} step={1} onChange={(v) => set({ radius: v })} />
-        <NumberField label="start" title="Start angle" value={num("startAngle", -90)} step={1} onChange={(v) => set({ startAngle: v })} />
-        <NumberField label="sweep" value={num("sweep", 360)} step={5} onChange={(v) => set({ sweep: v })} />
-        <div />
+      <div className="grid grid-cols-2 gap-2">
+        {count}
+        <NumberField
+          label="Start"
+          title="Start angle"
+          value={num("startAngle", -90)}
+          step={1}
+          onChange={(v) => set({ startAngle: v })}
+        />
+        <div className="col-span-2 flex flex-col gap-2">
+          <SliderField
+            label="Radius"
+            value={num("radius", 200)}
+            min={1}
+            max={600}
+            onChange={(v) => set({ radius: Math.max(1, v) })}
+          />
+          <SliderField
+            label="Sweep"
+            value={num("sweep", 360)}
+            min={0}
+            max={360}
+            step={5}
+            onChange={(v) => set({ sweep: v })}
+          />
+        </div>
         {align}
       </div>
     );
@@ -371,17 +474,18 @@ function DistributorParams({
   // left for the panel is the one thing the gizmo has nowhere to put.
   return (
     <>
-      <div className="mt-1.5">{align}</div>
+      {count}
+      <div className="mt-2">{align}</div>
       <button
         type="button"
-        className={`${GHOST_BTN} mt-1.5 w-full text-left`}
+        className={`${GHOST_BTN} mt-2 w-full text-left`}
         onClick={() => onChange(addNode(d))}
       >
-        + add anchor
+        + Add anchor
       </button>
       <p className="mt-1 text-[10px] leading-snug text-text-muted/60">
-        drag the anchors on the frame. double-click one to round it off, alt-click to
-        take it out.
+        Drag the anchors on the frame. Double-click one to round it off,
+        Alt-click to take it out.
       </p>
     </>
   );
@@ -411,15 +515,19 @@ export function ModuleParams({
   const stops = moduleStops(md);
   const delay = typeof md.params.delay === "number" ? md.params.delay : 0;
   const masterDelay =
-    master && typeof master.params.delay === "number" ? master.params.delay : undefined;
+    master && typeof master.params.delay === "number"
+      ? master.params.delay
+      : undefined;
   const masterProp = master ? moduleProp(master) : undefined;
 
   return (
     <>
       <label className={`${BOX} justify-between`}>
-        <span className={LABEL}>property</span>
+        <span className={LABEL}>Property</span>
         <span className="flex min-w-0 items-center gap-1.5">
-          {masterProp !== undefined && masterProp !== prop ? <Ghost>{masterProp}</Ghost> : null}
+          {masterProp !== undefined && masterProp !== prop ? (
+            <Ghost>{capitalize(masterProp)}</Ghost>
+          ) : null}
           <select
             className="bg-transparent text-[11px] text-text-primary outline-none"
             value={prop}
@@ -427,12 +535,15 @@ export function ModuleParams({
               const next = e.target.value as KeyProp;
               const state = readState();
               const seed = state ? baseValue(state, next) : 0;
-              onParams({ property: next, stops: stops.map((s) => ({ ...s, v: seed })) });
+              onParams({
+                property: next,
+                stops: stops.map((s) => ({ ...s, v: seed })),
+              });
             }}
           >
             {PROPS.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {capitalize(p)}
               </option>
             ))}
           </select>
@@ -444,7 +555,7 @@ export function ModuleParams({
           <div className="mt-1.5 flex items-center gap-1.5">
             <div className="min-w-0 flex-1">
               <NumberField
-                label="delay"
+                label="Delay"
                 value={delay}
                 step={0.01}
                 min={0}
@@ -457,7 +568,7 @@ export function ModuleParams({
             ) : null}
           </div>
           <p className="mt-1 text-[10px] text-text-muted/60">
-            staggers clones across time. 0 = simultaneous
+            Staggers clones across time. 0 = simultaneous
           </p>
         </>
       ) : null}
@@ -499,9 +610,11 @@ export function ModuleStackSection({ track }: { track: Track }) {
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>modules</p>
+      <p className={`${LABEL} mb-2`}>Modules</p>
       {rows.length === 0 ? (
-        <p className="mb-2 text-[11px] text-text-muted/60">nothing on this element yet</p>
+        <p className="mb-2 text-[11px] text-text-muted/60">
+          Nothing on this element yet
+        </p>
       ) : (
         <ul className="mb-2 flex flex-col gap-1">
           {rows.map((row) => (
@@ -514,7 +627,9 @@ export function ModuleStackSection({ track }: { track: Track }) {
           ))}
         </ul>
       )}
-      <AddModuleButton onAdd={(type) => useStudio.getState().addModule(layerId, type)} />
+      <AddModuleButton
+        onAdd={(type) => useStudio.getState().addModule(layerId, type)}
+      />
       {hasRaw ? <SaveStackButton layerId={layerId} /> : null}
     </section>
   );
@@ -532,9 +647,10 @@ function ModuleRow({
   const [menu, setMenu] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const store = useStudio.getState();
-  const label = row.kind === "raw" ? moduleProp(row.module) : row.asset.name;
+  const label =
+    row.kind === "raw" ? capitalize(moduleProp(row.module)) : row.asset.name;
   const summary =
-    row.kind === "raw" ? row.module.type : stackSummary(row.resolved);
+    row.kind === "raw" ? typeName(row.module.type) : stackSummary(row.resolved);
 
   return (
     <li className="flex flex-col gap-1">
@@ -550,7 +666,10 @@ function ModuleRow({
           onClick={() =>
             useStudio
               .getState()
-              .selectPart(layerId, selected ? null : { kind: "module", index: row.index })
+              .selectPart(
+                layerId,
+                selected ? null : { kind: "module", index: row.index },
+              )
           }
         >
           {row.kind === "linked" ? (
@@ -559,7 +678,9 @@ function ModuleRow({
             </span>
           ) : null}
           <span className="truncate">{label}</span>
-          <span className="ml-auto shrink-0 text-[10px] text-text-muted">{summary}</span>
+          <span className="ml-auto shrink-0 text-[10px] text-text-muted">
+            {summary}
+          </span>
         </button>
         <button
           type="button"
@@ -581,7 +702,7 @@ function ModuleRow({
               useStudio.getState().openBench(row.asset.id);
             }}
           >
-            edit master
+            Edit master
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -589,7 +710,7 @@ function ModuleRow({
               setMenu(false);
             }}
           >
-            detach
+            Detach
           </MenuItem>
           <MenuItem
             onClick={() => {
@@ -597,7 +718,7 @@ function ModuleRow({
               store.removeModule(layerId, row.index);
             }}
           >
-            remove
+            Remove
           </MenuItem>
         </div>
       ) : null}
@@ -610,7 +731,7 @@ function ModuleRow({
               store.removeModule(layerId, row.index);
             }}
           >
-            remove
+            Remove
           </MenuItem>
         </div>
       ) : null}
@@ -618,7 +739,7 @@ function ModuleRow({
       {confirming ? (
         <div className="rounded-md border border-border bg-text-primary/[0.03] p-2">
           <p className="mb-1.5 text-[11px] text-text-primary/70">
-            detach from module? changes won't sync.
+            Detach from module? Changes won't sync.
           </p>
           <div className="flex gap-1.5">
             <button
@@ -629,10 +750,14 @@ function ModuleRow({
                 useStudio.getState().detachModule(layerId, row.index);
               }}
             >
-              detach
+              Detach
             </button>
-            <button type="button" className={GHOST_BTN} onClick={() => setConfirming(false)}>
-              cancel
+            <button
+              type="button"
+              className={GHOST_BTN}
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
             </button>
           </div>
         </div>
@@ -641,7 +766,13 @@ function ModuleRow({
   );
 }
 
-function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function MenuItem({
+  children,
+  onClick,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -653,7 +784,11 @@ function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: (
   );
 }
 
-export function AddModuleButton({ onAdd }: { onAdd: (type: ModuleType) => void }) {
+export function AddModuleButton({
+  onAdd,
+}: {
+  onAdd: (type: ModuleType) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -663,7 +798,7 @@ export function AddModuleButton({ onAdd }: { onAdd: (type: ModuleType) => void }
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        + add module
+        + Add module
       </button>
       {open ? (
         <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-text-primary/[0.03] p-1">
@@ -677,8 +812,12 @@ export function AddModuleButton({ onAdd }: { onAdd: (type: ModuleType) => void }
                   onAdd(type);
                 }}
               >
-                <span className="text-[11px] text-text-primary">{type}</span>
-                <span className="text-[10px] text-text-muted/60">{MODULE_BLURB[type]}</span>
+                <span className="text-[11px] text-text-primary">
+                  {typeName(type)}
+                </span>
+                <span className="text-[10px] text-text-muted/60">
+                  {MODULE_BLURB[type]}
+                </span>
               </button>
             </li>
           ))}
@@ -701,7 +840,7 @@ function SaveStackButton({ layerId }: { layerId: string }) {
         className={`${GHOST_BTN} mt-1 w-full text-left`}
         onClick={() => setNaming(true)}
       >
-        save stack as module
+        Save stack as module
       </button>
     );
   }
@@ -718,7 +857,7 @@ function SaveStackButton({ layerId }: { layerId: string }) {
       <label className={`${BOX} min-w-0 flex-1`}>
         <input
           className={`${INPUT} w-full`}
-          placeholder="name this module"
+          placeholder="Name this module"
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -729,7 +868,7 @@ function SaveStackButton({ layerId }: { layerId: string }) {
         />
       </label>
       <button type="button" className={GHOST_BTN} onClick={save}>
-        save
+        Save
       </button>
     </div>
   );
@@ -763,7 +902,13 @@ function ChainIcon() {
  * overrides, one entry at a time, and shows what the master says behind every field
  * it has been told differently about — so the two readings are never in doubt.
  */
-export function ModuleInspector({ track, index }: { track: Track; index: number }) {
+export function ModuleInspector({
+  track,
+  index,
+}: {
+  track: Track;
+  index: number;
+}) {
   const library = useStudio((s) => s.moduleLibrary);
   const composition = useStudio((s) => s.composition);
   const t = useStudio((s) => s.t);
@@ -781,13 +926,15 @@ export function ModuleInspector({ track, index }: { track: Track; index: number 
     return (
       <section className={`${SECTION} bg-text-primary/[0.03]`}>
         <p className={`${LABEL} mb-2`}>
-          {row.module.type} · {moduleProp(row.module)}
+          {typeName(row.module.type)} · {capitalize(moduleProp(row.module))}
         </p>
         <ModuleParams
           module={row.module}
           clones={clones}
           readState={readState}
-          onParams={(patch) => useStudio.getState().setModuleParams(layerId, index, patch)}
+          onParams={(patch) =>
+            useStudio.getState().setModuleParams(layerId, index, patch)
+          }
         />
       </section>
     );
@@ -802,9 +949,12 @@ export function ModuleInspector({ track, index }: { track: Track; index: number 
         <p className={`${LABEL} min-w-0 truncate`}>{row.asset.name}</p>
       </div>
       {row.resolved.map((md, entry) => (
-        <div key={entry} className={entry > 0 ? "mt-3 border-t border-border/60 pt-3" : ""}>
+        <div
+          key={entry}
+          className={entry > 0 ? "mt-3 border-t border-border/60 pt-3" : ""}
+        >
           <div className="mb-1.5 flex items-center gap-1.5">
-            <p className={SUBLABEL}>{md.type}</p>
+            <p className={SUBLABEL}>{typeName(md.type)}</p>
             {row.link.overrides[entry] ? (
               <span
                 className="h-1.5 w-1.5 rounded-full bg-accent"
@@ -818,7 +968,9 @@ export function ModuleInspector({ track, index }: { track: Track; index: number 
             readState={readState}
             master={row.asset.stack[entry]}
             onParams={(patch) =>
-              useStudio.getState().setLinkedOverride(layerId, index, entry, patch)
+              useStudio
+                .getState()
+                .setLinkedOverride(layerId, index, entry, patch)
             }
           />
         </div>

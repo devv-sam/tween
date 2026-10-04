@@ -1,8 +1,8 @@
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/svg+xml";
 
-export const MSG_TYPE = "tween takes png, jpg, webp, or svg.";
-export const MSG_SIZE = "that one's over 20mb, try a lighter file.";
+export const MSG_TYPE = "Tween takes PNG, JPG, WebP, or SVG.";
+export const MSG_SIZE = "That one's over 20 MB, try a lighter file.";
 /** Said on the asset's own card, not as an import error: the file came in, it just
  *  came in whole. */
 export const MSG_UNDISSECTED = "Could not dissect. Imported as single element";

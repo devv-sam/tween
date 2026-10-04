@@ -19,6 +19,7 @@ import {
 import { clamp } from "../core/math";
 import { BOX, INPUT, LABEL, SUBLABEL } from "./fields";
 import { Popover } from "./Popover";
+import { capitalize } from "./text";
 
 /** What the picker offers. `custom` is not something to choose — it names the curve
  *  you are already on once the pad has been dragged off every preset. */
@@ -103,7 +104,7 @@ export function EasingSection({
 
   return (
     <div className="mt-2">
-      <p className={LABEL}>easing</p>
+      <p className={LABEL}>Easing</p>
 
       <PresetPicker
         choice={choice}
@@ -468,7 +469,7 @@ function SpringFields({
       <div className="mt-2 flex flex-col gap-1.5">
         {SPRING_FIELDS.map(({ key, min, max, step }) => (
           <div key={key} className="flex items-center gap-2">
-            <span className={`${SUBLABEL} w-[52px] shrink-0`}>{key}</span>
+            <span className={`${SUBLABEL} w-[52px] shrink-0`}>{capitalize(key)}</span>
             <input
               type="range"
               className="h-[18px] min-w-0 flex-1 accent-accent"

@@ -56,14 +56,14 @@ export function StopList({
   return (
     <>
       <div className="flex items-center justify-between">
-        <p className={LABEL}>keyframes</p>
+        <p className={LABEL}>Keyframes</p>
         <button
           type="button"
           className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
           onClick={addAtPlayhead}
         >
           <DiamondPlusIcon />
-          add keyframe
+          Add keyframe
         </button>
       </div>
       <ul className="mt-2 flex flex-col gap-1">
@@ -73,7 +73,7 @@ export function StopList({
           const values = axes.map((axis) => (
             <div key={axis.prop} className="min-w-0 flex-1">
               <NumberField
-                label={axes.length > 1 ? axis.prop : "v"}
+                label={axes.length > 1 ? axis.prop.toUpperCase() : "V"}
                 title={axes.length > 1 ? undefined : "Value"}
                 value={axis.stops[i].v}
                 step={PROP_STEP[axis.prop]}

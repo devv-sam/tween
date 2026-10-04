@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useStudio, proxyBase, type Bench } from "./store";
 import { cloneCount, stackSummary, type ModuleType } from "./modules";
 import { AddModuleButton, DistributorSection, ModuleParams } from "./ModuleStack";
-import { BOX, GHOST_BTN, INPUT, LABEL, SECTION, SUBLABEL } from "./fields";
+import { typeName } from "./text";
+import { BOX, CloseIcon, GHOST_BTN, INPUT, LABEL, SECTION, SUBLABEL } from "./fields";
 
 export const MODULE_DRAG = "application/x-tween-module";
 
@@ -30,7 +31,7 @@ export function ModuleShelf() {
       </div>
       {library.length === 0 ? (
         <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-text-muted/60">
-          no modules yet
+          No modules yet
         </p>
       ) : (
         <ul className="flex flex-col gap-1 px-3 pt-1 pb-3.5">
@@ -111,7 +112,7 @@ function ModuleCard({ id }: { id: string }) {
               useStudio.getState().openBench(asset.id);
             }}
           >
-            edit
+            Edit
           </button>
           <button
             type="button"
@@ -121,7 +122,7 @@ function ModuleCard({ id }: { id: string }) {
               setConfirming(true);
             }}
           >
-            delete
+            Delete
           </button>
         </div>
       ) : null}
@@ -143,10 +144,10 @@ function ModuleCard({ id }: { id: string }) {
                 useStudio.getState().deleteModuleAsset(asset.id);
               }}
             >
-              delete
+              Delete
             </button>
             <button type="button" className={GHOST_BTN} onClick={() => setConfirming(false)}>
-              cancel
+              Cancel
             </button>
           </div>
         </div>
@@ -172,7 +173,7 @@ export function BenchPanel({ bench }: { bench: Bench }) {
   return (
     <>
       <section className={SECTION}>
-        <p className={`${LABEL} mb-2`}>{bench.editing ? "edit module" : "new module"}</p>
+        <p className={`${LABEL} mb-2`}>{bench.editing ? "Edit module" : "New module"}</p>
         {/* Shaking says the same thing the red border does, in the one channel a
             field with nothing typed in it still has. */}
         <label
@@ -180,7 +181,7 @@ export function BenchPanel({ bench }: { bench: Bench }) {
         >
           <input
             className={`${INPUT} w-full`}
-            placeholder="untitled module"
+            placeholder="Untitled module"
             aria-label="module name"
             value={bench.name}
             onChange={(e) => store.setBenchName(e.target.value)}
@@ -188,10 +189,10 @@ export function BenchPanel({ bench }: { bench: Bench }) {
         </label>
         <div className="mt-2 flex gap-1.5">
           <button type="button" className={GHOST_BTN} onClick={() => store.saveBench()}>
-            save module
+            Save module
           </button>
           <button type="button" className={GHOST_BTN} onClick={() => store.closeBench()}>
-            cancel
+            Cancel
           </button>
         </div>
       </section>
@@ -202,15 +203,15 @@ export function BenchPanel({ bench }: { bench: Bench }) {
       />
 
       <section className={SECTION}>
-        <p className={`${LABEL} mb-2`}>stack</p>
+        <p className={`${LABEL} mb-2`}>Stack</p>
         {bench.stack.length === 0 ? (
-          <p className="mb-2 text-[11px] text-text-muted/60">nothing on the stack yet</p>
+          <p className="mb-2 text-[11px] text-text-muted/60">Nothing on the stack yet</p>
         ) : (
           <ul className="mb-2 flex flex-col gap-1">
             {bench.stack.map((md, i) => (
               <li key={i} className="flex items-center gap-1">
                 <span className="flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] text-text-primary/70">
-                  <span className="truncate">{md.type}</span>
+                  <span className="truncate">{typeName(md.type)}</span>
                 </span>
                 <StackButton
                   label="Move up"
@@ -227,7 +228,7 @@ export function BenchPanel({ bench }: { bench: Bench }) {
                   ↓
                 </StackButton>
                 <StackButton label="Remove" onClick={() => store.removeBenchModule(i)}>
-                  ×
+                  <CloseIcon />
                 </StackButton>
               </li>
             ))}
@@ -238,7 +239,7 @@ export function BenchPanel({ bench }: { bench: Bench }) {
 
       {bench.stack.map((md, i) => (
         <section key={i} className={`${SECTION} bg-text-primary/[0.03]`}>
-          <p className={`${SUBLABEL} mb-1.5`}>{md.type}</p>
+          <p className={`${SUBLABEL} mb-1.5`}>{typeName(md.type)}</p>
           <ModuleParams
             module={md}
             clones={clones}
