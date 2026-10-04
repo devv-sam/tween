@@ -989,7 +989,12 @@ export function StudioCanvas() {
       }
       const point = screenToComposition(screen, viewport, frame, view);
       const inside = containsPoint(selected.item.state, selected.size, point);
-      setCursor(inside ? "move" : null);
+      if (inside) {
+        const track = composition.tracks.find((tr) => tr.layer.id === selected.item.id);
+        setCursor(track?.layer.source.kind === "text" ? null : "move");
+      } else {
+        setCursor(null);
+      }
       return;
     }
 
@@ -1515,7 +1520,11 @@ export function StudioCanvas() {
         scale={scale}
         clickRef={textClickRef}
       /> : null}
-      {selected && chrome && !clonerGroup && !editingTextId ? (
+      {selected && chrome && !clonerGroup && (() => {
+        if (!editingTextId) return true;
+        const et = composition.tracks.find((tr) => tr.layer.id === editingTextId);
+        return et?.layer.source.kind === "text" && et.layer.source.boxWidth != null;
+      })() ? (
         <>
           <svg
             className="studio-selection"
