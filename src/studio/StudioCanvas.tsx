@@ -1598,8 +1598,10 @@ function TextEditOverlay({
     const ta = taRef.current;
     if (!ta) return;
     ta.focus();
-    ta.setSelectionRange(ta.value.length, ta.value.length);
+    ta.setSelectionRange(0, ta.value.length);
     setCursorPos(ta.value.length);
+    setSelStart(0);
+    setSelEnd(ta.value.length);
   }, [valid, editingTextId]);
 
   useEffect(() => {
