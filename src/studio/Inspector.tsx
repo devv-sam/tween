@@ -28,6 +28,7 @@ import {
   type Range,
 } from "./modules";
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
+import { Toolbar } from "./Toolbar";
 import { EaseSelect, EasingSection } from "./EasingControls";
 import {
   MIN_SEGMENT,
@@ -105,6 +106,7 @@ function ElementPanels({
   const segments = useStudio((s) => s.selectedSegments);
   return (
     <>
+      <Toolbar />
       {/* The composition is always there to edit, so it stays put and the element's
           own panel stacks under it rather than replacing it. */}
       <CompositionPanel />
@@ -657,7 +659,7 @@ function ElementSection({
         </>
       ) : null}
 
-      {size ? (
+      {size && layerSrc.kind !== "rect" && layerSrc.kind !== "ellipse" ? (
         <>
           <p className={`${SUBLABEL} mb-1`}>Dimensions</p>
           <div className="mb-2 flex items-center gap-1.5">

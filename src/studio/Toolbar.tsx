@@ -11,14 +11,14 @@ export function Toolbar() {
   const setActiveTool = useStudio((s) => s.setActiveTool);
 
   return (
-    <div className="absolute top-3 left-3 z-10 flex flex-col gap-0.5 rounded-lg border border-border bg-bg p-1 shadow-sm">
+    <div className="flex items-center gap-0.5 border-b border-border px-3 py-1.5">
       {tools.map((t) => (
         <button
           key={t.id}
           type="button"
           title={`${t.label} (${t.shortcut})`}
           aria-label={t.label}
-          className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${
+          className={`relative grid h-7 w-7 place-items-center rounded-md transition-colors ${
             activeTool === t.id
               ? "bg-accent text-white"
               : "text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
@@ -26,6 +26,13 @@ export function Toolbar() {
           onClick={() => setActiveTool(t.id)}
         >
           {t.id === "select" ? <CursorIcon /> : t.id === "rect" ? <RectIcon /> : <EllipseIcon />}
+          <span
+            className={`absolute -bottom-0.5 -right-0.5 text-[9px] font-medium leading-none ${
+              activeTool === t.id ? "text-white/70" : "text-text-muted/50"
+            }`}
+          >
+            {t.shortcut}
+          </span>
         </button>
       ))}
     </div>
@@ -35,7 +42,7 @@ export function Toolbar() {
 function CursorIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 3l14 14-5.5 0-4 6.5L5 3z" />
+      <path d="m4 4 7.07 17 2.51-7.39L21 11.07z" />
     </svg>
   );
 }

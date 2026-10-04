@@ -10,7 +10,6 @@ import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { ensureImage, getCachedImage } from "../render/images";
 import { ClonerGizmo } from "./ClonerGizmo";
-import { Toolbar } from "./Toolbar";
 import { runDistance } from "./gizmo";
 import { GHOST_BTN } from "./fields";
 import { MODULE_DRAG } from "./ModuleShelf";
@@ -1187,7 +1186,6 @@ export function StudioCanvas() {
       }}
       onDoubleClick={onDoubleClick}
     >
-      <Toolbar />
       {viewport.width > 0 ? (
         <div
           className="studio-world"
