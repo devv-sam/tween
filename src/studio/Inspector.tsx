@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { FillDef, StrokeDef, Track, Transform } from "../core/types";
+import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
@@ -360,6 +360,10 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
 
       {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
         <ShapeFillStrokeSection track={track} />
+      ) : null}
+
+      {track.layer.source.kind === "text" ? (
+        <TextSection layerId={track.layer.id} source={track.layer.source} />
       ) : null}
 
       {/* The list of keyframes is on the timeline, under the element it belongs to.
@@ -1449,6 +1453,185 @@ function KeyframeFields({
         Remove
       </button>
     </div>
+  );
+}
+
+function TextSection({ layerId, source }: { layerId: string; source: TextSource }) {
+  const fonts = useStudio((s) => s.fonts);
+  const [fontSearch, setFontSearch] = useState("");
+  const [fontOpen, setFontOpen] = useState(false);
+
+  const set = (patch: Partial<TextSource>) =>
+    useStudio.getState().setTextProp(layerId, patch);
+
+  const filtered = fontSearch
+    ? fonts.filter((f) => f.family.toLowerCase().includes(fontSearch.toLowerCase()))
+    : fonts;
+
+  const weights = fonts.find((f) => f.family === source.fontFamily)?.variants ?? [];
+  const weightOptions = weights
+    .map((v) => {
+      const n = v === "regular" ? 400 : v === "italic" ? 400 : parseInt(v, 10);
+      return isNaN(n) ? null : n;
+    })
+    .filter((n): n is number => n !== null)
+    .filter((n, i, a) => a.indexOf(n) === i)
+    .sort((a, b) => a - b);
+
+  return (
+    <>
+      <section className={SECTION}>
+        <p className={`${SUBLABEL} mb-1`}>Font</p>
+        <div className="relative mb-1">
+          <button
+            type="button"
+            className={`${BOX} w-full justify-between`}
+            onClick={() => setFontOpen(!fontOpen)}
+          >
+            <span className="min-w-0 truncate text-[11px] text-text-primary">
+              {source.fontFamily}
+            </span>
+            <span className="shrink-0 text-[10px] text-text-muted/60">
+              {fontOpen ? "▲" : "▼"}
+            </span>
+          </button>
+          {fontOpen ? (
+            <div className="absolute left-0 top-full z-20 mt-0.5 flex max-h-[200px] w-full flex-col overflow-hidden rounded-md border border-border bg-bg shadow-lg">
+              <input
+                autoFocus
+                className={`${INPUT} border-b border-border px-2 py-1`}
+                placeholder="Search fonts…"
+                value={fontSearch}
+                onChange={(e) => setFontSearch(e.target.value)}
+              />
+              <div className="overflow-y-auto">
+                {filtered.slice(0, 50).map((f) => (
+                  <button
+                    key={f.family}
+                    type="button"
+                    className={`block w-full px-2 py-1 text-left text-[11px] hover:bg-text-primary/5 ${
+                      f.family === source.fontFamily ? "bg-accent/10 text-accent" : "text-text-primary"
+                    }`}
+                    onClick={() => {
+                      set({ fontFamily: f.family });
+                      setFontOpen(false);
+                      setFontSearch("");
+                    }}
+                  >
+                    {f.family}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {weightOptions.length > 1 ? (
+          <div className="mb-1">
+            <SelectField
+              label="Weight"
+              value={String(source.fontWeight)}
+              onChange={(v) => set({ fontWeight: Number(v) })}
+              options={weightOptions.map((w) => ({
+                value: String(w),
+                label: String(w),
+              }))}
+            />
+          </div>
+        ) : null}
+
+        <div className="mb-1 grid grid-cols-2 gap-x-1.5">
+          <NumberField
+            label="Size"
+            value={source.fontSize}
+            step={1}
+            min={1}
+            onChange={(v) => set({ fontSize: v })}
+          />
+          <NumberField
+            label="LH"
+            title="Line height"
+            value={source.lineHeight}
+            step={0.05}
+            min={0.5}
+            max={4}
+            onChange={(v) => set({ lineHeight: v })}
+          />
+        </div>
+        <div className="mb-1 grid grid-cols-2 gap-x-1.5">
+          <NumberField
+            label="LS"
+            title="Letter spacing"
+            value={source.letterSpacing}
+            step={0.5}
+            onChange={(v) => set({ letterSpacing: v })}
+          />
+        </div>
+
+        <p className={`${SUBLABEL} mb-1 mt-2`}>Align</p>
+        <div className="mb-1 flex gap-0.5">
+          {(["left", "center", "right"] as const).map((a) => (
+            <button
+              key={a}
+              type="button"
+              className={`rounded px-2 py-0.5 text-[10px] ${
+                source.align === a
+                  ? "bg-accent text-white"
+                  : "text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary"
+              }`}
+              onClick={() => set({ align: a })}
+            >
+              {a.charAt(0).toUpperCase() + a.slice(1)}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className={SECTION}>
+        <p className={`${SUBLABEL} mb-1`}>Fill</p>
+        <div className="mb-1 flex items-center gap-1.5">
+          <input
+            type="color"
+            value={source.fill.color}
+            className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
+            onChange={(e) => set({ fill: { ...source.fill, color: e.target.value } })}
+          />
+          <input
+            className={INPUT}
+            value={source.fill.color}
+            onChange={(e) => {
+              const v = normalizeHex(e.target.value);
+              if (v) set({ fill: { ...source.fill, color: v } });
+            }}
+          />
+          <NumberField
+            label="A"
+            value={source.fill.opacity}
+            step={0.01}
+            min={0}
+            max={1}
+            onChange={(v) => set({ fill: { ...source.fill, opacity: v } })}
+          />
+        </div>
+      </section>
+
+      <section className={SECTION}>
+        <label className="flex items-center gap-1.5 text-[11px] text-text-muted">
+          <input
+            type="checkbox"
+            checked={source.perCharacter}
+            className="accent-accent"
+            onChange={(e) => set({ perCharacter: e.target.checked })}
+          />
+          Per character
+        </label>
+        {source.perCharacter ? (
+          <p className="mt-1 text-[10px] text-text-muted/60">
+            Each character is a clone instance
+          </p>
+        ) : null}
+      </section>
+    </>
   );
 }
 

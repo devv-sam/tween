@@ -107,9 +107,26 @@ export interface EllipseProps {
   stroke: StrokeDef;
 }
 
+export interface TextSource {
+  kind: "text";
+  content: string;
+  fontFamily: string;
+  fontWeight: number;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  align: "left" | "center" | "right";
+  fill: FillDef;
+  perCharacter: boolean;
+  /** When set, text wraps within this width. Absent for point text. */
+  boxWidth?: number;
+  /** When set, the bounding box height. Absent for point text. */
+  boxHeight?: number;
+}
+
 export type LayerSource =
   | { kind: "image"; value: string }
-  | { kind: "text"; value: string }
+  | TextSource
   | { kind: "shape"; value: string }
   | { kind: "rect"; props: RectProps }
   | { kind: "ellipse"; props: EllipseProps };
