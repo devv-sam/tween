@@ -1756,6 +1756,7 @@ function TextEditOverlay({
 
     const fillColor = src.fill.type === "solid" ? src.fill.color : "#000";
     const cursorHeight = (ascender + descender) * screenScale;
+    const halfLeading = (leading - (ascender + descender)) / 2;
 
     if (selStart !== null && selEnd !== null && selStart !== selEnd) {
       const lo = Math.min(selStart, selEnd);
@@ -1782,7 +1783,7 @@ function TextEditOverlay({
             : -lineWidth * screenScale / 2;
         }
 
-        const ly = -screenH / 2 + li * leading * screenScale;
+        const ly = -screenH / 2 + li * leading * screenScale + halfLeading * screenScale;
         const x1 = lineX + positions[selLo] * screenScale;
         const x2 = lineX + positions[selHi] * screenScale;
 
@@ -1828,7 +1829,7 @@ function TextEditOverlay({
         }
 
         const cx = lineX + (positions[cursorCol] ?? 0) * screenScale;
-        const ly = -screenH / 2 + cursorLine * leading * screenScale;
+        const ly = -screenH / 2 + cursorLine * leading * screenScale + halfLeading * screenScale;
 
         ctx.strokeStyle = fillColor;
         ctx.lineWidth = Math.max(1, screenScale);

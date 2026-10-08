@@ -205,6 +205,11 @@ export function otMeasureWidth(
   fontSize: number,
   letterSpacing: number,
 ): number {
+  // getAdvanceWidth uses forEachGlyph internally, which applies GPOS kerning —
+  // the same path font.getPath() takes in the renderer.
+  if (letterSpacing === 0) {
+    try { return font.getAdvanceWidth(text, fontSize); } catch { /* fall through */ }
+  }
   const scale = fontSize / font.unitsPerEm;
   let glyphs: opentype.Glyph[];
   try {
@@ -213,8 +218,13 @@ export function otMeasureWidth(
     return text.length * fontSize * 0.6 + letterSpacing * Math.max(0, text.length - 1);
   }
   let w = 0;
-  for (const g of glyphs) w += (g.advanceWidth ?? 0) * scale;
-  w += letterSpacing * Math.max(0, glyphs.length - 1);
+  for (let i = 0; i < glyphs.length; i++) {
+    w += (glyphs[i].advanceWidth ?? 0) * scale;
+    if (i < glyphs.length - 1) {
+      w += font.getKerningValue(glyphs[i], glyphs[i + 1]) * scale;
+      w += letterSpacing;
+    }
+  }
   return w;
 }
 
@@ -246,6 +256,17 @@ export function otCharPositions(
   fontSize: number,
   letterSpacing: number,
 ): number[] {
+  // forEachGlyph applies GPOS kerning, matching font.getPath() in the renderer.
+  if (letterSpacing === 0) {
+    try {
+      const positions: number[] = [];
+      const endX = font.forEachGlyph(text, 0, 0, fontSize, undefined, (_glyph, gX) => {
+        positions.push(gX);
+      });
+      positions.push(endX);
+      return positions;
+    } catch { /* fall through */ }
+  }
   const scale = fontSize / font.unitsPerEm;
   let glyphs: opentype.Glyph[];
   try {
@@ -262,7 +283,10 @@ export function otCharPositions(
   let x = 0;
   for (let i = 0; i < glyphs.length; i++) {
     x += (glyphs[i].advanceWidth ?? 0) * scale;
-    if (i < glyphs.length - 1) x += letterSpacing;
+    if (i < glyphs.length - 1) {
+      x += font.getKerningValue(glyphs[i], glyphs[i + 1]) * scale;
+      x += letterSpacing;
+    }
     positions.push(x);
   }
   return positions;

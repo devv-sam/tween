@@ -163,7 +163,9 @@ function drawTextOT(
 ): void {
   const scale = src.fontSize / font.unitsPerEm;
   const ascender = font.ascender * scale;
+  const descender = Math.abs(font.descender * scale);
   const leading = src.fontSize * src.lineHeight;
+  const halfLeading = (leading - (ascender + descender)) / 2;
 
   const lines = src.boxWidth
     ? wrapLinesOT(font, src.content || " ", src.fontSize, src.letterSpacing, src.boxWidth)
@@ -191,7 +193,7 @@ function drawTextOT(
         : src.align === "right" ? -lineWidth
         : -lineWidth / 2;
     }
-    const ly = startY + i * leading + ascender;
+    const ly = startY + i * leading + halfLeading + ascender;
 
     if (src.letterSpacing !== 0) {
       const glyphs = font.stringToGlyphs(lineText);
@@ -203,7 +205,11 @@ function drawTextOT(
           path.fill = ctx.fillStyle as string;
           path.draw(ctx);
         }
-        cx += (g.advanceWidth ?? 0) * scale + src.letterSpacing;
+        cx += (g.advanceWidth ?? 0) * scale;
+        if (gi < glyphs.length - 1) {
+          cx += font.getKerningValue(glyphs[gi], glyphs[gi + 1]) * scale;
+          cx += src.letterSpacing;
+        }
       }
     } else {
       const path = font.getPath(lineText, lx, ly, src.fontSize);
@@ -220,6 +226,7 @@ function drawTextFallback(ctx: CanvasRenderingContext2D, src: TextSource, opacit
   ctx.textBaseline = "top";
 
   const leading = src.fontSize * src.lineHeight;
+  const halfLeading = leading * (1 - 1 / src.lineHeight) / 2;
   const lines = src.boxWidth
     ? wrapLinesFallback(ctx, src.content || " ", src.boxWidth)
     : (src.content || " ").split("\n");
@@ -240,7 +247,7 @@ function drawTextFallback(ctx: CanvasRenderingContext2D, src: TextSource, opacit
   }
 
   for (let i = 0; i < lines.length; i++) {
-    const ly = startY + i * leading;
+    const ly = startY + i * leading + halfLeading;
     if (src.letterSpacing !== 0) {
       drawLetterSpacedFallback(ctx, lines[i], anchorX, ly, src.letterSpacing, src.align);
     } else {
