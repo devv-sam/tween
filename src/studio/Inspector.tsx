@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { FillDef, StrokeDef, Track, Transform } from "../core/types";
-import type { Stop } from "../core/curve";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
@@ -17,19 +16,13 @@ import {
   fromDisplay,
   hasKeyframes,
   layerName,
-  propLabel,
-  patchStop,
-  positionSets,
-  secondsToT,
   toDisplay,
   type DesignSize,
-  type KeyProp,
   type KeyTarget,
-  type Range,
 } from "./modules";
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { Toolbar } from "./Toolbar";
-import { EaseSelect, EasingSection } from "./EasingControls";
+import { EasingSection } from "./EasingControls";
 import {
   MIN_SEGMENT,
   easesAgree,
@@ -43,7 +36,6 @@ import { ZOOM_PRESETS, zoomPercent } from "./view";
 import {
   BOX,
   DiamondIcon,
-  GHOST_BTN,
   INPUT,
   LABEL,
   LockIcon,
@@ -53,13 +45,6 @@ import {
   SUBLABEL,
   type Join,
 } from "./fields";
-import {
-  entryId,
-  indexAfterMove,
-  keyframeLog,
-  type LogEntry,
-  type LogValue,
-} from "./keyframeLog";
 
 export function Inspector() {
   const composition = useStudio((s) => s.composition);
@@ -339,7 +324,18 @@ function SelectField({
 
 function ElementPanel({ track, index }: { track: Track; index: number }) {
   const selectedPart = useStudio((s) => s.selectedPart);
+  const composition = useStudio((s) => s.composition);
+  const library = useStudio((s) => s.moduleLibrary);
+  const t = useStudio((s) => s.t);
   const { layer } = track;
+  /** What the element reads at the playhead, curves and modules included — so a field
+   *  and the box on the canvas cannot disagree about how wide the thing is. */
+  const state = useMemo(
+    () =>
+      renderState(composition, t, library).find((it) => it.id === layer.id)
+        ?.state ?? layer.base,
+    [composition, t, library, layer],
+  );
   const activeKeyframes =
     selectedPart?.kind === "keyframes" &&
     hasKeyframes(track, selectedPart.property)
@@ -353,18 +349,15 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
       <ElementSection
         track={track}
         index={index}
+        state={state}
         activeKeyframes={activeKeyframes}
       />
 
-      <BaseTransform track={track} activeKeyframes={activeKeyframes} />
+      <BaseTransform track={track} state={state} activeKeyframes={activeKeyframes} />
 
       {(track.layer.source.kind === "rect" || track.layer.source.kind === "ellipse") ? (
         <ShapeFillStrokeSection track={track} />
       ) : null}
-
-      {/* The list of keyframes is on the timeline, under the element it belongs to.
-          What is left here is the editor for whichever one is picked. */}
-      <KeyframeEditor track={track} />
 
       <DistributorSection
         distributor={layer.distributor}
@@ -577,16 +570,15 @@ function KeyCell({
 function ElementSection({
   track,
   index,
+  state,
   activeKeyframes,
 }: {
   track: Track;
   index: number;
+  state: Transform;
   activeKeyframes: KeyTarget | null;
 }) {
   const assets = useStudio((s) => s.assets);
-  const composition = useStudio((s) => s.composition);
-  const library = useStudio((s) => s.moduleLibrary);
-  const t = useStudio((s) => s.t);
   const { layer } = track;
   const layerSrc = layer.source;
   const asset =
@@ -604,15 +596,6 @@ function ElementSection({
       ? asset
       : null;
   const name = layerName(layer, asset?.name, index);
-
-  /** What the element reads at the playhead, curves and modules included — so a field
-   *  and the box on the canvas cannot disagree about how wide the thing is. */
-  const state = useMemo(
-    () =>
-      renderState(composition, t, library).find((it) => it.id === layer.id)
-        ?.state ?? layer.base,
-    [composition, t, library, layer],
-  );
 
   const cell = (target: KeyTarget, field: ReactNode) => (
     <KeyCell
@@ -656,7 +639,7 @@ function ElementSection({
       ) : null}
 
       {(layerSrc.kind === "rect" || layerSrc.kind === "ellipse") ? (
-        <ShapeDimsInline layer={layer} cell={cell} />
+        <ShapeDimsInline track={track} state={state} cell={cell} />
       ) : (
         <>
           {size ? (
@@ -692,12 +675,12 @@ function ElementSection({
               "opacity",
               <NumberField
                 label="O"
-                value={layer.base.opacity}
+                value={valueAt(track, state, "opacity", "opacity")}
                 step={PROP_STEP.opacity}
                 min={0}
                 max={1}
                 onChange={(v) =>
-                  useStudio.getState().setLayerBase(layer.id, { opacity: v })
+                  useStudio.getState().captureTransform(layer.id, { opacity: v })
                 }
               />,
             )}
@@ -708,10 +691,12 @@ function ElementSection({
   );
 }
 
-function ShapeDimsInline({ layer, cell }: {
-  layer: Track["layer"];
+function ShapeDimsInline({ track, state, cell }: {
+  track: Track;
+  state: Transform;
   cell: (target: KeyTarget, field: ReactNode) => ReactNode;
 }) {
+  const { layer } = track;
   const src = layer.source;
   if (src.kind !== "rect" && src.kind !== "ellipse") return null;
   const props = src.props;
@@ -738,11 +723,11 @@ function ShapeDimsInline({ layer, cell }: {
           "opacity",
           <NumberField
             label="O"
-            value={layer.base.opacity}
+            value={valueAt(track, state, "opacity", "opacity")}
             step={PROP_STEP.opacity}
             min={0}
             max={1}
-            onChange={(v) => useStudio.getState().setLayerBase(layer.id, { opacity: v })}
+            onChange={(v) => useStudio.getState().captureTransform(layer.id, { opacity: v })}
           />,
         )}
       </div>
@@ -972,6 +957,13 @@ function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
   );
 }
 
+const valueAt = (
+  track: Track,
+  state: Transform,
+  target: KeyTarget,
+  prop: keyof Transform,
+): number => (hasKeyframes(track, target) ? state[prop] : track.layer.base[prop]);
+
 /**
  * What is being done to the element: where it sits and which way it faces.
  *
@@ -981,15 +973,19 @@ function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
  */
 function BaseTransform({
   track,
+  state,
   activeKeyframes,
 }: {
   track: Track;
+  state: Transform;
   activeKeyframes: KeyTarget | null;
 }) {
-  const { id, base, separatePosition } = track.layer;
+  const { id, separatePosition } = track.layer;
   const separate = Boolean(separatePosition);
   const set = (patch: Partial<Transform>) =>
-    useStudio.getState().setLayerBase(id, patch);
+    useStudio.getState().captureTransform(id, patch);
+  const posX = valueAt(track, state, separate ? "x" : "position", "x");
+  const posY = valueAt(track, state, separate ? "y" : "position", "y");
 
   const cell = (target: KeyTarget, field: ReactNode) => (
     <KeyCell
@@ -1005,16 +1001,16 @@ function BaseTransform({
   const x = (join?: Join) => (
     <NumberField
       label="X"
-      value={base.x}
-      onChange={(v) => set({ x: v })}
+      value={posX}
+      onChange={(v) => set(separate ? { x: v } : { x: v, y: posY })}
       join={join}
     />
   );
   const y = (join?: Join) => (
     <NumberField
       label="Y"
-      value={base.y}
-      onChange={(v) => set({ y: v })}
+      value={posY}
+      onChange={(v) => set(separate ? { y: v } : { x: posX, y: v })}
       join={join}
     />
   );
@@ -1057,7 +1053,7 @@ function BaseTransform({
           "rotation",
           <NumberField
             label="R"
-            value={base.rotation}
+            value={valueAt(track, state, "rotation", "rotation")}
             onChange={(v) => set({ rotation: v })}
           />,
         )}
@@ -1129,326 +1125,6 @@ function SeparateButton({
     >
       <SeparatorVerticalIcon />
     </button>
-  );
-}
-
-/**
- * The editor for whichever keyframe the timeline has picked.
- *
- * The list itself lives on the timeline now, under the element it belongs to, where a
- * keyframe can be read against the ruler that gives it its time. What is left here is
- * the part a row on a strip cannot hold: the values on either side of it, the easing
- * carrying into it, and the time typed rather than dragged. One keyframe at a time,
- * because the panel is pointed at one — and several picked at once means a bundle,
- * which is named rather than edited.
- */
-function KeyframeEditor({ track }: { track: Track }) {
-  const duration = useStudio((s) => s.composition.duration);
-  const selectedKeys = useStudio((s) => s.selectedKeys);
-  const assets = useStudio((s) => s.assets);
-  const layerId = track.layer.id;
-  // A width keyframe is stored as a scale factor; the fields below read and write
-  // pixels, the same as the dimensions row does.
-  const size = designSizeOf(assets, track.layer);
-
-  const [naming, setNaming] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 2400);
-    return () => clearTimeout(id);
-  }, [toast]);
-
-  const entries = keyframeLog(track, duration).flatMap((g) => g.entries);
-  const picked = entries.filter((e) => selectedKeys.includes(e.id));
-  const one = picked.length === 1 ? picked[0] : null;
-  const empty = picked.length === 0;
-
-  const stopsOf = (property: KeyTarget): Stop[] => {
-    const position = property === "position" ? positionSets(track) : null;
-    return position
-      ? position.x.stops
-      : (track.keyframes?.[property]?.stops ?? []);
-  };
-  const rangeOf = (property: KeyTarget): Range => {
-    const position = property === "position" ? positionSets(track) : null;
-    return position
-      ? position.x.range
-      : (track.keyframes?.[property]?.range ?? [0, 1]);
-  };
-
-  /** One edit reaching both axes of a position, or the single set behind any other
-   *  property — the two writers the store already has, chosen by the property. */
-  const writeStops = (
-    property: KeyTarget,
-    fn: (stops: Stop[], axis: "x" | "y") => Stop[],
-  ) => {
-    const store = useStudio.getState();
-    const position = property === "position" ? positionSets(track) : null;
-    if (position) {
-      store.setPositionStops(layerId, {
-        x: fn(position.x.stops, "x"),
-        y: fn(position.y.stops, "y"),
-      });
-      return;
-    }
-    const set = track.keyframes?.[property];
-    if (set)
-      store.setKeyframeStops(layerId, property as KeyProp, fn(set.stops, "x"));
-  };
-
-  /**
-   * Moving a keyframe in time re-sorts its set, which renumbers the keyframes around
-   * it. What is picked is a place in that order, so it moves with the keyframe rather
-   * than jumping to whoever took the old slot.
-   */
-  const followMove = (property: KeyTarget, from: number, to: number) => {
-    if (from === to) return;
-    const store = useStudio.getState();
-    store.setSelectedKeys(
-      store.selectedKeys.map((id) => {
-        if (!id.startsWith(`${property}:`)) return id;
-        const i = Number(id.slice(property.length + 1));
-        if (i === from) return entryId(property, to);
-        if (from < to && i > from && i <= to) return entryId(property, i - 1);
-        if (to < from && i >= to && i < from) return entryId(property, i + 1);
-        return id;
-      }),
-    );
-  };
-
-  const setEntryTime = (entry: LogEntry, seconds: number) => {
-    const t = secondsToT(seconds, rangeOf(entry.property), duration);
-    writeStops(entry.property, (stops) => patchStop(stops, entry.index, { t }));
-    followMove(
-      entry.property,
-      entry.index,
-      indexAfterMove(stopsOf(entry.property), entry.index, t),
-    );
-  };
-
-  const setEntryEase = (entry: LogEntry, ease: EasingDef) =>
-    writeStops(entry.property, (stops) =>
-      patchStop(stops, entry.index, { ease }),
-    );
-
-  /** A value on one side of the arrow: `to` is the keyframe itself, `from` is the one
-   *  before it, which is where the property was coming from. */
-  const setEntryValue = (
-    entry: LogEntry,
-    side: "from" | "to",
-    axis: "x" | "y",
-    v: number,
-  ) => {
-    const index = side === "to" ? entry.index : entry.index - 1;
-    if (index < 0) return;
-    const stored = fromDisplay(entry.property, v, size);
-    writeStops(entry.property, (stops, which) =>
-      which === axis ? patchStop(stops, index, { v: stored }) : stops,
-    );
-  };
-
-  /** The same removal backspace performs, so the button and the key cannot disagree
-   *  about what taking a keyframe out means. */
-  const removePicked = () => useStudio.getState().removeSelectedKeys();
-
-  const saveModule = (name: string) => {
-    // The library that would hold this does not exist yet, so the bundle is named and
-    // acknowledged and the keyframes stay where they are.
-    console.log("module saved (coming soon)", {
-      name,
-      layerId,
-      entries: selectedKeys,
-    });
-    setToast("Module saved (coming soon)");
-    setNaming(false);
-    useStudio.getState().setSelectedKeys([]);
-  };
-
-  if (empty) return null;
-
-  return (
-    <section className={SECTION}>
-      <div className="flex items-center gap-1">
-        <p className={LABEL}>Keyframe</p>
-        <button
-          type="button"
-          className="ml-auto rounded px-1 text-[10px] text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
-          onClick={() => useStudio.getState().setSelectedKeys([])}
-        >
-          Clear
-        </button>
-      </div>
-
-      {one ? (
-        <KeyframeFields
-          entry={one}
-          size={size}
-          last={stopsOf(one.property).length <= 1}
-          onTime={(seconds) => setEntryTime(one, seconds)}
-          onEase={(ease) => setEntryEase(one, ease)}
-          onValue={(side, axis, v) => setEntryValue(one, side, axis, v)}
-          onRemove={removePicked}
-        />
-      ) : (
-        <>
-          <p className="mt-2 text-[11px] text-text-primary/70">
-            {picked.length} keyframes picked
-          </p>
-          {naming ? (
-            <ModuleNameField
-              onConfirm={saveModule}
-              onCancel={() => setNaming(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              className={`${GHOST_BTN} mt-2 w-full`}
-              onClick={() => setNaming(true)}
-            >
-              Save as module
-            </button>
-          )}
-        </>
-      )}
-
-      {toast ? (
-        <p
-          role="status"
-          className="mt-2 rounded bg-text-primary/5 px-2 py-1 text-[10px] text-text-primary/70"
-        >
-          {toast}
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-/** Name the bundle, or leave it be. Inline rather than a dialog: the selection it
- *  describes is right underneath and stays visible while it is named. */
-function ModuleNameField({
-  onConfirm,
-  onCancel,
-}: {
-  onConfirm: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState("");
-  return (
-    <div className={`${BOX} mt-2`}>
-      <input
-        autoFocus
-        className={`${INPUT} w-full`}
-        placeholder="Name this module"
-        aria-label="name this module"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && name.trim()) onConfirm(name.trim());
-          if (e.key === "Escape") onCancel();
-        }}
-      />
-      <span className="shrink-0 text-[10px] text-text-muted/60">↵</span>
-    </div>
-  );
-}
-
-/**
- * The picked keyframe, opened up: what the property was coming from, what this
- * keyframe sets it to, how it eases in, and when it happens. The timeline says which
- * keyframe this is; everything here is what cannot be said on a strip.
- */
-function KeyframeFields({
-  entry,
-  size,
-  last,
-  onTime,
-  onEase,
-  onValue,
-  onRemove,
-}: {
-  entry: LogEntry;
-  /** The element at scale 1, so a size keyframe reads in pixels here too. */
-  size: DesignSize | undefined;
-  /** The property's only keyframe, so removing it is removing the motion. */
-  last: boolean;
-  onTime: (seconds: number) => void;
-  onEase: (ease: EasingDef) => void;
-  onValue: (side: "from" | "to", axis: "x" | "y", v: number) => void;
-  onRemove: () => void;
-}) {
-  const axes: ("x" | "y")[] = typeof entry.to === "number" ? ["x"] : ["x", "y"];
-  const at = (v: LogValue, axis: "x" | "y") =>
-    toDisplay(entry.property, typeof v === "number" ? v : v[axis], size);
-
-  return (
-    <div className="mt-2 flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
-        <span className={`${PROP_TEXT[entry.property]} shrink-0`}>
-          <DiamondIcon filled />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[11px] capitalize text-text-primary">
-          {propLabel(entry.property)}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-1.5">
-        <div className="w-[76px] shrink-0">
-          <NumberField
-            label="s"
-            title="Time"
-            value={entry.t}
-            step={0.1}
-            min={0}
-            onChange={onTime}
-          />
-        </div>
-        <EaseSelect
-          className="min-w-0 flex-1"
-          ease={entry.ease}
-          onChange={onEase}
-        />
-      </div>
-
-      {axes.map((axis) => (
-        <div key={axis} className="flex items-center gap-1">
-          {axes.length > 1 ? (
-            <span className={`${SUBLABEL} w-[8px] shrink-0`}>{axis.toUpperCase()}</span>
-          ) : null}
-          <div className="min-w-0 flex-1">
-            <NumberField
-              label="From"
-              value={at(entry.from, axis)}
-              step={PROP_STEP[entry.property]}
-              // Nothing precedes the first keyframe — the curve holds this value up
-              // to it, so there is no earlier one to edit.
-              disabled={entry.index === 0}
-              onChange={(v) => onValue("from", axis, v)}
-            />
-          </div>
-          <span className="shrink-0 text-[10px] text-text-muted/60">→</span>
-          <div className="min-w-0 flex-1">
-            <NumberField
-              label="To"
-              value={at(entry.to, axis)}
-              step={PROP_STEP[entry.property]}
-              onChange={(v) => onValue("to", axis, v)}
-            />
-          </div>
-        </div>
-      ))}
-
-      <button
-        type="button"
-        aria-label="remove keyframe"
-        title={last ? "Stops animating this property" : undefined}
-        className="self-end rounded px-1 text-[10px] text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
-        onClick={onRemove}
-      >
-        Remove
-      </button>
-    </div>
   );
 }
 

@@ -518,6 +518,91 @@ describe("removing the picked keyframes", () => {
   });
 });
 
+describe("removing the picked elements' motion", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+
+  it("takes every keyframe and module, and leaves the element", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "rotation");
+    state().addKeyframes(id, "scale");
+    state().addModule(id, "pulse");
+    state().select(id);
+    state().removeSelectedMotion();
+    const track = state().composition.tracks[0];
+    expect(track.layer.id).toBe(id);
+    expect(track.keyframes).toEqual({});
+    expect(track.modules).toEqual([]);
+    expect(state().selectedIds).toEqual([id]);
+    state().undo();
+    expect(Object.keys(state().composition.tracks[0].keyframes ?? {})).toEqual([
+      "rotation",
+      "scale",
+    ]);
+  });
+});
+
+describe("removing the picked segments", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const keyframes = () => state().composition.tracks[0].keyframes ?? {};
+
+  const keyed = (stops: number[]): string => {
+    const id = layer().id;
+    state().addKeyframes(id, "scale");
+    state().setKeyframeStops(
+      id,
+      "scale",
+      stops.map((v, i) => ({ t: i / (stops.length - 1), v })),
+    );
+    state().sealHistory();
+    return id;
+  };
+
+  it("takes the whole property when its only segment goes", () => {
+    const id = keyed([1, 2]);
+    state().selectSegment(segmentId({ layerId: id, property: "scale", index: 1 }));
+    state().removeSelectedSegments();
+    expect(keyframes().scale).toBeUndefined();
+    expect(state().selectedSegments).toEqual([]);
+    expect(state().composition.tracks).toHaveLength(1);
+  });
+
+  it("takes the two keyframes a segment runs between, and nothing else", () => {
+    const id = keyed([1, 2, 3, 4]);
+    state().selectSegment(segmentId({ layerId: id, property: "scale", index: 2 }));
+    state().removeSelectedSegments();
+    expect(keyframes().scale.stops.map((st) => st.v)).toEqual([1, 4]);
+  });
+
+  it("takes a run of neighbouring segments in one step", () => {
+    const id = keyed([1, 2, 3, 4]);
+    state().setSelectedSegments([
+      segmentId({ layerId: id, property: "scale", index: 1 }),
+      segmentId({ layerId: id, property: "scale", index: 2 }),
+    ]);
+    state().removeSelectedSegments();
+    expect(keyframes().scale.stops.map((st) => st.v)).toEqual([4]);
+    state().undo();
+    expect(keyframes().scale.stops.map((st) => st.v)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("takes both axes of a position together", () => {
+    const id = layer().id;
+    state().addKeyframes(id, "position");
+    state().setPositionStops(id, {
+      x: [{ t: 0, v: 1 }, { t: 0.5, v: 2 }, { t: 1, v: 3 }],
+      y: [{ t: 0, v: 4 }, { t: 0.5, v: 5 }, { t: 1, v: 6 }],
+    });
+    state().selectSegment(segmentId({ layerId: id, property: "position", index: 2 }));
+    state().removeSelectedSegments();
+    expect(keyframes().x.stops.map((st) => st.v)).toEqual([1]);
+    expect(keyframes().y.stops.map((st) => st.v)).toEqual([4]);
+  });
+});
+
 describe("centring an element on the frame", () => {
   beforeEach(seed);
 
