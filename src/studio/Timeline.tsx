@@ -15,7 +15,9 @@ import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
-import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
+import { ChevronIcon, GHOST_BTN, LABEL, NumberField } from "./fields";
+import { ModuleIcon, PropIcon } from "./propIcons";
+import { collectKeyframeTimes, nextKeyframe, previousKeyframe } from "./transport";
 import { easeSamples, segmentId, type SegmentRef } from "./segments";
 import { isLinearEase } from "../core/easing";
 import {
@@ -28,6 +30,7 @@ import {
   hasSpan,
   layerName,
   positionSets,
+  removeStop,
   samePart,
   secondsToT,
   slideRange,
@@ -158,6 +161,48 @@ export function Timeline() {
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLSelectElement ||
+        (el instanceof HTMLElement && el.isContentEditable)
+      )
+        return;
+      const store = useStudio.getState();
+      const go = (next: number) => {
+        store.setPlaying(false);
+        const preview = previewRef.current;
+        if (preview) preview.seek(next);
+        else store.setT(next);
+      };
+      const times = () =>
+        collectKeyframeTimes(store.composition.tracks, store.moduleLibrary, store.selectedIds);
+      const key = e.key.toLowerCase();
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (!e.repeat) store.setPlaying(!store.playing);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        go(0);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        go(1);
+      } else if (key === "j") {
+        e.preventDefault();
+        go(previousKeyframe(times(), store.t));
+      } else if (key === "k") {
+        e.preventDefault();
+        go(nextKeyframe(times(), store.t));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useLayoutEffect(() => {
     const scroll = pendingScroll.current;
     pendingScroll.current = null;
@@ -184,11 +229,24 @@ export function Timeline() {
   const frameT = 1 / Math.max(1, Math.round(duration * composition.fps));
   const playheadX = timeToX(t, width);
 
+  const totalFrames = Math.max(1, Math.round(duration * composition.fps));
+  const frameNo = clamp(Math.round(t * totalFrames), 0, totalFrames);
+
+  const keyTimes = useMemo(
+    () => collectKeyframeTimes(composition.tracks, moduleLibrary, selectedIds),
+    [composition.tracks, moduleLibrary, selectedIds],
+  );
+
   /** Every seek goes through the preview, so its clock and the store never diverge. */
   const seek = (next: number) => {
     const preview = previewRef.current;
     if (preview) preview.seek(next);
     else useStudio.getState().setT(next);
+  };
+
+  const jumpTo = (next: number) => {
+    useStudio.getState().setPlaying(false);
+    seek(next);
   };
 
   const scrubTo = (clientX: number) => {
@@ -462,38 +520,96 @@ export function Timeline() {
       onPointerDownCapture={claimKeys}
       onKeyDown={onKeyDown}
     >
+      <div className="flex h-9 shrink-0 items-center gap-2.5 border-b border-border px-2.5">
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            className="transport-btn"
+            aria-label="go to start"
+            title="Go to start (Home)"
+            onClick={() => jumpTo(0)}
+          >
+            <SkipBackIcon />
+          </button>
+          <button
+            type="button"
+            className="transport-btn"
+            aria-label="previous keyframe"
+            title="Previous keyframe (J)"
+            onClick={() => jumpTo(previousKeyframe(keyTimes, t))}
+          >
+            <StepBackIcon />
+          </button>
+          <button
+            type="button"
+            className="transport-btn"
+            aria-label={playing ? "pause" : "play"}
+            aria-pressed={playing}
+            title={playing ? "Pause (Space)" : "Play (Space)"}
+            onClick={() => useStudio.getState().setPlaying(!playing)}
+          >
+            {playing ? <PauseIcon /> : <PlayIcon />}
+          </button>
+          <button
+            type="button"
+            className="transport-btn"
+            aria-label="next keyframe"
+            title="Next keyframe (K)"
+            onClick={() => jumpTo(nextKeyframe(keyTimes, t))}
+          >
+            <StepForwardIcon />
+          </button>
+          <button
+            type="button"
+            className="transport-btn"
+            aria-label="go to end"
+            title="Go to end (End)"
+            onClick={() => jumpTo(1)}
+          >
+            <SkipForwardIcon />
+          </button>
+        </div>
+        <span className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+        <button
+          type="button"
+          className={`transport-btn${loop ? " is-on" : ""}`}
+          aria-label="loop"
+          title="Loop"
+          aria-pressed={loop}
+          onClick={() => useStudio.getState().toggleLoop()}
+        >
+          <LoopIcon />
+        </button>
+        <span className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+        <div className="flex items-baseline gap-1.5">
+          <span className="font-mono text-[13px] font-medium tracking-tight text-text-primary tabular-nums">
+            {frameTimecode(frameNo, composition.fps)}
+          </span>
+          <span className="text-[10px] text-text-muted tabular-nums">
+            {frameNo} / {totalFrames}f
+          </span>
+        </div>
+        <div className="ml-auto">
+          <Readout
+            time={t * duration}
+            duration={duration}
+            unit={unit}
+            onSeek={(seconds) => seek(clamp(seconds / duration, 0, 1))}
+            onToggleUnit={() => setUnit((u) => (u === "s" ? "ms" : "s"))}
+          />
+        </div>
+      </div>
+
       {/* `rtl` is what puts the scrollbar on the gutter's side; children stay `ltr`. */}
       <div className="timeline-body [direction:rtl] [scrollbar-color:#d8d8d8_transparent] [scrollbar-width:thin] [&>*]:[direction:ltr]">
         {/* Pinned inside the scroller, not above it, so the head and the rows are
             measured against the same box and ticks stay over their keyframes. */}
         <div className="timeline-head" style={{ height: RULER_HEIGHT }}>
-          <div className="timeline-transport">
-            <button
-              type="button"
-              className="transport-btn"
-              aria-label={playing ? "pause" : "play"}
-              aria-pressed={playing}
-              onClick={() => useStudio.getState().setPlaying(!playing)}
-            >
-              {playing ? <PauseIcon /> : <PlayIcon />}
-            </button>
-            <button
-              type="button"
-              className={`transport-btn${loop ? " is-on" : ""}`}
-              aria-label="loop"
-              title="Loop"
-              aria-pressed={loop}
-              onClick={() => useStudio.getState().toggleLoop()}
-            >
-              <LoopIcon />
-            </button>
-            <Readout
-              time={t * duration}
-              duration={duration}
-              unit={unit}
-              onSeek={(seconds) => seek(clamp(seconds / duration, 0, 1))}
-              onToggleUnit={() => setUnit((u) => (u === "s" ? "ms" : "s"))}
-            />
+          <div className="flex w-[var(--gutter-w)] shrink-0 items-center gap-2 border-r border-b border-border pr-2 pl-2.5">
+            <span className={LABEL}>Scene</span>
+            <span className="text-[10px] text-text-muted/70 tabular-nums">{rows.length}</span>
+            <span className={`${LABEL} ml-auto`}>Value</span>
+            <span className={`${LABEL} w-[46px] text-center`}>Key</span>
           </div>
 
           <div
@@ -575,6 +691,7 @@ export function Timeline() {
                   hot={hotLink === motionKey(item.block)}
                   onEnter={enterLink}
                   onLeave={leaveLink}
+                  onJump={jumpTo}
                 />
               ),
             )}
@@ -869,6 +986,7 @@ function PropertyLabel({
   hot,
   onEnter,
   onLeave,
+  onJump,
 }: {
   layerId: string;
   block: BlockView;
@@ -885,10 +1003,12 @@ function PropertyLabel({
   hot: boolean;
   onEnter: (key: string) => void;
   onLeave: (key: string) => void;
+  onJump: (t: number) => void;
 }) {
   const selected = useStudio(
     (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
   );
+  const t = useStudio((s) => s.t);
   const target = block.prop;
   const axes: ("x" | "y")[] = target === "position" ? ["x", "y"] : ["x"];
 
@@ -926,6 +1046,38 @@ function PropertyLabel({
     );
   };
 
+  const [from, to] = block.range;
+  const times = block.stops.map((st) => from + st.t * (to - from));
+  const under = times.findIndex((time) => Math.abs(time - t) < SAME_STOP);
+  const before = times.filter((time) => time < t - SAME_STOP).pop();
+  const after = times.find((time) => time > t + SAME_STOP);
+
+  const toggleKey = () => {
+    const store = useStudio.getState();
+    store.setPlaying(false);
+    store.setSelectedKeys([]);
+    if (under < 0) {
+      write("x", read("x"));
+    } else if (block.stops.length <= 1) {
+      store.removeKeyframes(layerId, target);
+    } else if (target === "position") {
+      const track = store.composition.tracks.find((tr) => tr.layer.id === layerId);
+      const position = track ? positionSets(track) : null;
+      if (position)
+        store.setPositionStops(layerId, {
+          x: removeStop(position.x.stops, under),
+          y: removeStop(position.y.stops, under),
+        });
+    } else {
+      store.setKeyframeStops(
+        layerId,
+        target as KeyProp | TrackProp,
+        removeStop(block.stops, under),
+      );
+    }
+    store.sealHistory();
+  };
+
   return (
     <div
       className={`timeline-property-label${selected ? " is-selected" : ""}${
@@ -941,6 +1093,23 @@ function PropertyLabel({
         className={`timeline-branch${last ? " is-last" : ""}`}
         aria-hidden="true"
       />
+      {block.standalone ? (
+        <span
+          className={`grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border ${PROP_COLOR[block.prop]}`}
+          title="Built-in property"
+          aria-hidden="true"
+        >
+          <PropIcon prop={block.prop} />
+        </span>
+      ) : (
+        <span
+          className="grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border border-border bg-text-primary/5 text-text-muted"
+          title="Module — a saved behaviour"
+          aria-hidden="true"
+        >
+          <ModuleIcon />
+        </span>
+      )}
       {/* Never toggles off: that left the element picked and nothing else, so a
           Delete aimed at the property took the element with it. */}
       <button
@@ -975,6 +1144,77 @@ function PropertyLabel({
       ) : block.generative ? null : (
         <span className="ml-auto pr-1 text-[10px] text-text-muted/60">Module</span>
       )}
+      {block.standalone ? (
+        <KeyNav
+          label={block.label}
+          on={under >= 0}
+          color={PROP_TEXT[target]}
+          onPrevious={before === undefined ? undefined : () => onJump(before)}
+          onToggle={toggleKey}
+          onNext={after === undefined ? undefined : () => onJump(after)}
+        />
+      ) : (
+        <span className="w-[46px] shrink-0" aria-hidden="true" />
+      )}
+    </div>
+  );
+}
+
+function KeyNav({
+  label,
+  on,
+  color,
+  onPrevious,
+  onToggle,
+  onNext,
+}: {
+  label: string;
+  on: boolean;
+  color: string;
+  onPrevious: (() => void) | undefined;
+  onToggle: () => void;
+  onNext: (() => void) | undefined;
+}) {
+  const arrow =
+    "grid h-5 w-3 place-items-center rounded-sm text-text-muted hover:text-text-primary disabled:pointer-events-none disabled:text-text-muted/30";
+  return (
+    <div className="flex w-[46px] shrink-0 items-center justify-center">
+      <button
+        type="button"
+        className={arrow}
+        aria-label={`previous ${label} keyframe`}
+        title="Previous keyframe on this property"
+        disabled={!onPrevious}
+        onClick={onPrevious}
+      >
+        <svg width="6" height="8" viewBox="0 0 6 8" aria-hidden="true">
+          <path d="M5 0.5v7L0.5 4z" fill="currentColor" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className={`grid h-5 w-5 place-items-center rounded-sm hover:bg-text-primary/5 ${on ? color : "text-text-muted"}`}
+        aria-label={on ? `remove ${label} keyframe at playhead` : `add ${label} keyframe at playhead`}
+        aria-pressed={on}
+        title={on ? "Remove keyframe at playhead" : "Add keyframe at playhead"}
+        onClick={onToggle}
+      >
+        <span
+          className={`h-[7px] w-[7px] rotate-45 border border-current ${on ? "bg-current" : ""}`}
+        />
+      </button>
+      <button
+        type="button"
+        className={arrow}
+        aria-label={`next ${label} keyframe`}
+        title="Next keyframe on this property"
+        disabled={!onNext}
+        onClick={onNext}
+      >
+        <svg width="6" height="8" viewBox="0 0 6 8" aria-hidden="true">
+          <path d="M1 0.5v7L5.5 4z" fill="currentColor" />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -1689,6 +1929,65 @@ function Readout({
         {unit}
       </button>
     </div>
+  );
+}
+
+function frameTimecode(frame: number, fps: number): string {
+  const rate = Math.max(1, Math.round(fps));
+  const ff = frame % rate;
+  const totalSeconds = Math.floor(frame / rate);
+  const ss = totalSeconds % 60;
+  const mm = Math.floor(totalSeconds / 60) % 60;
+  const hh = Math.floor(totalSeconds / 3600);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(hh)}:${pad(mm)}:${pad(ss)}:${pad(ff)}`;
+}
+
+const TRANSPORT_SVG = {
+  viewBox: "0 0 24 24",
+  width: 14,
+  height: 14,
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+} as const;
+
+function SkipBackIcon() {
+  return (
+    <svg {...TRANSPORT_SVG}>
+      <polygon points="19 20 9 12 19 4 19 20" />
+      <line x1="5" x2="5" y1="19" y2="5" />
+    </svg>
+  );
+}
+
+function StepBackIcon() {
+  return (
+    <svg {...TRANSPORT_SVG}>
+      <line x1="18" x2="18" y1="20" y2="4" />
+      <polygon points="14 20 4 12 14 4 14 20" />
+    </svg>
+  );
+}
+
+function StepForwardIcon() {
+  return (
+    <svg {...TRANSPORT_SVG}>
+      <line x1="6" x2="6" y1="4" y2="20" />
+      <polygon points="10 4 20 12 10 20 10 4" />
+    </svg>
+  );
+}
+
+function SkipForwardIcon() {
+  return (
+    <svg {...TRANSPORT_SVG}>
+      <polygon points="5 4 15 12 5 20 5 4" />
+      <line x1="19" x2="19" y1="5" y2="19" />
+    </svg>
   );
 }
 
