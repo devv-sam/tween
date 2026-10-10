@@ -398,6 +398,31 @@ const patchKeyframes = (
   return { ...track, keyframes: { ...track.keyframes, [prop]: { ...current, ...patch } } };
 };
 
+const dropStops = (
+  track: Track,
+  gone: Map<string, Set<number>>,
+): { track: Track; emptied: boolean } => {
+  let emptied = false;
+  const keyframes = { ...(track.keyframes ?? {}) };
+  for (const [property, indices] of gone) {
+    // Position is two sets sharing every stop time, so they lose the same
+    // keyframes and stay in lockstep.
+    const axes = property === "position" ? ["x", "y"] : [property];
+    for (const axis of axes) {
+      const set = keyframes[axis];
+      if (!set) continue;
+      const kept = set.stops.filter((_, i) => !indices.has(i));
+      if (kept.length === 0) {
+        delete keyframes[axis];
+        emptied = true;
+      } else {
+        keyframes[axis] = { ...set, stops: kept };
+      }
+    }
+  }
+  return { track: { ...track, keyframes }, emptied };
+};
+
 const patchModule = (
   modules: ElementModule[],
   index: number,
@@ -782,6 +807,10 @@ type StudioState = {
   /** The picked keyframes, gone. A property whose last keyframe goes stops carrying
    *  motion — there is no curve left to be the one keyframe of. */
   removeSelectedKeys: () => void;
+  /** The keyframes either side of each picked segment, gone. */
+  removeSelectedSegments: () => void;
+  /** Every keyframe and module on the picked elements, gone. The elements stay. */
+  removeSelectedMotion: () => void;
   toggleLayerLock: (layerId: string) => void;
   setActiveTool: (tool: ActiveTool) => void;
   addShape: (kind: "rect" | "ellipse", x: number, y: number, w: number, h: number) => string;
@@ -2296,24 +2325,9 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       edit(null, (s) => {
         let emptied = false;
         const patched = patchTrack(s.composition, selectedId, (tr) => {
-          const keyframes = { ...(tr.keyframes ?? {}) };
-          for (const [property, indices] of gone) {
-            // Position is two sets sharing every stop time, so they lose the same
-            // keyframes and stay in lockstep.
-            const axes = property === "position" ? ["x", "y"] : [property];
-            for (const axis of axes) {
-              const set = keyframes[axis];
-              if (!set) continue;
-              const kept = set.stops.filter((_, i) => !indices.has(i));
-              if (kept.length === 0) {
-                delete keyframes[axis];
-                emptied = true;
-              } else {
-                keyframes[axis] = { ...set, stops: kept };
-              }
-            }
-          }
-          return { ...tr, keyframes };
+          const dropped = dropStops(tr, gone);
+          emptied = dropped.emptied;
+          return dropped.track;
         });
         return {
           ...patched,
@@ -2322,6 +2336,33 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
           selectedPart: emptied ? null : s.selectedPart,
         };
       });
+    },
+
+    removeSelectedSegments: () => {
+      const refs = get()
+        .selectedSegments.map(parseSegment)
+        .filter((r): r is SegmentRef => r !== null);
+      if (refs.length === 0) return;
+
+      const gone = new Map<string, Map<string, Set<number>>>();
+      for (const ref of refs) {
+        const byProperty = gone.get(ref.layerId) ?? new Map<string, Set<number>>();
+        const held = byProperty.get(ref.property) ?? new Set<number>();
+        held.add(ref.index - 1).add(ref.index);
+        byProperty.set(ref.property, held);
+        gone.set(ref.layerId, byProperty);
+      }
+
+      edit(null, (s) => ({
+        selectedSegments: [],
+        composition: {
+          ...s.composition,
+          tracks: s.composition.tracks.map((tr) => {
+            const mine = gone.get(tr.layer.id);
+            return mine ? dropStops(tr, mine).track : tr;
+          }),
+        },
+      }));
     },
 
     removeSelectedPart: () => {
@@ -2333,6 +2374,22 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         get().removeKeyframes(selectedId, selectedPart.property);
       }
       get().sealHistory();
+    },
+
+    removeSelectedMotion: () => {
+      const stilled = new Set(get().selectedIds);
+      if (stilled.size === 0) return;
+      edit(null, (s) => ({
+        selectedPart: null,
+        selectedKeys: [],
+        selectedSegments: [],
+        composition: {
+          ...s.composition,
+          tracks: s.composition.tracks.map((tr) =>
+            stilled.has(tr.layer.id) ? { ...tr, keyframes: {}, modules: [] } : tr,
+          ),
+        },
+      }));
     },
 
     deleteSelected: () => {

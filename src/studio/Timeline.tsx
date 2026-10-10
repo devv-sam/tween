@@ -16,7 +16,6 @@ import { Preview } from "../render/preview";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
 import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
-import { entryId } from "./keyframeLog";
 import { easeSamples, segmentId, type SegmentRef } from "./segments";
 import { isLinearEase } from "../core/easing";
 import {
@@ -42,6 +41,7 @@ import {
   type BlockView,
   type DesignSize,
   type KeyProp,
+  type KeyTarget,
   type TrackProp,
   type Range,
 } from "./modules";
@@ -428,6 +428,14 @@ export function Timeline() {
     if (!drag.moved) useStudio.getState().setSelectedSegments([]);
   };
 
+  const barPicked = useRef(false);
+
+  const claimKeys = (e: ReactPointerEvent<HTMLDivElement>) => {
+    barPicked.current = false;
+    if (e.target instanceof HTMLInputElement) return;
+    e.currentTarget.focus({ preventScroll: true });
+  };
+
   // Delete here takes away motion, never the element — so the event is stopped even
   // when nothing was picked, or the canvas' handler would find an element to remove.
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -435,13 +443,25 @@ export function Timeline() {
     if (e.target instanceof HTMLInputElement) return;
     e.preventDefault();
     e.stopPropagation();
+    e.currentTarget.focus({ preventScroll: true });
     const store = useStudio.getState();
     if (store.selectedKeys.length > 0) store.removeSelectedKeys();
+    else if (store.selectedSegments.length > 0) store.removeSelectedSegments();
     else if (store.selectedPart) store.removeSelectedPart();
+    else if (barPicked.current) {
+      barPicked.current = false;
+      store.removeSelectedMotion();
+    }
   };
 
   return (
-    <div className="timeline" aria-label="timeline" onKeyDown={onKeyDown}>
+    <div
+      className="timeline outline-none"
+      aria-label="timeline"
+      tabIndex={-1}
+      onPointerDownCapture={claimKeys}
+      onKeyDown={onKeyDown}
+    >
       {/* `rtl` is what puts the scrollbar on the gutter's side; children stay `ltr`. */}
       <div className="timeline-body [direction:rtl] [scrollbar-color:#d8d8d8_transparent] [scrollbar-width:thin] [&>*]:[direction:ltr]">
         {/* Pinned inside the scroller, not above it, so the head and the rows are
@@ -591,6 +611,9 @@ export function Timeline() {
                         selected={selectedIds.includes(row.id)}
                         name={row.name}
                         frame={frameT}
+                        onPick={() => {
+                          barPicked.current = true;
+                        }}
                       />
                     </div>
                     {row.open
@@ -607,7 +630,12 @@ export function Timeline() {
                             onPointerLeave={() => leaveLink(motionKey(block))}
                           >
                             {block.standalone ? (
-                              <KeyframeTrack layerId={row.id} block={block} width={width} />
+                              <KeyframeTrack
+                                layerId={row.id}
+                                block={block}
+                                width={width}
+                                onSeek={seek}
+                              />
                             ) : (
                               <ModuleBlock layerId={row.id} block={block} width={width} />
                             )}
@@ -695,6 +723,18 @@ const blockKey = (block: BlockView): string =>
     ? `keyframes:${block.part.property}`
     : `module:${block.part.index}`;
 
+const entryId = (property: KeyTarget, index: number): string => `${property}:${index}`;
+
+const pickElement = (layerId: string, additive: boolean) => {
+  const store = useStudio.getState();
+  if (additive) {
+    store.toggleSelectedId(layerId);
+    return;
+  }
+  store.select(layerId);
+  store.setSelectedKeys([]);
+};
+
 /**
  * An element's name, in the gutter beside its lane. This is the only place a name is
  * edited: the track already says what the element is called, so double-clicking it is
@@ -776,11 +816,7 @@ function TrackLabel({
           aria-pressed={selected}
           // Shift adds or takes back out, the same as it does on the canvas: the
           // gutter and the frame are two views of one selection.
-          onClick={(e) => {
-            const store = useStudio.getState();
-            if (e.shiftKey) store.toggleSelectedId(layerId);
-            else store.setSelectedIds([layerId]);
-          }}
+          onClick={(e) => pickElement(layerId, e.shiftKey)}
         >
           {name}
         </button>
@@ -911,7 +947,11 @@ function PropertyLabel({
         type="button"
         className="timeline-property-name"
         aria-pressed={selected}
-        onClick={() => useStudio.getState().selectPart(layerId, block.part)}
+        onClick={() => {
+          const store = useStudio.getState();
+          store.selectPart(layerId, block.part);
+          store.setSelectedKeys([]);
+        }}
       >
         {block.label}
       </button>
@@ -958,6 +998,7 @@ function MainBar({
   selected,
   name,
   frame,
+  onPick,
 }: {
   layerId: string;
   blocks: BlockView[];
@@ -966,6 +1007,7 @@ function MainBar({
   name: string;
   /** One frame, as a share of the composition — what a retime steps by. */
   frame: number;
+  onPick: () => void;
 }) {
   const dragRef = useRef<MainDrag | null>(null);
   const span = trackSpan(blocks);
@@ -987,9 +1029,8 @@ function MainBar({
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const store = useStudio.getState();
-    if (e.shiftKey) store.toggleSelectedId(layerId);
-    else store.setSelectedIds([layerId]);
+    pickElement(layerId, e.shiftKey);
+    onPick();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -1167,10 +1208,12 @@ function KeyframeTrack({
   layerId,
   block,
   width,
+  onSeek,
 }: {
   layerId: string;
   block: BlockView;
   width: number;
+  onSeek: (t: number) => void;
 }) {
   const selected = useStudio(
     (s) => s.selectedId === layerId && samePart(s.selectedPart, block.part),
@@ -1304,6 +1347,7 @@ function KeyframeTrack({
         if (id) store.selectSegment(id, e.shiftKey || e.metaKey);
       } else {
         store.selectKey(layerId, entryId(prop, drag.grab.index), e.shiftKey || e.metaKey);
+        onSeek(absolute(drag.start[drag.grab.index].t));
       }
       return;
     }

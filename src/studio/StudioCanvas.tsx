@@ -553,13 +553,16 @@ export function StudioCanvas() {
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        // Narrowest first: a keyframe, then its property, and only then the element.
-        if (selectedKeys.length > 0) {
+        // From the canvas it is the element. Anywhere else, narrowest first: a
+        // keyframe, then its property, and only then the element.
+        const onCanvas =
+          e.target instanceof Node && Boolean(viewportRef.current?.contains(e.target));
+        if (!onCanvas && selectedKeys.length > 0) {
           e.preventDefault();
           removeSelectedKeys();
           return;
         }
-        if (selectedPart) {
+        if (!onCanvas && selectedPart) {
           e.preventDefault();
           removeSelectedPart();
           return;
