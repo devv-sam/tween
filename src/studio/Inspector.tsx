@@ -699,15 +699,15 @@ function ShapeDimsInline({ track, state, cell }: {
   const { layer } = track;
   const src = layer.source;
   if (src.kind !== "rect" && src.kind !== "ellipse") return null;
-  const props = src.props;
+  const size = { width: src.props.width, height: src.props.height };
   const set = (patch: Record<string, unknown>) =>
     useStudio.getState().setShapeProp(layer.id, patch);
 
   return (
     <>
       <div className="mb-1 flex items-center gap-1.5">
-        {cell("scaleX", <NumberField label="W" value={props.width} step={1} min={1} onChange={(v) => set({ width: v })} />)}
-        {cell("scaleY", <NumberField label="H" value={props.height} step={1} min={1} onChange={(v) => set({ height: v })} />)}
+        {cell("scaleX", <SizeField axis="scaleX" track={track} state={state} size={size} />)}
+        {cell("scaleY", <SizeField axis="scaleY" track={track} state={state} size={size} />)}
         <LockButton layerId={layer.id} locked={Boolean(layer.lockAspect)} />
       </div>
       <div className="mb-1 grid grid-cols-2 gap-x-1.5 gap-y-1">
