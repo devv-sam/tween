@@ -1458,6 +1458,19 @@ describe("the scene window's show, lock, solo and order", () => {
     expect(x(b)).toBe(bx + 10);
   });
 
+  it("soloing picks the element, keeping only soloed ones already picked", () => {
+    const [a, b] = two();
+    state().placeElement(asset.id, { x: 600, y: 300 });
+    const c = ids()[2];
+    state().setSelectedIds([a, b]);
+    state().toggleSolo(a);
+    expect(state().selectedIds).toEqual([a, b]);
+    state().toggleSolo(c);
+    expect(state().selectedIds).toEqual([a, c]);
+    state().toggleSolo(c);
+    expect(state().selectedIds).toEqual([a, c]);
+  });
+
   it("reorders the stack, and leaves a locked element where it is", () => {
     const [a, b] = two();
     state().moveTrack(a, 1);

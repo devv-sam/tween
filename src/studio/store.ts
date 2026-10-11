@@ -1191,12 +1191,19 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         })),
       ),
 
-    toggleSolo: (id) =>
-      set((s) => ({
-        soloIds: s.soloIds.includes(id)
-          ? s.soloIds.filter((sid) => sid !== id)
-          : [...s.soloIds, id],
-      })),
+    /** Soloing also picks the element, alongside any soloed ones already picked:
+     *  everything else is faded back and out of reach, so it has no business staying
+     *  in the selection. */
+    toggleSolo: (id) => {
+      const { soloIds, selectedIds, setSelectedIds } = get();
+      if (soloIds.includes(id)) {
+        set({ soloIds: soloIds.filter((sid) => sid !== id) });
+        return;
+      }
+      set({ soloIds: [...soloIds, id] });
+      if (!selectedIds.includes(id))
+        setSelectedIds([...selectedIds.filter((sid) => soloIds.includes(sid)), id]);
+    },
 
     moveTrack: (id, index) => {
       const { tracks } = get().composition;
