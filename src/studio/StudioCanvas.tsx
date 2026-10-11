@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
-import { visibleElements } from "../core/visible";
+import { dimUnsoloed, visibleElements } from "../core/visible";
 import { ensureImage, getCachedImage } from "../render/images";
 import { ClonerGizmo } from "./ClonerGizmo";
 import { runDistance } from "./gizmo";
@@ -25,7 +25,6 @@ import {
   type Box as GroupBox,
 } from "./group";
 import { drawScene } from "../render/canvas2d";
-import { paintComposition } from "../render/paint";
 import {
   PROXY_SIZE,
   benchComposition,
@@ -200,7 +199,7 @@ export function StudioCanvas() {
    * What the frame is showing. The bench borrows it: a module is written against its
    * proxy, and the composition underneath is not what is being worked on.
    */
-  const shown = useMemo(() => visibleElements(composition, soloIds), [composition, soloIds]);
+  const shown = useMemo(() => visibleElements(composition), [composition]);
   const painted = useMemo(
     () => (bench ? benchComposition(bench, composition, frame) : shown),
     [bench, composition, frame, shown],
@@ -212,14 +211,19 @@ export function StudioCanvas() {
     [painted, t, moduleLibrary],
   );
 
-  /** What a click or a marquee can land on: everything drawn, less what is locked. */
+  /** What a click or a marquee can land on: everything drawn, less what is locked
+   *  and, while anything is soloed, less what solo has faded back. */
   const lockedIds = useMemo(
     () => new Set(composition.tracks.filter((tr) => tr.layer.locked).map((tr) => tr.layer.id)),
     [composition],
   );
+  const soloing = scene.some((it) => soloIds.includes(it.id));
   const hittable = useMemo(
-    () => scene.filter((it) => !lockedIds.has(it.id)),
-    [scene, lockedIds],
+    () =>
+      scene.filter(
+        (it) => !lockedIds.has(it.id) && (!soloing || soloIds.includes(it.id)),
+      ),
+    [scene, lockedIds, soloing, soloIds],
   );
 
   const sizeOf = useMemo(() => {
@@ -672,8 +676,8 @@ export function StudioCanvas() {
       if (!img || img.naturalWidth < 1) return undefined;
       return { source: img, width: img.naturalWidth, height: img.naturalHeight };
     };
+    const sc = renderState(painted, t, moduleLibrary);
     if (templateEditMode && selectedId) {
-      const sc = renderState(painted, t, moduleLibrary);
       let seenSource = false;
       for (const item of sc) {
         if (item.id === selectedId) {
@@ -681,10 +685,8 @@ export function StudioCanvas() {
           else item.state = { ...item.state, opacity: item.state.opacity * 0.4 };
         }
       }
-      drawScene(ctx, sc, frame.width, frame.height, imageOf);
-    } else {
-      paintComposition(ctx, painted, t, frame.width, frame.height, moduleLibrary, imageOf);
     }
+    drawScene(ctx, dimUnsoloed(sc, soloIds), frame.width, frame.height, imageOf);
     ctx.restore();
   }, [
     painted,
@@ -700,6 +702,7 @@ export function StudioCanvas() {
     imagesReady,
     templateEditMode,
     selectedId,
+    soloIds,
   ]);
 
   /**
@@ -718,7 +721,8 @@ export function StudioCanvas() {
     for (let i = shown.tracks.length - 1; i >= 0; i--) {
       const { layer } = shown.tracks[i];
       const d = layer.distributor;
-      if (layer.locked || !d || d.type === "none" || d.count <= 1) continue;
+      if (layer.locked || (soloing && !soloIds.includes(layer.id))) continue;
+      if (!d || d.type === "none" || d.count <= 1) continue;
       const away = runDistance(d, layer.base, point);
       if (away !== null && away <= slop) return layer.id;
     }

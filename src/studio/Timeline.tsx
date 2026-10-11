@@ -342,7 +342,9 @@ export function Timeline() {
 
   // Every element, from the moment it is placed. Top row draws last, so the list runs
   // back to front through the stack.
-  const soloing = composition.tracks.some((tr) => soloIds.includes(tr.layer.id));
+  const soloing = composition.tracks.some(
+    (tr) => tr.layer.visible !== false && soloIds.includes(tr.layer.id),
+  );
   const rows = composition.tracks
     .map((track, i) => {
       const trackSrc = track.layer.source;
