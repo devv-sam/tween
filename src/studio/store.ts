@@ -610,8 +610,13 @@ type StudioState = {
    * read against whichever element `selectedId` names — the timeline puts them there
    * and the inspector edits whatever they point at.
    */
-  /** Folded, not expanded: rows show by default, so folding is what is remembered. */
-  collapsedTracks: string[];
+  /** Rows are folded by default, so unfolding is what is remembered. */
+  expandedTracks: string[];
+  /**
+   * Elements soloed in the scene window. Not part of the document: it is not undone
+   * or saved, and a reload starts with nothing soloed.
+   */
+  soloIds: string[];
   selectedKeys: string[];
   /**
    * Which segments are picked out, as `layer|property|index` ids.
@@ -651,6 +656,11 @@ type StudioState = {
   toggleSelectedId: (id: string) => void;
   selectPart: (layerId: string, part: SelectedPart | null) => void;
   toggleTrackExpanded: (layerId: string) => void;
+  toggleVisible: (id: string) => void;
+  toggleLocked: (id: string) => void;
+  toggleSolo: (id: string) => void;
+  /** Move an element to `index` in the stack. Last in the array draws on top. */
+  moveTrack: (id: string, index: number) => void;
   /** Pick a keyframe out on the timeline. `additive` adds to the picked set rather
    *  than replacing it, which is how a bundle is gathered. */
   selectKey: (layerId: string, id: string, additive?: boolean) => void;
@@ -941,7 +951,8 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     selectedIds: [],
     selectedId: null,
     selectedPart: null,
-    collapsedTracks: [],
+    expandedTracks: [],
+    soloIds: [],
     selectedKeys: [],
     selectedSegments: [],
     viewport: { width: 0, height: 0 },
@@ -1159,10 +1170,43 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
 
     toggleTrackExpanded: (layerId) =>
       set((s) => ({
-        collapsedTracks: s.collapsedTracks.includes(layerId)
-          ? s.collapsedTracks.filter((id) => id !== layerId)
-          : [...s.collapsedTracks, layerId],
+        expandedTracks: s.expandedTracks.includes(layerId)
+          ? s.expandedTracks.filter((id) => id !== layerId)
+          : [...s.expandedTracks, layerId],
       })),
+
+    toggleVisible: (id) =>
+      edit(null, (s) =>
+        patchTrack(s.composition, id, (tr) => ({
+          ...tr,
+          layer: { ...tr.layer, visible: tr.layer.visible === false },
+        })),
+      ),
+
+    toggleLocked: (id) =>
+      edit(null, (s) =>
+        patchTrack(s.composition, id, (tr) => ({
+          ...tr,
+          layer: { ...tr.layer, locked: !tr.layer.locked },
+        })),
+      ),
+
+    toggleSolo: (id) =>
+      set((s) => ({
+        soloIds: s.soloIds.includes(id)
+          ? s.soloIds.filter((sid) => sid !== id)
+          : [...s.soloIds, id],
+      })),
+
+    moveTrack: (id, index) => {
+      const { tracks } = get().composition;
+      const from = tracks.findIndex((tr) => tr.layer.id === id);
+      const to = clamp(index, 0, tracks.length - 1);
+      if (from < 0 || from === to || tracks[from].layer.locked) return;
+      const next = [...tracks];
+      next.splice(to, 0, ...next.splice(from, 1));
+      edit(null, (s) => ({ composition: { ...s.composition, tracks: next } }));
+    },
 
     selectKey: (layerId, id, additive = false) =>
       set((s) => {
@@ -1323,7 +1367,9 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         selectedPart: part,
         selectedSegments: [],
         // The new row has to be visible, so a folded element unfolds.
-        collapsedTracks: s.collapsedTracks.filter((id) => id !== layerId),
+        expandedTracks: s.expandedTracks.includes(layerId)
+          ? s.expandedTracks
+          : [...s.expandedTracks, layerId],
         ...patchTrack(s.composition, layerId, (tr) => ({
           ...tr,
           keyframes: { ...tr.keyframes, ...added },
@@ -1775,7 +1821,8 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
      *  from, so applying the same drag twice lands in the same place. */
     moveAnchor: (layerId) => {
       const track = get().composition.tracks.find((tr) => tr.layer.id === layerId);
-      if (!track) return null;
+      // No hold on a locked element, so nudges and group gestures pass it over.
+      if (!track || track.layer.locked) return null;
       return {
         base: { x: track.layer.base.x, y: track.layer.base.y },
         driven: positionDrivers(track),
@@ -2138,7 +2185,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         return {
           composition,
           // The rows that just gained motion open, the same way one element's does.
-          collapsedTracks: s.collapsedTracks.filter((id) => !opened.includes(id)),
+          expandedTracks: [...new Set([...s.expandedTracks, ...opened])],
         };
       });
 

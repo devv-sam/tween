@@ -1,5 +1,6 @@
 import type { Composition, ModuleAsset } from "../core/types";
 import { renderState } from "../core/renderState";
+import { visibleElements } from "../core/visible";
 import { drawScene, type ImageLookup } from "../render/canvas2d";
 
 /** The coordinate space a composition was authored in. */
@@ -28,6 +29,6 @@ export function renderFrame(
   const paint = ctx as CanvasRenderingContext2D;
   paint.save();
   paint.scale(w / from.width, h / from.height);
-  drawScene(paint, renderState(comp, t, library), from.width, from.height, imageOf, comp.background);
+  drawScene(paint, renderState(visibleElements(comp), t, library), from.width, from.height, imageOf, comp.background);
   paint.restore();
 }

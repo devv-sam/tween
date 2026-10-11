@@ -32,7 +32,7 @@ const seed = (): string => {
     viewport: { width: 800, height: 600 },
     selectedId: null,
     selectedPart: null,
-    collapsedTracks: [],
+    expandedTracks: [],
     selectedKeys: [],
   });
   useStudio.getState().placeElement(asset.id, { x: 200, y: 200 });

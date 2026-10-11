@@ -7,8 +7,10 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
-import type { Transform } from "../core/types";
+import { Circle, Eye, EyeOff, Image, Lock, LockOpen, Shapes, Square, Type } from "lucide-react";
+import type { LayerSource, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
 import { clamp } from "../core/math";
 import { renderState } from "../core/renderState";
@@ -18,6 +20,7 @@ import { designSizeOf, useStudio } from "./store";
 import { ChevronIcon, GHOST_BTN, LABEL, NumberField } from "./fields";
 import { ModuleIcon, PropIcon } from "./propIcons";
 import { collectKeyframeTimes, nextKeyframe, previousKeyframe } from "./transport";
+import { landingIndex, slotAt, type Span } from "./reorder";
 import { easeSamples, segmentId, type SegmentRef } from "./segments";
 import { isLinearEase } from "../core/easing";
 import {
@@ -84,7 +87,8 @@ export function Timeline() {
   const t = useStudio((s) => s.t);
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);
-  const collapsed = useStudio((s) => s.collapsedTracks);
+  const expanded = useStudio((s) => s.expandedTracks);
+  const soloIds = useStudio((s) => s.soloIds);
   const selectedIds = useStudio((s) => s.selectedIds);
   const zoom = useStudio((s) => s.timelineZoom);
 
@@ -336,7 +340,9 @@ export function Timeline() {
     return out;
   }, [composition, t, moduleLibrary]);
 
-  // Only what animates: being on the canvas is not a reason to hold a lane here.
+  // Every element, from the moment it is placed. Top row draws last, so the list runs
+  // back to front through the stack.
+  const soloing = composition.tracks.some((tr) => soloIds.includes(tr.layer.id));
   const rows = composition.tracks
     .map((track, i) => {
       const trackSrc = track.layer.source;
@@ -352,10 +358,10 @@ export function Timeline() {
         size: designSizeOf(assets, track.layer),
         given: track.layer.name ?? "",
         blocks,
-        open: blocks.length > 0 && !collapsed.includes(track.layer.id),
+        open: blocks.length > 0 && expanded.includes(track.layer.id),
       };
     })
-    .filter((row) => row.blocks.length > 0);
+    .reverse();
 
   // Which curves are running in lockstep, read back off the composition every render
   // rather than recorded when they were made. Cheap enough at this size, and it can
@@ -484,6 +490,75 @@ export function Timeline() {
     // A press on empty track space that went nowhere is how a segment selection is
     // let go of.
     if (!drag.moved) useStudio.getState().setSelectedSegments([]);
+  };
+
+  const gutterRef = useRef<HTMLDivElement>(null);
+  const reorderRef = useRef<{ id: string; pointerId: number; y0: number } | null>(null);
+  const [grabbed, setGrabbed] = useState<string | null>(null);
+  /** Where a dragged row would land: the stack index, and the gap's height in the
+   *  gutter for the line that marks it. Null while it would land where it is. */
+  const [drop, setDrop] = useState<{ to: number; y: number } | null>(null);
+
+  // A press on an element row is a click until it travels; past the slop it becomes a
+  // reorder, and the gutter takes the pointer so the click never lands on the name.
+  const onGrab = (e: ReactPointerEvent<HTMLDivElement>, id: string) => {
+    if (e.button !== 0 || e.target instanceof HTMLInputElement) return;
+    const track = composition.tracks.find((tr) => tr.layer.id === id);
+    if (!track || track.layer.locked) return;
+    reorderRef.current = { id, pointerId: e.pointerId, y0: e.clientY };
+  };
+
+  const onReorderMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = reorderRef.current;
+    const gutterEl = gutterRef.current;
+    if (!drag || drag.pointerId !== e.pointerId || !gutterEl) return;
+    if (e.buttons === 0) {
+      endReorder(e);
+      return;
+    }
+    if (grabbed === null) {
+      if (Math.abs(e.clientY - drag.y0) < DRAG_SLOP) return;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        reorderRef.current = null;
+        return;
+      }
+      setGrabbed(drag.id);
+    }
+    // One span per element, its open property rows included, so a gap never falls
+    // between an element and its own properties.
+    const origin = gutterEl.getBoundingClientRect().top;
+    const spans: Span[] = rows.map(() => ({ top: Infinity, bottom: -Infinity }));
+    const at = new Map(rows.map((row, i) => [row.id, i]));
+    for (const el of gutterEl.querySelectorAll<HTMLElement>("[data-row]")) {
+      const i = at.get(el.dataset.row ?? "");
+      if (i === undefined) continue;
+      const box = el.getBoundingClientRect();
+      spans[i].top = Math.min(spans[i].top, box.top - origin);
+      spans[i].bottom = Math.max(spans[i].bottom, box.bottom - origin);
+    }
+    const slot = slotAt(spans, e.clientY - origin);
+    const to = landingIndex(at.get(drag.id) ?? 0, slot);
+    const gap = slot < spans.length ? spans[slot].top : spans[spans.length - 1].bottom;
+    // Centred on the gap, except at the top, where half of it would hide under the head.
+    setDrop(to === null ? null : { to, y: Math.max(0, gap - 1) });
+  };
+
+  const endReorder = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = reorderRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    reorderRef.current = null;
+    if (grabbed === null) return;
+    setGrabbed(null);
+    setDrop(null);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    // Cancelled drags land nowhere. Rows run top-down, the stack bottom-up.
+    if (drop && e.type === "pointerup") {
+      useStudio.getState().moveTrack(drag.id, rows.length - 1 - drop.to);
+    }
   };
 
   const barPicked = useRef(false);
@@ -665,7 +740,13 @@ export function Timeline() {
         </div>
 
         <div className="timeline-rows">
-          <div className="timeline-gutter">
+          <div
+            className="timeline-gutter relative"
+            ref={gutterRef}
+            onPointerMove={onReorderMove}
+            onPointerUp={endReorder}
+            onPointerCancel={endReorder}
+          >
             {gutter.map((item, i) =>
               item.block === null ? (
                 <TrackLabel
@@ -673,10 +754,18 @@ export function Timeline() {
                   layerId={item.row.id}
                   name={item.row.name}
                   given={item.row.given}
+                  kind={item.row.track.layer.source.kind}
+                  value={firstValue(item.row.blocks, states.get(item.row.id), item.row.size)}
                   blocks={item.row.blocks.length}
                   open={item.row.open}
                   selected={selectedIds.includes(item.row.id)}
+                  visible={item.row.track.layer.visible !== false}
+                  locked={Boolean(item.row.track.layer.locked)}
+                  soloed={soloIds.includes(item.row.id)}
+                  dimmed={soloing && !soloIds.includes(item.row.id)}
+                  grabbed={grabbed === item.row.id}
                   rail={caps[i]}
+                  onGrab={(e) => onGrab(e, item.row.id)}
                 />
               ) : (
                 <PropertyLabel
@@ -695,6 +784,13 @@ export function Timeline() {
                 />
               ),
             )}
+            {drop ? (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 z-[3] h-0.5 bg-accent"
+                style={{ top: drop.y }}
+              />
+            ) : null}
           </div>
 
           <div
@@ -862,20 +958,39 @@ function TrackLabel({
   layerId,
   name,
   given,
+  kind,
+  value,
   blocks,
   open,
   selected,
+  visible,
+  locked,
+  soloed,
+  dimmed,
+  grabbed,
   rail,
+  onGrab,
 }: {
   layerId: string;
   name: string;
   given: string;
+  kind: LayerSource["kind"];
+  /** The first animated property at the playhead, or empty when nothing animates. */
+  value: string;
   blocks: number;
   open: boolean;
   selected: boolean;
+  visible: boolean;
+  locked: boolean;
+  soloed: boolean;
+  /** Something else is soloed, so this one is off the canvas for now. */
+  dimmed: boolean;
+  /** Being dragged to a new place in the stack. */
+  grabbed: boolean;
   /** Where this row sits in the run of elements it runs alongside, or null when it
    *  runs alone. */
   rail: RailCap | null;
+  onGrab: (e: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   /** A module hovering over the row, so the drop target is visible before release. */
@@ -889,13 +1004,23 @@ function TrackLabel({
     useStudio.getState().sealHistory();
   };
 
+  const faded = !visible || dimmed ? "opacity-40" : "";
+
   return (
     <div
-      className={`timeline-track-label${selected ? " is-selected" : ""}${
-        over ? " is-drop" : ""
-      }`}
+      data-row={layerId}
+      className={`relative flex items-center gap-0.5 overflow-hidden border-t border-b border-t-border border-b-border/60 pr-2 pl-1 text-[11px] whitespace-nowrap text-text-primary first:border-t-0 ${
+        over
+          ? "bg-accent/10 shadow-[inset_0_0_0_1px_var(--color-accent)]"
+          : grabbed
+            ? "bg-accent/10"
+            : selected
+              ? "bg-accent/[0.06]"
+              : "bg-text-primary/[0.04]"
+      } ${locked ? "" : "cursor-grab active:cursor-grabbing"}`}
       style={{ height: TRACK_HEIGHT }}
       title={draft === null ? "Double-click to rename" : undefined}
+      onPointerDown={onGrab}
       onDoubleClick={() => setDraft(given)}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(MODULE_DRAG)) return;
@@ -913,9 +1038,36 @@ function TrackLabel({
       }}
     >
       <Rail cap={rail} />
+      <RowToggle
+        on={soloed}
+        title="Solo"
+        label={`solo ${name}`}
+        onClick={() => useStudio.getState().toggleSolo(layerId)}
+      >
+        <SoloIcon on={soloed} />
+      </RowToggle>
+      <RowToggle
+        on={!visible}
+        title="Show / Hide"
+        label={`${visible ? "hide" : "show"} ${name}`}
+        onClick={() => useStudio.getState().toggleVisible(layerId)}
+      >
+        {visible ? <Eye size={12} /> : <EyeOff size={12} />}
+      </RowToggle>
+      <RowToggle
+        on={locked}
+        title="Lock / Unlock"
+        label={`${locked ? "unlock" : "lock"} ${name}`}
+        onClick={() => useStudio.getState().toggleLocked(layerId)}
+      >
+        {locked ? <Lock size={12} /> : <LockOpen size={12} />}
+      </RowToggle>
       <button
         type="button"
-        className={`timeline-twisty${open ? " is-open" : ""}`}
+        className={`grid h-4 w-4 shrink-0 cursor-pointer place-items-center rounded-[3px] text-text-muted transition-transform duration-[120ms] hover:bg-text-primary/5 hover:text-text-primary disabled:invisible ${
+          open ? "rotate-90" : ""
+        }`}
+        disabled={blocks === 0}
         aria-expanded={open}
         aria-label={
           open
@@ -926,10 +1078,13 @@ function TrackLabel({
       >
         <ChevronIcon />
       </button>
+      <span className={`grid w-4 shrink-0 place-items-center text-text-muted ${faded}`} aria-hidden="true">
+        <KindIcon kind={kind} />
+      </span>
       {draft === null ? (
         <button
           type="button"
-          className="timeline-track-name"
+          className={`min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent p-0 pl-1 text-left text-[11px] font-medium ${locked ? "text-text-muted" : "text-inherit"} ${faded}`}
           aria-pressed={selected}
           // Shift adds or takes back out, the same as it does on the canvas: the
           // gutter and the frame are two views of one selection.
@@ -954,16 +1109,88 @@ function TrackLabel({
           onFocus={(e) => e.currentTarget.select()}
         />
       )}
-      {!open && draft === null ? (
-        <span
-          className="timeline-track-count"
-          title={`${blocks} ${blocks === 1 ? "property" : "properties"}`}
-        >
-          {blocks}
-        </span>
-      ) : null}
+      <span className={`shrink-0 pl-1 text-[10px] text-text-muted tabular-nums ${faded}`}>
+        {value}
+      </span>
+      <span className="w-[46px] shrink-0" aria-hidden="true" />
     </div>
   );
+}
+
+function RowToggle({
+  on,
+  title,
+  label,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  title: string;
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={label}
+      aria-pressed={on}
+      className={`grid h-[18px] w-[18px] shrink-0 cursor-pointer place-items-center rounded-[3px] hover:bg-text-primary/5 hover:text-text-primary ${
+        on ? "text-text-primary" : "text-text-muted/50"
+      }`}
+      // A toggle is not a grab, so pressing one never starts a reorder.
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SoloIcon({ on }: { on: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.25" />
+      {on ? <circle cx="6" cy="6" r="2.75" fill="currentColor" /> : null}
+    </svg>
+  );
+}
+
+function KindIcon({ kind }: { kind: LayerSource["kind"] }) {
+  if (kind === "rect") return <Square size={12} />;
+  if (kind === "ellipse") return <Circle size={12} />;
+  if (kind === "image") return <Image size={12} />;
+  if (kind === "text") return <Type size={12} />;
+  return <Shapes size={12} />;
+}
+
+/** What a property reads at the playhead, in the units the inspector shows. */
+function readProp(
+  target: KeyTarget,
+  state: Transform | undefined,
+  size: DesignSize | undefined,
+  axis: "x" | "y",
+): number {
+  if (!state) return 0;
+  if (target === "position") return axis === "x" ? state.x : state.y;
+  return toDisplay(target, baseValue(state, target as KeyProp), size);
+}
+
+/** The element row's readout: its first keyframed property, as the property row shows it. */
+function firstValue(
+  blocks: BlockView[],
+  state: Transform | undefined,
+  size: DesignSize | undefined,
+): string {
+  const block = blocks.find((b) => b.standalone);
+  if (!block || !state) return "";
+  const show = (axis: "x" | "y") => {
+    const v = readProp(block.prop, state, size, axis);
+    return PROP_STEP[block.prop] < 1 ? v.toFixed(2) : String(Math.round(v));
+  };
+  return block.prop === "position" ? `${show("x")}, ${show("y")}` : show("x");
 }
 
 /**
@@ -1014,11 +1241,7 @@ function PropertyLabel({
 
   /** What the property reads at the playhead — the curve's own answer, so the row
    *  agrees with the frame on the canvas. */
-  const read = (axis: "x" | "y"): number => {
-    if (!state) return 0;
-    if (target === "position") return axis === "x" ? state.x : state.y;
-    return toDisplay(target, baseValue(state, target as KeyProp), size);
-  };
+  const read = (axis: "x" | "y"): number => readProp(target, state, size, axis);
 
   /** One write for both jobs: the edited axis takes the new value and every other
    *  axis takes what it already reads, which is what keeps a position in lockstep. */
@@ -1080,6 +1303,7 @@ function PropertyLabel({
 
   return (
     <div
+      data-row={layerId}
       className={`timeline-property-label${selected ? " is-selected" : ""}${
         hot ? " is-linked-hot" : ""
       }`}

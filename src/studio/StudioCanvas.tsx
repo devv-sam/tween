@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { SceneItem, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
+import { visibleElements } from "../core/visible";
 import { ensureImage, getCachedImage } from "../render/images";
 import { ClonerGizmo } from "./ClonerGizmo";
 import { runDistance } from "./gizmo";
@@ -162,6 +163,7 @@ export function StudioCanvas() {
   const composition = useStudio((s) => s.composition);
   const moduleLibrary = useStudio((s) => s.moduleLibrary);
   const bench = useStudio((s) => s.bench);
+  const soloIds = useStudio((s) => s.soloIds);
   const pendingAttach = useStudio((s) => s.pendingAttach);
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
@@ -198,15 +200,26 @@ export function StudioCanvas() {
    * What the frame is showing. The bench borrows it: a module is written against its
    * proxy, and the composition underneath is not what is being worked on.
    */
+  const shown = useMemo(() => visibleElements(composition, soloIds), [composition, soloIds]);
   const painted = useMemo(
-    () => (bench ? benchComposition(bench, composition, frame) : composition),
-    [bench, composition, frame],
+    () => (bench ? benchComposition(bench, composition, frame) : shown),
+    [bench, composition, frame, shown],
   );
 
   /** Evaluated scene, for hit testing and selection chrome. Painting evaluates its own. */
   const scene = useMemo(
     () => renderState(painted, t, moduleLibrary),
     [painted, t, moduleLibrary],
+  );
+
+  /** What a click or a marquee can land on: everything drawn, less what is locked. */
+  const lockedIds = useMemo(
+    () => new Set(composition.tracks.filter((tr) => tr.layer.locked).map((tr) => tr.layer.id)),
+    [composition],
+  );
+  const hittable = useMemo(
+    () => scene.filter((it) => !lockedIds.has(it.id)),
+    [scene, lockedIds],
   );
 
   const sizeOf = useMemo(() => {
@@ -702,10 +715,10 @@ export function StudioCanvas() {
    */
   const runAt = (point: Point): string | null => {
     const slop = RUN_HIT / Math.max(scale, 1e-6);
-    for (let i = composition.tracks.length - 1; i >= 0; i--) {
-      const { layer } = composition.tracks[i];
+    for (let i = shown.tracks.length - 1; i >= 0; i--) {
+      const { layer } = shown.tracks[i];
       const d = layer.distributor;
-      if (!d || d.type === "none" || d.count <= 1) continue;
+      if (layer.locked || !d || d.type === "none" || d.count <= 1) continue;
       const away = runDistance(d, layer.base, point);
       if (away !== null && away <= slop) return layer.id;
     }
@@ -715,7 +728,7 @@ export function StudioCanvas() {
   /** The listener below is attached once; this keeps it looking at the scene as it
    *  is now rather than the one it closed over. */
   const pickRef = useRef<(p: Point) => string | null>(() => null);
-  pickRef.current = (p) => hitTest(scene, sizeOf, p);
+  pickRef.current = (p) => hitTest(hittable, sizeOf, p);
 
   const screenAt = (e: ReactPointerEvent<HTMLDivElement>): Point => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -746,6 +759,7 @@ export function StudioCanvas() {
       handle: Handle | null,
       near: Handle | null = null,
     ) => {
+      if (lockedIds.has(item.id)) return false;
       const base = baseOf(item.id);
       if (!base) return false;
       const track = useStudio
@@ -840,7 +854,7 @@ export function StudioCanvas() {
 
     const store = useStudio.getState();
     const picked = store.selectedIds;
-    const id = hitTest(scene, sizeOf, point) ?? runAt(point);
+    const id = hitTest(hittable, sizeOf, point) ?? runAt(point);
 
     // Nothing under the pointer: this is a rectangle being drawn, not a move. The
     // selection is left alone until the release says what the rectangle caught — a
@@ -921,11 +935,11 @@ export function StudioCanvas() {
       }
       if (clonerGroup) {
         const point = screenToComposition(screen, viewport, frame, view);
-        const under = hitTest(scene, sizeOf, point) ?? runAt(point);
+        const under = hitTest(hittable, sizeOf, point) ?? runAt(point);
         setCursor(under === selectedId ? "move" : null);
         return;
       }
-      if (!selected) {
+      if (!selected || lockedIds.has(selected.item.id)) {
         setCursor(null);
         return;
       }
@@ -1053,7 +1067,7 @@ export function StudioCanvas() {
    */
   const onDoubleClick = (e: ReactPointerEvent<HTMLDivElement>) => {
     const point = screenToComposition(screenAt(e), viewport, frame, view);
-    const id = hitTest(scene, sizeOf, point);
+    const id = hitTest(hittable, sizeOf, point);
     if (!id) {
       useStudio.getState().resetZoom();
       return;
@@ -1089,7 +1103,7 @@ export function StudioCanvas() {
     };
     const seen = new Set<string>();
     const caught: string[] = [];
-    for (const item of scene) {
+    for (const item of hittable) {
       if (seen.has(item.id)) continue;
       const size = sizeOf(item);
       if (size && overlaps(boundsOf(item.state, size), over)) {
@@ -1436,7 +1450,7 @@ export function StudioCanvas() {
               points={chrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
             />
             {/* Corners only. Sides stay draggable — they just have no drawn handle. */}
-            {CORNERS.map((k) => {
+            {lockedIds.has(selected.item.id) ? null : CORNERS.map((k) => {
               const p = chrome.handles[k];
               return (
                 <rect
