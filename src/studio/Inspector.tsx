@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Lock } from "lucide-react";
 import type { FillDef, StrokeDef, Track, Transform } from "../core/types";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
@@ -89,12 +90,31 @@ function ElementPanels({
   selectedIds: string[];
 }) {
   const segments = useStudio((s) => s.selectedSegments);
+  const tracks = useStudio((s) => s.composition.tracks);
+  // A locked element in a mixed selection is left out of what the shared panel writes.
+  const editable = selectedIds.filter(
+    (id) => !tracks.find((tr) => tr.layer.id === id)?.layer.locked,
+  );
   return (
     <>
       <Toolbar />
       <CompositionPanel />
-      {track ? <ElementPanel track={track} index={index} /> : null}
-      {selectedIds.length > 1 ? <SelectionPanel ids={selectedIds} /> : null}
+      {track?.layer.locked ? (
+        <>
+          <p className={`${SECTION} flex items-center gap-1.5 ${LABEL}`}>
+            <Lock size={11} aria-hidden="true" />
+            Locked
+          </p>
+          {/* Read-only: `disabled` covers the inputs, and the pointer block covers the
+              drag-to-scrub fields that never check it. */}
+          <fieldset disabled className="pointer-events-none m-0 min-w-0 border-0 p-0 opacity-60">
+            <ElementPanel track={track} index={index} />
+          </fieldset>
+        </>
+      ) : track ? (
+        <ElementPanel track={track} index={index} />
+      ) : null}
+      {selectedIds.length > 1 && editable.length > 0 ? <SelectionPanel ids={editable} locked={selectedIds.length - editable.length} /> : null}
       {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
     </>
   );
@@ -382,7 +402,7 @@ function ElementPanel({ track, index }: { track: Track; index: number }) {
  * thing with keyframes of its own. There is still no keyframe log here: a stop
  * belongs to one element's curve, and there is no one curve to list.
  */
-function SelectionPanel({ ids }: { ids: string[] }) {
+function SelectionPanel({ ids, locked = 0 }: { ids: string[]; locked?: number }) {
   const composition = useStudio((s) => s.composition);
   const t = useStudio((s) => s.t);
   // Re-read whenever the frame or the selection changes: what the fields report is
@@ -423,7 +443,9 @@ function SelectionPanel({ ids }: { ids: string[] }) {
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>{ids.length} elements selected</p>
+      <p className={`${LABEL} mb-2`}>
+        {ids.length + locked} elements selected{locked > 0 ? `, ${locked} locked` : ""}
+      </p>
 
       {/* Position is one property with two fields here too, and one diamond keys the
           pair. The axes are not split apart: that is a per-element choice, and the

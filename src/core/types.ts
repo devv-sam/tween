@@ -126,6 +126,10 @@ export interface Layer {
    *  asks for two, and the two axes are kept in lockstep while it is. */
   separatePosition?: boolean;
   distributor?: Distributor;
+  /** Undefined reads as true. Hidden elements are left out of the frame and exports. */
+  visible?: boolean;
+  /** Still drawn, but not selectable or editable on the canvas or in the inspector. */
+  locked?: boolean;
 }
 
 /**

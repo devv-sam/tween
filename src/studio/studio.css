@@ -123,7 +123,7 @@ body {
    and drawer stay clear of it. */
 .timeline {
   /* Head and rows must agree exactly, or ticks stop lining up with keyframes. */
-  --gutter-w: 280px;
+  --gutter-w: 320px;
   height: 264px;
   flex-shrink: 0;
   display: flex;
@@ -203,50 +203,6 @@ body {
   border-right: 1px solid var(--color-border);
 }
 
-.timeline-track-label {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 8px 0 4px;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--color-border) 60%, transparent);
-  background: color-mix(in srgb, var(--color-text-primary) 4%, transparent);
-  font-size: 11px;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.timeline-track-label:first-of-type {
-  border-top: 0;
-}
-
-.timeline-twisty {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: transform 120ms ease;
-}
-
-.timeline-twisty:hover {
-  background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
-  color: var(--color-text-primary);
-}
-
-.timeline-twisty.is-open {
-  transform: rotate(90deg);
-}
-
 /* Indented past the element's chevron, so the name starts inside the one above. */
 .timeline-property-label {
   position: relative;
@@ -305,39 +261,6 @@ body {
 
 .timeline-property-label.is-selected {
   background: color-mix(in srgb, var(--color-accent) 6%, transparent);
-}
-
-/* A module is over this row and will land on it. */
-.timeline-track-label.is-drop {
-  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
-  box-shadow: inset 0 0 0 1px var(--color-accent);
-}
-
-/* Which element is being worked on, said quietly. The property row's own blue is
-   stronger, so the two read apart: one is the element, one is the property. */
-.timeline-track-label.is-selected {
-  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
-}
-
-.timeline-track-label.is-selected .timeline-track-name {
-  color: var(--color-text-primary);
-  font-weight: 500;
-}
-
-.timeline-track-name {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: 11px;
-  font-weight: 500;
-  color: inherit;
-  text-align: left;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
 .timeline-property-name {
@@ -515,19 +438,6 @@ body {
 
 .timeline-lane.is-property.is-linked-hot {
   background: #eef0ff;
-}
-
-.timeline-track-count {
-  flex-shrink: 0;
-  min-width: 15px;
-  padding: 1px 4px;
-  border-radius: 7px;
-  background: var(--color-border);
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.3;
-  text-align: center;
-  color: var(--color-text-muted);
 }
 
 /* Two pieces placed by the same x: the grab rides the pinned head, the line runs

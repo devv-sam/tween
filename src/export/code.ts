@@ -1,5 +1,6 @@
 import type { Composition, ModuleAsset, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
+import { visibleElements } from "../core/visible";
 
 /**
  * What an exported layer is made of, when it is made of something.
@@ -18,6 +19,7 @@ export function exportCode(
   /** Markup per layer id. A layer with no entry is drawn as the standing box. */
   content: Record<string, LayerContent> = {},
 ): string {
+  comp = visibleElements(comp);
   const layers = comp.tracks.map((tr) => tr.layer);
   const perLayer: Record<string, { offset: number; state: Transform }[]> = {};
   for (const l of layers) perLayer[l.id] = [];

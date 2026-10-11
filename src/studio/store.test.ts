@@ -24,7 +24,7 @@ const seed = () => {
     viewport: { width: 800, height: 600 },
     selectedId: null,
     selectedPart: null,
-    collapsedTracks: [],
+    expandedTracks: [],
     selectedKeys: [],
     selectedSegments: [],
   });
@@ -326,13 +326,13 @@ describe("what the timeline has open and picked", () => {
 
   const state = () => useStudio.getState();
 
-  it("folds an element's property rows away and brings them back", () => {
+  it("opens an element's property rows and folds them away again", () => {
     const id = layer().id;
-    expect(state().collapsedTracks).toEqual([]);
+    expect(state().expandedTracks).toEqual([]);
     state().toggleTrackExpanded(id);
-    expect(state().collapsedTracks).toEqual([id]);
+    expect(state().expandedTracks).toEqual([id]);
     state().toggleTrackExpanded(id);
-    expect(state().collapsedTracks).toEqual([]);
+    expect(state().expandedTracks).toEqual([]);
   });
 
   it("picks one keyframe, and unpicks it when it is picked again", () => {
@@ -373,7 +373,7 @@ describe("what the timeline has open and picked", () => {
     state().setLayerBase(id, { rotation: 45 });
     state().sealHistory();
     state().undo();
-    expect(state().collapsedTracks).toEqual([id]);
+    expect(state().expandedTracks).toEqual([id]);
     expect(state().selectedKeys).toEqual(["scale:0"]);
   });
 });
@@ -1192,9 +1192,8 @@ describe("keying a property across a selection", () => {
 
   it("opens the rows that gained motion", () => {
     const ids = two();
-    for (const id of ids) state().toggleTrackExpanded(id);
     state().keySelection(ids, "rotation");
-    expect(state().collapsedTracks).toEqual([]);
+    expect(state().expandedTracks).toEqual(ids);
   });
 
   it("leaves the selection where it was", () => {
@@ -1407,5 +1406,77 @@ describe("picking the span between two keyframes", () => {
     const id = keyed();
     state().setSegmentEasing([`${id}|rotation|9`, "nonsense"], PRESETS["ease in"]);
     expect(stopsOf("rotation").every((s) => s.ease === undefined)).toBe(true);
+  });
+});
+
+describe("the scene window's show, lock, solo and order", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const ids = () => state().composition.tracks.map((tr) => tr.layer.id);
+  const two = () => {
+    state().placeElement(asset.id, { x: 400, y: 300 });
+    return ids();
+  };
+
+  it("hides and shows an element, as one undoable step each", () => {
+    const [a] = two();
+    state().toggleVisible(a);
+    expect(layer().visible).toBe(false);
+    state().toggleVisible(a);
+    expect(layer().visible).toBe(true);
+    state().undo();
+    expect(layer().visible).toBe(false);
+  });
+
+  it("locks and unlocks", () => {
+    const [a] = two();
+    state().toggleLocked(a);
+    expect(layer().locked).toBe(true);
+    state().toggleLocked(a);
+    expect(layer().locked).toBe(false);
+  });
+
+  it("solo adds to the set rather than replacing it, and stays out of history", () => {
+    const [a, b] = two();
+    state().toggleSolo(a);
+    state().toggleSolo(b);
+    expect(state().soloIds).toEqual([a, b]);
+    state().toggleSolo(a);
+    expect(state().soloIds).toEqual([b]);
+    expect(state().history.past).toHaveLength(1);
+  });
+
+  it("nudges and group moves pass a locked element over", () => {
+    const [a, b] = two();
+    state().toggleLocked(a);
+    state().setSelectedIds([a, b]);
+    const x = (id: string) => state().composition.tracks.find((tr) => tr.layer.id === id)!.layer.base.x;
+    const [ax, bx] = [x(a), x(b)];
+    state().nudgeSelected(10, 0);
+    expect(x(a)).toBe(ax);
+    expect(x(b)).toBe(bx + 10);
+  });
+
+  it("soloing picks the element, keeping only soloed ones already picked", () => {
+    const [a, b] = two();
+    state().placeElement(asset.id, { x: 600, y: 300 });
+    const c = ids()[2];
+    state().setSelectedIds([a, b]);
+    state().toggleSolo(a);
+    expect(state().selectedIds).toEqual([a, b]);
+    state().toggleSolo(c);
+    expect(state().selectedIds).toEqual([a, c]);
+    state().toggleSolo(c);
+    expect(state().selectedIds).toEqual([a, c]);
+  });
+
+  it("reorders the stack, and leaves a locked element where it is", () => {
+    const [a, b] = two();
+    state().moveTrack(a, 1);
+    expect(ids()).toEqual([b, a]);
+    state().toggleLocked(b);
+    state().moveTrack(b, 1);
+    expect(ids()).toEqual([b, a]);
   });
 });
