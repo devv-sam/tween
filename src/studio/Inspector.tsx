@@ -605,6 +605,7 @@ function ElementSection({
   activeKeyframes: KeyTarget | null;
 }) {
   const assets = useStudio((s) => s.assets);
+  useStudio((s) => s.fontTick);
   const { layer } = track;
   const layerSrc = layer.source;
   const asset =

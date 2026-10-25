@@ -1,5 +1,7 @@
 import * as fontkit from "fontkit";
 import type { Font } from "fontkit";
+import { setCharMeasurer } from "../core/distribute";
+import { layoutText } from "./textLayout";
 
 const files = new Map<string, Record<string, string>>();
 const cache = new Map<string, Font>();
@@ -66,3 +68,17 @@ export function parseFont(bytes: Uint8Array, weight: number): Font {
   const font = "fonts" in parsed ? parsed.fonts[0] : parsed;
   return font.variationAxes.wght ? font.getVariation({ wght: weight }) : font;
 }
+
+setCharMeasurer((src) => {
+  const font = cache.get(keyOf(src.fontFamily, src.fontWeight));
+  if (!font) return null;
+  const { caretPositions, width } = layoutText(font, src.content, src.fontSize, 0, src.lineHeight, src.letterSpacing);
+  const centers: number[] = [];
+  let unit = 0;
+  for (const ch of src.content) {
+    const next = unit + ch.length;
+    centers.push((caretPositions[unit].x + caretPositions[next].x - src.letterSpacing) / 2);
+    unit = next;
+  }
+  return { centers, width };
+});

@@ -10,7 +10,7 @@ import type { Composition, SceneItem, Scene, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { dimUnsoloed, visibleElements } from "../core/visible";
 import { ensureImage, getCachedImage } from "../render/images";
-import { onFontLoaded, peekFont } from "../render/fontCache";
+import { peekFont } from "../render/fontCache";
 import { layoutSource, textSize } from "../render/textLayout";
 import { ClonerGizmo } from "./ClonerGizmo";
 import { runDistance } from "./gizmo";
@@ -27,7 +27,6 @@ import {
   type Box as GroupBox,
 } from "./group";
 import { drawScene } from "../render/canvas2d";
-import { measureTextWidth, measureTextHeight } from "./fonts";
 import {
   PROXY_SIZE,
   benchComposition,
@@ -181,6 +180,7 @@ export function StudioCanvas() {
   const editingTextId = useStudio((s) => s.editingTextId);
   const dpr = useDevicePixelRatio();
   const [imagesReady, setImagesReady] = useState(0);
+  const fontTick = useStudio((s) => s.fontTick);
   const [cursor, setCursor] = useState<string | null>(null);
   // The size badge steps aside while the element turns.
   const [rotating, setRotating] = useState(false);
@@ -242,14 +242,13 @@ export function StudioCanvas() {
       if (item.source.kind === "rect" || item.source.kind === "ellipse")
         return { width: item.source.props.width, height: item.source.props.height };
       if (item.source.kind === "text") {
-        const src = item.source;
-        const w = src.boxWidth ?? measureTextWidth(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.letterSpacing);
-        const h = src.boxHeight ?? measureTextHeight(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.lineHeight, src.letterSpacing, src.boxWidth);
-        return { width: w, height: h };
+        const font = peekFont(item.source.fontFamily, item.source.fontWeight);
+        return font ? textSize(item.source, layoutSource(font, item.source)) : undefined;
       }
       return undefined;
     };
-  }, [assets]);
+    // A font arriving changes what text measures, so the lookup is remade with it.
+  }, [assets, fontTick]);
 
   /**
    * The box around everything picked, when more than one thing is.
@@ -651,8 +650,6 @@ export function StudioCanvas() {
     };
   }, []);
 
-  useEffect(() => onFontLoaded(() => setImagesReady((n) => n + 1)), []);
-
   useEffect(() => {
     let cancelled = false;
     for (const asset of assets) {
@@ -720,6 +717,7 @@ export function StudioCanvas() {
     origin.y,
     scale,
     imagesReady,
+    fontTick,
     templateEditMode,
     selectedId,
     soloIds,

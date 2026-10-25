@@ -1,6 +1,25 @@
-import type { Layer, Transform } from "./types";
+import type { Layer, TextSource, Transform } from "./types";
 import { samplePath, type PathNode } from "./geometry";
-import { getOpenTypeFont } from "../studio/fonts";
+
+/** Where each character of a text sits in its line, and how wide the line is. */
+export type CharMeasure = { centers: number[]; width: number };
+export type CharMeasurer = (src: TextSource) => CharMeasure | null;
+
+let measureChars: CharMeasurer = () => null;
+
+/** Core cannot read fonts; the renderer plugs real glyph metrics in here. */
+export function setCharMeasurer(fn: CharMeasurer): void {
+  measureChars = fn;
+}
+
+/** Without a font, every character is taken as 0.6em wide. */
+function roughChars(src: TextSource, count: number): CharMeasure {
+  const step = src.fontSize * 0.6 + src.letterSpacing;
+  return {
+    centers: Array.from({ length: count }, (_, i) => i * step + src.fontSize * 0.3),
+    width: count * step - src.letterSpacing,
+  };
+}
 
 export interface Instance { base: Transform; u: number; i: number; count: number; charIndex?: number; }
 
@@ -24,39 +43,9 @@ export function expand(layer: Layer): Instance[] {
   if (src.kind === "text" && src.perCharacter && src.content.length > 0) {
     const chars = [...src.content];
     const count = chars.length;
-    const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
-    const advances: number[] = [];
-    let useOT = false;
-    if (otFont) {
-      try {
-        const scale = src.fontSize / otFont.unitsPerEm;
-        for (const ch of chars) {
-          const g = otFont.charToGlyph(ch);
-          advances.push((g.advanceWidth ?? 0) * scale);
-        }
-        useOT = true;
-      } catch {
-        advances.length = 0;
-      }
-    }
-    if (!useOT) {
-      const fallback = src.fontSize * 0.6;
-      for (let i = 0; i < count; i++) advances.push(fallback);
-    }
-    let totalWidth = 0;
-    for (const a of advances) totalWidth += a;
-    totalWidth += src.letterSpacing * Math.max(0, count - 1);
-    const positions: number[] = [0];
-    let cx = 0;
-    for (let i = 0; i < count - 1; i++) {
-      cx += advances[i] + src.letterSpacing;
-      positions.push(cx);
-    }
+    const measured = measureChars(src) ?? roughChars(src, count);
     return chars.map((_, i) => ({
-      base: {
-        ...layer.base,
-        x: layer.base.x - totalWidth / 2 + positions[i],
-      },
+      base: { ...layer.base, x: layer.base.x - measured.width / 2 + measured.centers[i] },
       u: count > 1 ? i / (count - 1) : 0,
       i,
       count,

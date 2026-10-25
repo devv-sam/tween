@@ -84,6 +84,7 @@ import {
 export function Timeline() {
   const composition = useStudio((s) => s.composition);
   const assets = useStudio((s) => s.assets);
+  useStudio((s) => s.fontTick);
   const t = useStudio((s) => s.t);
   const playing = useStudio((s) => s.playing);
   const loop = useStudio((s) => s.loop);

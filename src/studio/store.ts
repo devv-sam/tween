@@ -24,8 +24,8 @@ import type {
 } from "../core/types";
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
-import { measureTextWidth, measureTextHeight } from "./fonts";
-import { registerFontFiles } from "../render/fontCache";
+import { onFontLoaded, peekFont, registerFontFiles } from "../render/fontCache";
+import { layoutSource, textSize } from "../render/textLayout";
 import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
 import {
@@ -117,9 +117,8 @@ export const designSizeOf = (
     return { width: src.props.width, height: src.props.height };
   }
   if (src.kind === "text") {
-    const w = src.boxWidth ?? measureTextWidth(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.letterSpacing);
-    const h = src.boxHeight ?? src.fontSize * src.lineHeight;
-    return { width: w, height: h };
+    const font = peekFont(src.fontFamily, src.fontWeight);
+    return font ? textSize(src, layoutSource(font, src)) : undefined;
   }
   if (src.kind !== "image") return undefined;
   const asset = assets.find((a) => a.id === src.value);
@@ -849,6 +848,8 @@ type StudioState = {
   setShapeProp: (layerId: string, patch: Record<string, unknown>) => void;
   fonts: FontMeta[];
   fontsLoading: boolean;
+  /** Counts fonts that have arrived. Text measures differently once its font is here. */
+  fontTick: number;
   fetchFonts: () => Promise<void>;
   addText: (x: number, y: number, boxWidth?: number) => string;
   setTextProp: (layerId: string, patch: Partial<TextSource>) => void;
@@ -2538,6 +2539,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
 
     fonts: FALLBACK_FONTS,
     fontsLoading: false,
+    fontTick: 0,
 
     fetchFonts: async () => {
       const key = import.meta.env.VITE_GOOGLE_FONTS_API_KEY;
@@ -2629,23 +2631,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
           }));
           set({ editingTextId: null });
           return;
-        }
-        if (track?.layer.source.kind === "text") {
-          const src = track.layer.source;
-          if (src.boxWidth == null || src.boxHeight == null) {
-            try {
-              const patch: Record<string, number> = {};
-              if (src.boxWidth == null) {
-                patch.boxWidth = measureTextWidth(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.letterSpacing);
-              }
-              if (src.boxHeight == null) {
-                patch.boxHeight = measureTextHeight(src.content, src.fontFamily, src.fontWeight, src.fontSize, src.lineHeight, src.letterSpacing, src.boxWidth ?? patch.boxWidth);
-              }
-              get().setTextProp(prev, patch);
-            } catch {
-              // font measurement unavailable — leave box dimensions unset
-            }
-          }
         }
       }
       set({ editingTextId: id });
@@ -2753,3 +2738,5 @@ export const useStudio = create<StudioState>()(
     }),
   }),
 );
+
+onFontLoaded(() => useStudio.setState((s) => ({ fontTick: s.fontTick + 1 })));
