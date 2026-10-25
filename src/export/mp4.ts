@@ -1,6 +1,6 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import type { Composition, ModuleAsset } from "../core/types";
-import { renderFrame, type Size } from "./frame";
+import { preloadFonts, renderFrame, type Size } from "./frame";
 import type { ImageLookup } from "../render/canvas2d";
 
 /**
@@ -21,6 +21,7 @@ export function avcCodec(w: number, h: number): string {
 export async function exportMp4(comp: Composition, library: ModuleAsset[], w = 800, h = 600, imageOf?: ImageLookup, source?: Size): Promise<Blob> {
   if (typeof VideoEncoder === "undefined") throw new Error("webcodecs not supported in this browser (use chrome or edge)");
 
+  await preloadFonts(comp);
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d")!;
 

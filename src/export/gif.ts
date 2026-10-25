@@ -1,9 +1,10 @@
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import type { Composition, ModuleAsset } from "../core/types";
-import { renderFrame, type Size } from "./frame";
+import { preloadFonts, renderFrame, type Size } from "./frame";
 import type { ImageLookup } from "../render/canvas2d";
 
-export function exportGif(comp: Composition, library: ModuleAsset[], w = 800, h = 600, imageOf?: ImageLookup, source?: Size): Blob {
+export async function exportGif(comp: Composition, library: ModuleAsset[], w = 800, h = 600, imageOf?: ImageLookup, source?: Size): Promise<Blob> {
+  await preloadFonts(comp);
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d")!;
   const gif = GIFEncoder();

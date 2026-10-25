@@ -2,6 +2,7 @@ import type { Composition, ModuleAsset } from "../core/types";
 import { renderState } from "../core/renderState";
 import { visibleElements } from "../core/visible";
 import { drawScene, type ImageLookup } from "../render/canvas2d";
+import { getFont } from "../render/fontCache";
 
 /** The coordinate space a composition was authored in. */
 export type Size = { width: number; height: number };
@@ -31,4 +32,11 @@ export function renderFrame(
   paint.scale(w / from.width, h / from.height);
   drawScene(paint, renderState(visibleElements(comp), t, library), from.width, from.height, imageOf, comp.background);
   paint.restore();
+}
+
+/** Drawing is synchronous, so every font a composition uses must be parsed before its frames are. */
+export async function preloadFonts(comp: Composition): Promise<void> {
+  await Promise.all(
+    comp.tracks.map((tr) => tr.layer.source).map((s) => (s.kind === "text" ? getFont(s.fontFamily, s.fontWeight) : null)),
+  );
 }
