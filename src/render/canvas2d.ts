@@ -1,5 +1,7 @@
-import type { Scene, Composition, RectProps, EllipseProps, FillDef, StrokeDef } from "../core/types";
+import type { Scene, Composition, RectProps, EllipseProps, FillDef, StrokeDef, TextSource } from "../core/types";
 import { fieldCenter } from "../core/fields";
+import { peekFont } from "./fontCache";
+import { layoutSource, textSize } from "./textLayout";
 
 /** The box a shape layer draws at, before its own scale. */
 export const SHAPE_SIZE = 140;
@@ -71,6 +73,35 @@ function drawEllipse(ctx: CanvasRenderingContext2D, props: EllipseProps, opacity
   applyStroke(ctx, stroke, opacity, path);
 }
 
+/**
+ * Text is drawn glyph by glyph from fontkit outlines. Glyph coordinates are y-up, so
+ * each one is flipped as it is scaled into canvas units. Nothing is drawn until the
+ * font has arrived; the caller repaints when it does.
+ */
+function drawText(ctx: CanvasRenderingContext2D, src: TextSource, opacity: number): void {
+  const font = peekFont(src.fontFamily, src.fontWeight);
+  if (!font) return;
+  const layout = layoutSource(font, src);
+  const box = textSize(src, layout);
+  if (src.fill.type === "solid") {
+    ctx.fillStyle = src.fill.color;
+    ctx.globalAlpha = src.fill.opacity * opacity;
+  }
+  const scale = src.fontSize / font.unitsPerEm;
+  ctx.translate(-box.width / 2, -box.height / 2);
+  for (const line of layout.lines) {
+    for (const g of line.glyphs) {
+      ctx.save();
+      ctx.translate(g.x, line.y);
+      ctx.scale(scale, -scale);
+      ctx.beginPath();
+      g.glyph.path.toFunction()(ctx);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -95,11 +126,7 @@ export function drawScene(
       const img = imageOf?.(item.source.value);
       if (img) ctx.drawImage(img.source, -img.width / 2, -img.height / 2, img.width, img.height);
     } else if (item.source.kind === "text") {
-      ctx.fillStyle = "#111";
-      ctx.font = "600 48px Inter, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(item.source.value, 0, 0);
+      drawText(ctx, item.source, clamp01(s.opacity));
     } else if (item.source.kind === "rect") {
       drawRect(ctx, item.source.props, clamp01(s.opacity));
     } else if (item.source.kind === "ellipse") {

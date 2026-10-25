@@ -39,7 +39,12 @@ export function renderState(comp: Composition, t: number, library: ModuleAsset[]
         const ctx: EvalCtx = { t, tSec: t * comp.duration, localT, u: inst.u, i: inst.i, count: inst.count, field: sample };
         state = getModule(md.type).evaluate(state, ctx, md.params);
       }
-      scene.push({ id: track.layer.id, source: track.layer.source, state });
+      let source = track.layer.source;
+      if (inst.charIndex != null && source.kind === "text") {
+        const chars = [...source.content];
+        source = { ...source, content: chars[inst.charIndex] ?? "", perCharacter: false, boxWidth: undefined };
+      }
+      scene.push({ id: track.layer.id, source, state });
     }
   }
   return scene;

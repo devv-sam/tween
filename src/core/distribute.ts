@@ -1,7 +1,27 @@
-import type { Layer, Transform } from "./types";
+import type { Layer, TextSource, Transform } from "./types";
 import { samplePath, type PathNode } from "./geometry";
 
-export interface Instance { base: Transform; u: number; i: number; count: number; }
+/** Where each character of a text sits in its line, and how wide the line is. */
+export type CharMeasure = { centers: number[]; width: number };
+export type CharMeasurer = (src: TextSource) => CharMeasure | null;
+
+let measureChars: CharMeasurer = () => null;
+
+/** Core cannot read fonts; the renderer plugs real glyph metrics in here. */
+export function setCharMeasurer(fn: CharMeasurer): void {
+  measureChars = fn;
+}
+
+/** Without a font, every character is taken as 0.6em wide. */
+function roughChars(src: TextSource, count: number): CharMeasure {
+  const step = src.fontSize * 0.6 + src.letterSpacing;
+  return {
+    centers: Array.from({ length: count }, (_, i) => i * step + src.fontSize * 0.3),
+    width: count * step - src.letterSpacing,
+  };
+}
+
+export interface Instance { base: Transform; u: number; i: number; count: number; charIndex?: number; }
 
 /** Spread over 0–1. A lone clone sits at the start rather than dividing by nothing. */
 const spread = (i: number, count: number): number => (count > 1 ? i / (count - 1) : 0);
@@ -19,6 +39,20 @@ const num = (v: unknown, fallback: number): number =>
  * from it, and dragging it would do nothing.
  */
 export function expand(layer: Layer): Instance[] {
+  const src = layer.source;
+  if (src.kind === "text" && src.perCharacter && src.content.length > 0) {
+    const chars = [...src.content];
+    const count = chars.length;
+    const measured = measureChars(src) ?? roughChars(src, count);
+    return chars.map((_, i) => ({
+      base: { ...layer.base, x: layer.base.x - measured.width / 2 + measured.centers[i] },
+      u: count > 1 ? i / (count - 1) : 0,
+      i,
+      count,
+      charIndex: i,
+    }));
+  }
+
   const d = layer.distributor;
   if (!d || d.type === "none" || d.count <= 1) {
     return [{ base: { ...layer.base }, u: 0, i: 0, count: 1 }];

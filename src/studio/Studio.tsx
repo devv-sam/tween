@@ -27,6 +27,7 @@ export function Studio() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => writeAssetsCollapsed(collapsed), [collapsed]);
+  useEffect(() => { void useStudio.getState().fetchFonts(); }, []);
 
   return (
     <div className="studio">
