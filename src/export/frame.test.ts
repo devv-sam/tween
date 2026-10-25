@@ -26,9 +26,6 @@ function stub() {
   const ctx = {
     fillStyle: "",
     globalAlpha: 1,
-    font: "",
-    textAlign: "",
-    textBaseline: "",
     save: () => {},
     restore: () => {},
     clearRect: () => {},
@@ -36,7 +33,6 @@ function stub() {
     rotate: () => {},
     scale: (x: number, y: number) => calls.scale.push([x, y]),
     fillRect: (...a: number[]) => calls.fillRect.push(a),
-    fillText: () => {},
     drawImage: () => {},
   };
   return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
