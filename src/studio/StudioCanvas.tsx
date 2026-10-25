@@ -10,7 +10,8 @@ import type { Composition, SceneItem, Scene, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { dimUnsoloed, visibleElements } from "../core/visible";
 import { ensureImage, getCachedImage } from "../render/images";
-import { onFontLoaded } from "../render/fontCache";
+import { onFontLoaded, peekFont } from "../render/fontCache";
+import { layoutSource, textSize } from "../render/textLayout";
 import { ClonerGizmo } from "./ClonerGizmo";
 import { runDistance } from "./gizmo";
 import { GHOST_BTN } from "./fields";
@@ -26,8 +27,7 @@ import {
   type Box as GroupBox,
 } from "./group";
 import { drawScene } from "../render/canvas2d";
-import { measureTextWidth, measureTextHeight, getOpenTypeFont, otCharPositions, otMeasureWidth, loadOpenTypeFont } from "./fonts";
-// paintComposition inlined in useLayoutEffect for editing-text filtering
+import { measureTextWidth, measureTextHeight } from "./fonts";
 import {
   PROXY_SIZE,
   benchComposition,
@@ -773,6 +773,8 @@ export function StudioCanvas() {
       const editItem = scene.find((it) => it.id === editId);
       const editSize = editItem && sizeOf(editItem);
       if (editItem && editSize && containsPoint(editItem.state, editSize, point)) {
+        // The default would move focus off the textarea and onto the canvas.
+        e.preventDefault();
         textClickRef.current?.(point);
         return;
       }
@@ -1540,7 +1542,6 @@ export function StudioCanvas() {
         editingTextId={editingTextId}
         composition={composition}
         scene={scene}
-        sizeOf={sizeOf}
         viewport={viewport}
         frame={frame}
         view={view}
@@ -1622,7 +1623,6 @@ function TextEditOverlay({
   editingTextId,
   composition,
   scene,
-  sizeOf,
   viewport,
   frame,
   view,
@@ -1632,7 +1632,6 @@ function TextEditOverlay({
   editingTextId: string;
   composition: Composition;
   scene: Scene;
-  sizeOf: (item: SceneItem) => Size | undefined;
   viewport: Size;
   frame: Size;
   view: View;
@@ -1649,8 +1648,11 @@ function TextEditOverlay({
   const blinkRef = useRef(true);
   const blinkTimer = useRef<ReturnType<typeof setInterval>>(undefined);
 
-  const src = editTrack?.layer.source;
-  const valid = editTrack && editItem && src?.kind === "text";
+  const src = editTrack?.layer.source.kind === "text" ? editTrack.layer.source : null;
+  const valid = Boolean(src && editItem);
+  const font = src ? peekFont(src.fontFamily, src.fontWeight) : undefined;
+  const layout = font && src ? layoutSource(font, src) : null;
+  const box = layout && src ? textSize(src, layout) : null;
 
   useEffect(() => {
     if (!valid) return;
@@ -1664,55 +1666,28 @@ function TextEditOverlay({
   }, [valid, editingTextId]);
 
   useEffect(() => {
-    if (!valid || src?.kind !== "text") return;
-    void loadOpenTypeFont(src.fontFamily, src.fontWeight);
-  }, [valid, src?.kind === "text" ? src.fontFamily : "", src?.kind === "text" ? src.fontWeight : 0]);
-
-  useEffect(() => {
-    if (!valid || src?.kind !== "text" || !editItem) {
+    if (!src || !layout || !box || !editItem) {
       clickRef.current = null;
-      return () => { clickRef.current = null; };
+      return;
     }
-    const srcRef = src;
-    const itemRef = editItem;
+    // shortcut: ignores the element's rotation, click lands as if the box were upright
     clickRef.current = (pt: Point) => {
       const ta = taRef.current;
       if (!ta) return;
-      const otFont = getOpenTypeFont(srcRef.fontFamily, srcRef.fontWeight);
-      if (!otFont) { ta.focus(); return; }
-      const st = itemRef.state;
-      const localX = pt.x - st.x;
-      const localY = pt.y - st.y;
-      const content = srcRef.content || "";
-      const lines = content.split("\n");
-      const leading = srcRef.fontSize * srcRef.lineHeight;
-      const totalHeight = lines.length * leading;
-      const sz = sizeOf(itemRef) ?? { width: 0, height: totalHeight };
-      const startY = -sz.height / 2;
-      let lineIdx = Math.floor((localY - startY) / leading);
-      lineIdx = Math.max(0, Math.min(lineIdx, lines.length - 1));
-      const line = lines[lineIdx];
-      const positions = otCharPositions(otFont, line, srcRef.fontSize, srcRef.letterSpacing);
-      const lineWidth = positions[positions.length - 1] ?? 0;
-      let lineX: number;
-      if (srcRef.boxWidth) {
-        lineX = srcRef.align === "left" ? -sz.width / 2
-          : srcRef.align === "right" ? sz.width / 2 - lineWidth
-          : -lineWidth / 2;
-      } else {
-        lineX = srcRef.align === "left" ? -sz.width / 2
-          : srcRef.align === "right" ? -lineWidth / 2
-          : -lineWidth / 2;
-      }
-      const relX = localX - lineX;
-      let col = line.length;
-      for (let i = 0; i < positions.length - 1; i++) {
-        const mid = (positions[i] + positions[i + 1]) / 2;
-        if (relX < mid) { col = i; break; }
-      }
-      let charOffset = 0;
-      for (let i = 0; i < lineIdx; i++) charOffset += lines[i].length + 1;
-      const pos = charOffset + col;
+      const st = editItem.state;
+      const localX = pt.x - st.x + box.width / 2;
+      const localY = pt.y - st.y + box.height / 2;
+      const leading = src.fontSize * src.lineHeight;
+      const line = Math.max(0, Math.min(layout.lines.length - 1, Math.floor(localY / leading)));
+      let pos = 0;
+      let nearest = Infinity;
+      layout.caretPositions.forEach((c, i) => {
+        const away = Math.abs(c.x - localX);
+        if (c.line === line && away < nearest) {
+          nearest = away;
+          pos = i;
+        }
+      });
       ta.focus();
       ta.setSelectionRange(pos, pos);
       setCursorPos(pos);
@@ -1735,7 +1710,7 @@ function TextEditOverlay({
 
   const drawCursor = () => {
     const canvas = cursorCanvasRef.current;
-    if (!canvas || !valid || src?.kind !== "text" || !editItem) return;
+    if (!canvas || !src || !layout || !box || !editItem) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -1743,131 +1718,36 @@ function TextEditOverlay({
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
-    if (!otFont) return;
-
-    try {
-      drawCursorOT(ctx, otFont, src, editItem, dpr);
-    } catch {
-      // unsupported opentype table — cursor not drawn
-    }
-  };
-
-  const drawCursorOT = (
-    ctx: CanvasRenderingContext2D,
-    otFont: import("opentype.js").Font,
-    src: import("../core/types").TextSource,
-    editItem: SceneItem,
-    dpr: number,
-  ) => {
     const st = editItem.state;
-    const screenScale = scale * st.scaleX;
+    const k = scale * st.scaleX;
     const center = compositionToScreen({ x: st.x, y: st.y }, viewport, frame, view);
-    const fontScale = src.fontSize / otFont.unitsPerEm;
-    const ascender = otFont.ascender * fontScale;
-    const descender = Math.abs(otFont.descender * fontScale);
-    const leading = src.fontSize * src.lineHeight;
-    const content = src.content || "";
-    const lines = content.split("\n");
-    const totalHeight = lines.length * leading;
-
-    const textWidth = otMeasureWidth(otFont, content || " ", src.fontSize, src.letterSpacing);
-    const sz = sizeOf(editItem) ?? { width: textWidth, height: totalHeight };
-    const screenW = sz.width * screenScale;
-    const screenH = sz.height * screenScale;
-
-    ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.translate(center.x, center.y);
     ctx.rotate((st.rotation * Math.PI) / 180);
+    ctx.scale(k, k);
+    ctx.translate(-box.width / 2, -box.height / 2);
+    ctx.fillStyle = src.fill.type === "solid" ? src.fill.color : "#000";
 
-    const fillColor = src.fill.type === "solid" ? src.fill.color : "#000";
-    const cursorHeight = (ascender + descender) * screenScale;
-    const halfLeading = (leading - (ascender + descender)) / 2;
-
+    const carets = layout.caretPositions;
     if (selStart !== null && selEnd !== null && selStart !== selEnd) {
       const lo = Math.min(selStart, selEnd);
-      const hi = Math.max(selStart, selEnd);
-      let charOffset = 0;
-      for (let li = 0; li < lines.length; li++) {
-        const line = lines[li];
-        const lineStart = charOffset;
-        const lineEnd = charOffset + line.length;
-        charOffset = lineEnd + 1;
-
-        const selLo = Math.max(lo, lineStart) - lineStart;
-        const selHi = Math.min(hi, lineEnd) - lineStart;
-        if (selLo >= selHi) continue;
-
-        const positions = otCharPositions(otFont, line, src.fontSize, src.letterSpacing);
-        const lineWidth = positions[positions.length - 1] ?? 0;
-        let lineX = src.align === "center" ? -lineWidth * screenScale / 2
-          : src.align === "right" ? lineWidth * screenScale / 2 - lineWidth * screenScale
-          : -screenW / 2;
-        if (src.boxWidth) {
-          lineX = src.align === "left" ? -screenW / 2
-            : src.align === "right" ? screenW / 2 - lineWidth * screenScale
-            : -lineWidth * screenScale / 2;
+      const hi = Math.min(Math.max(selStart, selEnd), carets.length - 1);
+      const spans = new Map<number, { x1: number; x2: number; y: number }>();
+      for (let i = lo; i <= hi; i++) {
+        const c = carets[i];
+        const span = spans.get(c.line);
+        if (!span) spans.set(c.line, { x1: c.x, x2: c.x, y: c.y });
+        else {
+          span.x1 = Math.min(span.x1, c.x);
+          span.x2 = Math.max(span.x2, c.x);
         }
-
-        const ly = -screenH / 2 + li * leading * screenScale + halfLeading * screenScale;
-        const x1 = lineX + positions[selLo] * screenScale;
-        const x2 = lineX + positions[selHi] * screenScale;
-
-        ctx.fillStyle = fillColor;
-        ctx.globalAlpha = 0.2;
-        ctx.fillRect(x1, ly, x2 - x1, cursorHeight);
-        ctx.globalAlpha = 1;
       }
+      ctx.globalAlpha = 0.2;
+      for (const span of spans.values()) ctx.fillRect(span.x1, span.y, span.x2 - span.x1, layout.caretHeight);
+    } else if (cursorPos !== null && blinkRef.current) {
+      const c = carets[Math.min(cursorPos, carets.length - 1)];
+      ctx.fillRect(c.x - 0.5 / k, c.y, 1 / k, layout.caretHeight);
     }
-
-    if (cursorPos !== null && (selStart === null || selStart === selEnd)) {
-      if (blinkRef.current) {
-        let charOffset = 0;
-        let cursorLine = 0;
-        let cursorCol = cursorPos;
-        for (let li = 0; li < lines.length; li++) {
-          if (cursorPos <= charOffset + lines[li].length) {
-            cursorLine = li;
-            cursorCol = cursorPos - charOffset;
-            break;
-          }
-          charOffset += lines[li].length + 1;
-          cursorLine = li + 1;
-          cursorCol = 0;
-        }
-        if (cursorLine >= lines.length) {
-          cursorLine = lines.length - 1;
-          cursorCol = lines[cursorLine].length;
-        }
-
-        const line = lines[cursorLine];
-        const positions = otCharPositions(otFont, line, src.fontSize, src.letterSpacing);
-        const lineWidth = positions[positions.length - 1] ?? 0;
-        let lineX: number;
-        if (src.boxWidth) {
-          lineX = src.align === "left" ? -screenW / 2
-            : src.align === "right" ? screenW / 2 - lineWidth * screenScale
-            : -lineWidth * screenScale / 2;
-        } else {
-          lineX = src.align === "left" ? -screenW / 2
-            : src.align === "right" ? -lineWidth * screenScale / 2
-            : -lineWidth * screenScale / 2;
-        }
-
-        const cx = lineX + (positions[cursorCol] ?? 0) * screenScale;
-        const ly = -screenH / 2 + cursorLine * leading * screenScale + halfLeading * screenScale;
-
-        ctx.strokeStyle = fillColor;
-        ctx.lineWidth = Math.max(1, screenScale);
-        ctx.beginPath();
-        ctx.moveTo(cx, ly);
-        ctx.lineTo(cx, ly + cursorHeight);
-        ctx.stroke();
-      }
-    }
-
-    ctx.restore();
   };
 
   useLayoutEffect(() => {
@@ -1886,7 +1766,7 @@ function TextEditOverlay({
     canvas.style.height = `${viewport.height}px`;
   }, [viewport.width, viewport.height]);
 
-  if (!valid || src.kind !== "text") return null;
+  if (!src) return null;
 
   const syncSelection = () => {
     const ta = taRef.current;
