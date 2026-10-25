@@ -137,7 +137,12 @@ export function layoutText(
   };
 }
 
-/** The layout a text source asks for. */
+/** The layout a text source asks for. Empty text is laid out as a space so it keeps a box. */
 export function layoutSource(font: Font, src: TextSource): TextLayout {
-  return layoutText(font, src.content, src.fontSize, src.boxWidth ?? 0, src.lineHeight, src.letterSpacing, src.align);
+  return layoutText(font, src.content || " ", src.fontSize, src.boxWidth ?? 0, src.lineHeight, src.letterSpacing, src.align);
+}
+
+/** The box the text occupies: the wrap width or the widest line, and never shorter than its lines. */
+export function textSize(src: TextSource, layout: TextLayout): { width: number; height: number } {
+  return { width: src.boxWidth ?? layout.width, height: Math.max(src.boxHeight ?? 0, layout.totalHeight) };
 }

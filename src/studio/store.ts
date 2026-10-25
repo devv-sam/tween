@@ -24,7 +24,8 @@ import type {
 } from "../core/types";
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
-import { measureTextWidth, measureTextHeight, registerFontFiles, loadOpenTypeFont } from "./fonts";
+import { measureTextWidth, measureTextHeight } from "./fonts";
+import { registerFontFiles } from "../render/fontCache";
 import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
 import {
@@ -2558,7 +2559,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
               category: f.category,
             })),
           });
-          void loadOpenTypeFont("Inter", 400);
         }
       } catch {
         // keep fallback fonts

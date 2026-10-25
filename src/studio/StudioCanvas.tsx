@@ -10,6 +10,7 @@ import type { Composition, SceneItem, Scene, Transform } from "../core/types";
 import { renderState } from "../core/renderState";
 import { dimUnsoloed, visibleElements } from "../core/visible";
 import { ensureImage, getCachedImage } from "../render/images";
+import { onFontLoaded } from "../render/fontCache";
 import { ClonerGizmo } from "./ClonerGizmo";
 import { runDistance } from "./gizmo";
 import { GHOST_BTN } from "./fields";
@@ -649,6 +650,8 @@ export function StudioCanvas() {
       window.removeEventListener("keyup", onKeyUp);
     };
   }, []);
+
+  useEffect(() => onFontLoaded(() => setImagesReady((n) => n + 1)), []);
 
   useEffect(() => {
     let cancelled = false;
