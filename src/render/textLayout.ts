@@ -3,10 +3,11 @@ import type { TextSource } from "../core/types";
 
 export interface GlyphLayout {
   glyph: Glyph;
-  /** Pen position in canvas units, from the box's top-left. */
+  /** Pen x in canvas units, from the box's left edge. The baseline is the line's. */
   x: number;
-  y: number;
   advance: number;
+  /** UTF-16 units of text this glyph stands for. */
+  units: number;
 }
 
 export interface LineLayout {
@@ -35,10 +36,6 @@ export interface TextLayout {
 }
 
 export type Align = TextSource["align"];
-
-/** A glyph for an astral code point stands for two UTF-16 units. */
-const unitsOf = (glyph: Glyph): number =>
-  glyph.codePoints.reduce((n, cp) => n + (cp > 0xffff ? 2 : 1), 0);
 
 const isSpace = (glyph: Glyph): boolean => glyph.codePoints.length === 1 && glyph.codePoints[0] === 0x20;
 
@@ -84,17 +81,23 @@ export function layoutText(
   };
 
   const paragraphs = text.split("\n");
-  for (let p = 0; p < paragraphs.length; p++) {
-    const run = font.layout(paragraphs[p], { liga: false, clig: false, calt: false });
+  for (const paragraph of paragraphs) {
+    const run = font.layout(paragraph, { liga: false, clig: false, calt: false });
+    // fontkit reuses one Glyph per id with whichever code points asked first, so UTF-16
+    // units are counted from the string. When shaping merged or split characters the
+    // glyphs no longer pair up: each gets one unit and the tail is squared up below.
+    const chars = [...paragraph];
+    const paired = chars.length === run.glyphs.length;
+    let placed = 0;
     for (let i = 0; i < run.glyphs.length; i++) {
       const glyph = run.glyphs[i];
       const pos = run.positions[i];
       const advance = pos.xAdvance * scale + letterSpacing;
-      const units = unitsOf(glyph);
+      const units = paired ? chars[i].length : 1;
 
       if (boxWidth > 0 && x + advance - letterSpacing > boxWidth && current.length > 0 && !isSpace(glyph)) {
         if (breakAt > 0 && breakAt < current.length) {
-          const caretBreak = current.slice(0, breakAt).reduce((n, g) => n + unitsOf(g.glyph), 0);
+          const caretBreak = current.slice(0, breakAt).reduce((n, g) => n + g.units, 0);
           const carried = current.splice(breakAt);
           const carriedCarets = carets.splice(caretBreak);
           const shift = carried[0].x;
@@ -110,11 +113,15 @@ export function layoutText(
       }
 
       for (let u = 0; u < units; u++) carets.push({ x: x + (advance * u) / units, line: 0, y: 0 });
-      current.push({ glyph, x, y: 0, advance });
+      current.push({ glyph, x, advance, units });
+      placed += units;
       x += advance;
       if (isSpace(glyph)) breakAt = current.length;
     }
-    carets.push({ x: current.length > 0 ? x - letterSpacing : 0, line: 0, y: 0 });
+    const end = { x: current.length > 0 ? x - letterSpacing : 0, line: 0, y: 0 };
+    for (; placed < paragraph.length; placed++) carets.push({ ...end });
+    for (; placed > paragraph.length; placed--) (carets.length > 0 ? carets : caretLines[caretLines.length - 1]).pop();
+    carets.push(end);
     flush();
   }
 

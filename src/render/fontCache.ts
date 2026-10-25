@@ -12,6 +12,8 @@ const listeners = new Set<() => void>();
 /** Weight-keyed file URLs from the Google Fonts API ("regular", "700", …). */
 export function registerFontFiles(family: string, urls: Record<string, string>): void {
   files.set(family, urls);
+  // A weight asked for before the URLs arrived failed for lack of them; let it retry.
+  for (const key of failed) if (key.startsWith(`${family}:`)) failed.delete(key);
 }
 
 const keyOf = (family: string, weight: number) => `${family}:${weight}`;
@@ -72,13 +74,15 @@ export function parseFont(bytes: Uint8Array, weight: number): Font {
 setCharMeasurer((src) => {
   const font = cache.get(keyOf(src.fontFamily, src.fontWeight));
   if (!font) return null;
-  const { caretPositions, width } = layoutText(font, src.content, src.fontSize, 0, src.lineHeight, src.letterSpacing);
+  const { lines, caretPositions, width } = layoutText(font, src.content, src.fontSize, 0, src.lineHeight, src.letterSpacing);
+  const glyphs = lines.flatMap((l) => l.glyphs);
   const centers: number[] = [];
   let unit = 0;
   for (const ch of src.content) {
-    const next = unit + ch.length;
-    centers.push((caretPositions[unit].x + caretPositions[next].x - src.letterSpacing) / 2);
-    unit = next;
+    const start = caretPositions[unit].x;
+    const own = glyphs.find((g) => g.x === start)?.advance ?? 0;
+    centers.push(start + Math.max(0, own - src.letterSpacing) / 2);
+    unit += ch.length;
   }
   return { centers, width };
 });

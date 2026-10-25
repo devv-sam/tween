@@ -14,7 +14,7 @@ describe("layoutText", () => {
   });
 
   it("total caretPositions count equals string length + 1", () => {
-    for (const text of ["", "a", "weird spacing", "two\nlines", "emoji 😀 here", "fi ligature"]) {
+    for (const text of ["", "a", "weird spacing", "two\nlines", "emoji 😀 here", "fi ligature", "ﬁ", "😀x", "e\u0301", "x😀\ny"]) {
       expect(layoutText(font, text, 48, 0, 1.2, 0).caretPositions.length).toBe(text.length + 1);
     }
   });
