@@ -1,7 +1,8 @@
 import type { Layer, Transform } from "./types";
 import { samplePath, type PathNode } from "./geometry";
+import { getOpenTypeFont } from "../studio/fonts";
 
-export interface Instance { base: Transform; u: number; i: number; count: number; }
+export interface Instance { base: Transform; u: number; i: number; count: number; charIndex?: number; }
 
 /** Spread over 0–1. A lone clone sits at the start rather than dividing by nothing. */
 const spread = (i: number, count: number): number => (count > 1 ? i / (count - 1) : 0);
@@ -19,6 +20,50 @@ const num = (v: unknown, fallback: number): number =>
  * from it, and dragging it would do nothing.
  */
 export function expand(layer: Layer): Instance[] {
+  const src = layer.source;
+  if (src.kind === "text" && src.perCharacter && src.content.length > 0) {
+    const chars = [...src.content];
+    const count = chars.length;
+    const otFont = getOpenTypeFont(src.fontFamily, src.fontWeight);
+    const advances: number[] = [];
+    let useOT = false;
+    if (otFont) {
+      try {
+        const scale = src.fontSize / otFont.unitsPerEm;
+        for (const ch of chars) {
+          const g = otFont.charToGlyph(ch);
+          advances.push((g.advanceWidth ?? 0) * scale);
+        }
+        useOT = true;
+      } catch {
+        advances.length = 0;
+      }
+    }
+    if (!useOT) {
+      const fallback = src.fontSize * 0.6;
+      for (let i = 0; i < count; i++) advances.push(fallback);
+    }
+    let totalWidth = 0;
+    for (const a of advances) totalWidth += a;
+    totalWidth += src.letterSpacing * Math.max(0, count - 1);
+    const positions: number[] = [0];
+    let cx = 0;
+    for (let i = 0; i < count - 1; i++) {
+      cx += advances[i] + src.letterSpacing;
+      positions.push(cx);
+    }
+    return chars.map((_, i) => ({
+      base: {
+        ...layer.base,
+        x: layer.base.x - totalWidth / 2 + positions[i],
+      },
+      u: count > 1 ? i / (count - 1) : 0,
+      i,
+      count,
+      charIndex: i,
+    }));
+  }
+
   const d = layer.distributor;
   if (!d || d.type === "none" || d.count <= 1) {
     return [{ base: { ...layer.base }, u: 0, i: 0, count: 1 }];

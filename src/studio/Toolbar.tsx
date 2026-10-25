@@ -4,6 +4,7 @@ const tools: { id: ActiveTool; label: string; shortcut: string }[] = [
   { id: "select", label: "Select", shortcut: "V" },
   { id: "rect", label: "Rectangle", shortcut: "R" },
   { id: "ellipse", label: "Ellipse", shortcut: "O" },
+  { id: "text", label: "Text", shortcut: "T" },
 ];
 
 export function Toolbar() {
@@ -25,7 +26,7 @@ export function Toolbar() {
             }`}
             onClick={() => setActiveTool(t.id)}
           >
-            {t.id === "select" ? <CursorIcon /> : t.id === "rect" ? <RectIcon /> : <EllipseIcon />}
+            {t.id === "select" ? <CursorIcon /> : t.id === "rect" ? <RectIcon /> : t.id === "ellipse" ? <EllipseIcon /> : <TypeIcon />}
           </button>
           <span className="text-[9px] leading-none text-text-muted/50">
             {t.shortcut}
@@ -56,6 +57,16 @@ function EllipseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10" />
+    </svg>
+  );
+}
+
+function TypeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 7 4 4 20 4 20 7" />
+      <line x1="9" y1="20" x2="15" y2="20" />
+      <line x1="12" y1="4" x2="12" y2="20" />
     </svg>
   );
 }

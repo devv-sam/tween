@@ -39,6 +39,9 @@ const SIDE_EDGE: Record<"n" | "e" | "s" | "w", [Handle, Handle]> = {
 export const isCorner = (handle: Handle): boolean =>
   EDGE[handle].x !== 0 && EDGE[handle].y !== 0;
 
+export const handleAffectsX = (handle: Handle): boolean => EDGE[handle].x !== 0;
+export const handleAffectsY = (handle: Handle): boolean => EDGE[handle].y !== 0;
+
 export const HANDLE_CURSOR: Record<Handle, string> = {
   nw: "nwse-resize",
   se: "nwse-resize",
