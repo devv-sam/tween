@@ -1,8 +1,9 @@
-import { useRef, type DragEvent, type RefObject } from "react";
+import { useRef, useState, type DragEvent, type RefObject } from "react";
 import { shelfAssets, useStudio, type StudioAsset } from "./store";
 import { IMAGE_ACCEPT, baseName, extensionOf } from "./files";
 import { contentScale } from "./view";
-import { PANEL, PANEL_LABEL } from "./fields";
+import { PANEL } from "./fields";
+import { ModuleShelf } from "./ModuleShelf";
 
 const PANEL_BTN =
   "grid h-[22px] w-[22px] place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary";
@@ -10,6 +11,10 @@ const PANEL_BTN =
 export function AssetsPanel({ height }: { height: number }) {
   const assets = useStudio((s) => s.assets);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** Pictures and behaviours are two different things to go looking for, so they
+   *  are two tabs rather than two stacked shelves in one scroller. */
+  const [tab, setTab] = useState<"assets" | "modules">("assets");
+  const adding = tab === "assets" ? "Import images" : "New module";
 
   return (
     <section
@@ -17,22 +22,48 @@ export function AssetsPanel({ height }: { height: number }) {
       style={{ height }}
       aria-label="assets"
     >
-      <div className="flex h-9 shrink-0 items-center px-3">
-        <span className={PANEL_LABEL}>Assets</span>
+      <div className="flex h-9 shrink-0 items-center gap-3 px-3">
+        <PanelTab label="Assets" active={tab === "assets"} onClick={() => setTab("assets")} />
+        <PanelTab label="Modules" active={tab === "modules"} onClick={() => setTab("modules")} />
         <button
           type="button"
           className={`${PANEL_BTN} ml-auto`}
-          aria-label="Import images"
-          title="Import images"
-          onClick={() => inputRef.current?.click()}
+          aria-label={adding}
+          title={adding}
+          onClick={() =>
+            tab === "assets" ? inputRef.current?.click() : useStudio.getState().openBench()
+          }
         >
           <PlusIcon />
         </button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border [scrollbar-width:none]">
-        <AssetShelf assets={assets} inputRef={inputRef} />
+        {tab === "assets" ? <AssetShelf assets={assets} inputRef={inputRef} /> : <ModuleShelf />}
       </div>
     </section>
+  );
+}
+
+function PanelTab({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`text-[11px] uppercase tracking-[0.08em] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary ${
+        active ? "text-text-primary" : "text-text-muted hover:text-text-primary"
+      }`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      {label}
+    </button>
   );
 }
 
