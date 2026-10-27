@@ -1,5 +1,6 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Popover } from "./Popover";
+import { stepFocus } from "./stepFocus";
 
 /**
  * A button that opens a list of choices as a card under it. The button's look is the
@@ -28,6 +29,21 @@ export function Dropdown({
 }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const close = () => {
+    setOpen(false);
+    anchorRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const list = listRef.current;
+    const first =
+      list?.querySelector<HTMLElement>('[aria-selected="true"]') ??
+      list?.querySelector<HTMLElement>('[role="option"]');
+    first?.focus({ preventScroll: true });
+    first?.scrollIntoView({ block: "nearest" });
+  }, [open]);
 
   return (
     <>
@@ -39,19 +55,22 @@ export function Dropdown({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
+        onKeyDown={(e) => {
+          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
       >
         {children}
       </button>
       {open ? (
-        <Popover
-          anchorRef={anchorRef}
-          placement="below"
-          label={title}
-          onClose={() => setOpen(false)}
-        >
+        <Popover anchorRef={anchorRef} placement="below" label={title} onClose={close}>
           <ul
+            ref={listRef}
             role="listbox"
             className="m-0 max-h-[260px] list-none overflow-y-auto p-1"
+            onKeyDown={(e) => stepFocus(e, listRef.current, '[role="option"]')}
             // As wide as the control it opens from, so the menu sits square under it.
             style={{ minWidth: anchorRef.current?.offsetWidth }}
           >
@@ -61,14 +80,14 @@ export function Dropdown({
                   type="button"
                   role="option"
                   aria-selected={o.value === value}
-                  className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-[11px] ${
+                  className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-[11px] outline-none focus-visible:bg-text-primary/10 ${
                     o.value === value
                       ? "bg-text-primary/5 text-accent"
                       : "text-text-primary/70 hover:bg-text-primary/5"
                   }`}
                   onClick={() => {
                     onChange(o.value);
-                    setOpen(false);
+                    close();
                   }}
                 >
                   {o.label}
@@ -79,9 +98,7 @@ export function Dropdown({
               </li>
             ))}
           </ul>
-          {footer ? (
-            <div className="border-t border-border p-2">{footer(() => setOpen(false))}</div>
-          ) : null}
+          {footer ? <div className="border-t border-border p-2">{footer(close)}</div> : null}
         </Popover>
       ) : null}
     </>

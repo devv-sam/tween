@@ -77,5 +77,19 @@ export default function DevDials({
     el.style.setProperty("--edge", `${look.edge}px`);
   }, [look]);
 
+  const align = useDialKit("Align to frame", {
+    height: [parseFloat(read("--align-height")), 16, 40, 1],
+    icon: [parseFloat(read("--align-icon")), 8, 24, 1],
+    stroke: [parseFloat(read("--align-stroke")), 1, 3, 0.25],
+  });
+
+  useEffect(() => {
+    const el = studio();
+    if (!el) return;
+    el.style.setProperty("--align-height", `${align.height}px`);
+    el.style.setProperty("--align-icon", `${align.icon}px`);
+    el.style.setProperty("--align-stroke", String(align.stroke));
+  }, [align]);
+
   return <DialRoot position="bottom-left" theme="light" defaultOpen={false} />;
 }

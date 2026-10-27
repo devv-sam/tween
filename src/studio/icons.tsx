@@ -37,6 +37,34 @@ export function ClonersIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
+export function DotsPatternIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      {[5, 12, 19].flatMap((x) =>
+        [5, 12, 19].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1" />),
+      )}
+    </Icon>
+  );
+}
+
+export function GridPatternIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M9 4v16M15 4v16M4 9h16M4 15h16" />
+    </Icon>
+  );
+}
+
+export function SplitIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M9.5 7H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h4.5" />
+      <path d="M14.5 7H19a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.5" />
+      <path d="M12 3v18" />
+    </Icon>
+  );
+}
+
 export function FpsIcon({ size }: { size?: number }): ReactElement {
   return (
     <Icon size={size}>
@@ -56,6 +84,46 @@ export function ModulesIcon({ size }: { size?: number }): ReactElement {
       <path d="m3 13.6 4.5 2.6 4.5-2.6M7.5 16.2v4.5" />
       <path d="M16.5 11 21 13.6v4.5l-4.5 2.6-4.5-2.6v-4.5Z" />
       <path d="m12 13.6 4.5 2.6 4.5-2.6M16.5 16.2v4.5" />
+    </Icon>
+  );
+}
+
+export function AlignLeftIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M5 4V20" />
+      <path d="M9 8H19" />
+      <path d="M9 16H14" />
+    </Icon>
+  );
+}
+
+export function AlignRightIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M19 4V20" />
+      <path d="M15 8H5" />
+      <path d="M15 16H10" />
+    </Icon>
+  );
+}
+
+export function AlignTopIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M4 5H20" />
+      <path d="M8 9V20" />
+      <path d="M16 9V15" />
+    </Icon>
+  );
+}
+
+export function AlignBottomIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M4 19H20" />
+      <path d="M8 4V15" />
+      <path d="M16 9V15" />
     </Icon>
   );
 }

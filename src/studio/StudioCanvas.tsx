@@ -180,7 +180,6 @@ export function StudioCanvas() {
   const pendingAttach = useStudio((s) => s.pendingAttach);
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
-  const patternOn = useStudio((s) => s.patternOn);
   const playing = useStudio((s) => s.playing);
   const pattern = useStudio((s) => s.pattern);
   const t = useStudio((s) => s.t);
@@ -971,7 +970,8 @@ export function StudioCanvas() {
     const item = scene.find((it) => it.id === id);
     const itemSize = item && sizeOf(item);
     if (!item || !itemSize) return;
-    setCursor("move");
+    const isText = composition.tracks.find((tr) => tr.layer.id === id)?.layer.source.kind === "text";
+    setCursor(isText ? null : "move");
     begin(item, itemSize, "move", null);
   };
 
@@ -1348,6 +1348,9 @@ export function StudioCanvas() {
     return { lines, labels };
   }, [alignment, viewport, frame, view]);
 
+  const typedSource = composition.tracks.find((tr) => tr.layer.id === editingTextId)?.layer.source;
+  const typedChars = typedSource?.kind === "text" ? typedSource.content.length : 0;
+
   const chrome = useMemo(() => {
     if (!selected) return null;
     const toScreen = (p: Point) =>
@@ -1403,7 +1406,7 @@ export function StudioCanvas() {
               transform: `scale(${scale})`,
             }}
           >
-            {patternOn ? (
+            {pattern !== "off" ? (
               <div
                 className={`absolute inset-0 bg-[length:20px_20px] ${PATTERN_CLASS[pattern]}`}
               />
@@ -1612,11 +1615,20 @@ export function StudioCanvas() {
         scale={scale}
         clickRef={textClickRef}
       /> : null}
-      {selected && chrome && !clonerGroup && (() => {
-        if (!editingTextId) return true;
-        const et = composition.tracks.find((tr) => tr.layer.id === editingTextId);
-        return et?.layer.source.kind === "text" && et.layer.source.boxWidth != null;
-      })() ? (
+      {selected && chrome && !clonerGroup && editingTextId && typedChars > 0 ? (
+        <svg
+          className="studio-selection"
+          width={viewport.width}
+          height={viewport.height}
+          aria-hidden="true"
+        >
+          <polygon
+            className="studio-selection-outline opacity-40"
+            points={chrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
+          />
+        </svg>
+      ) : null}
+      {selected && chrome && !clonerGroup && !editingTextId ? (
         <>
           <svg
             className="studio-selection"

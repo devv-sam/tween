@@ -1,9 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/types";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
-import { designSizeOf, isSvg, useStudio } from "./store";
+import { designSizeOf, isSvg, useStudio, type AlignEdge } from "./store";
 import { FPS_CHOICES } from "./composition";
 import { ResolutionPicker } from "./ResolutionPicker";
 import {
@@ -19,6 +19,11 @@ import {
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
 import { Dropdown } from "./Dropdown";
+import { ScrollArea } from "./ScrollArea";
+import { stepFocus } from "./stepFocus";
+import { ensureFontPreview, faceOf } from "./fontPreview";
+import { getFont } from "../render/fontCache";
+import { weightName } from "./text";
 import {
   MIN_SEGMENT,
   easesAgree,
@@ -28,7 +33,18 @@ import {
   type SegmentView,
 } from "./segments";
 import { BenchPanel } from "./ModuleShelf";
-import { AlignCenterIcon, AlignMiddleIcon, TextAlignIcon } from "./icons";
+import {
+  AlignBottomIcon,
+  AlignCenterIcon,
+  AlignLeftIcon,
+  AlignMiddleIcon,
+  AlignRightIcon,
+  AlignTopIcon,
+  DotsPatternIcon,
+  GridPatternIcon,
+  SplitIcon,
+  TextAlignIcon,
+} from "./icons";
 import {
   BOX,
   ColorField,
@@ -43,6 +59,7 @@ import {
   PANEL_LABEL,
   PILL,
   SECTION,
+  Segmented,
   SUBLABEL,
   type Join,
 } from "./fields";
@@ -62,7 +79,7 @@ export function Inspector() {
       className={`flex min-h-0 flex-1 flex-col overflow-hidden ${PANEL}`}
       aria-label={bench ? "module bench" : "inspector"}
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <ScrollArea className="min-h-0 flex-1">
         {/* The bench takes the panel rather than floating over it: a module is being
             written against the proxy on the frame, and the element that happened to
             be picked has nothing to do with it. */}
@@ -75,7 +92,7 @@ export function Inspector() {
             selectedIds={selectedIds}
           />
         )}
-      </div>
+      </ScrollArea>
     </aside>
   );
 }
@@ -205,18 +222,20 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
  */
 function CompositionPanel() {
   const { fps, background } = useStudio((s) => s.composition);
-  const patternOn = useStudio((s) => s.patternOn);
   const pattern = useStudio((s) => s.pattern);
 
   return (
     <section className={SECTION}>
-      <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
-        <ColorInput
-          label="background"
-          value={background ?? "#ffffff"}
-          onChange={(hex) => useStudio.getState().setBackground(hex)}
-        />
+      <p className={`${PANEL_LABEL} mb-3`}>Composition</p>
+      <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-1.5">
+        <div className="col-span-2 flex">
+          <ColorInput
+            outlined
+            label="background"
+            value={background ?? "#ffffff"}
+            onChange={(hex) => useStudio.getState().setBackground(hex)}
+          />
+        </div>
         <ResolutionPicker />
         <SelectField
           pill
@@ -226,61 +245,39 @@ function CompositionPanel() {
           onChange={(v) => useStudio.getState().setFps(Number(v))}
           options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
         />
-        <div className="grid grid-cols-2 gap-1.5">
-          <ToggleField
-            label="Pattern"
-            title="Canvas pattern"
-            on={patternOn}
-            onChange={(on) => useStudio.getState().setPatternOn(on)}
-          />
-          <div className={patternOn ? "" : "pointer-events-none opacity-50"} aria-disabled={!patternOn}>
-            <SelectField
-              pill
-              label="Type"
-              title="Pattern type"
-              value={pattern}
-              onChange={(v) => useStudio.getState().setPattern(v === "grid" ? "grid" : "dots")}
-              options={[
-                { value: "dots", label: "Dots" },
-                { value: "grid", label: "Grid" },
-              ]}
-            />
-          </div>
-        </div>
+      </div>
+      <div className="mt-3">
+        <p className={`${LABEL} mb-2`}>Pattern</p>
+        <Segmented
+          outlined
+          value={pattern}
+          options={[
+            { value: "off", label: "No pattern", content: <span>–</span> },
+            {
+              value: "dots",
+              label: "Dots",
+              content: (
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <DotsPatternIcon size={12} />
+                  Dots
+                </span>
+              ),
+            },
+            {
+              value: "grid",
+              label: "Grid",
+              content: (
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <GridPatternIcon size={12} />
+                  Grid
+                </span>
+              ),
+            },
+          ]}
+          onChange={(v) => useStudio.getState().setPattern(v)}
+        />
       </div>
     </section>
-  );
-}
-
-function ToggleField({
-  label,
-  title,
-  on,
-  onChange,
-}: {
-  label: string;
-  title: string;
-  on: boolean;
-  onChange: (on: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      title={title}
-      className={`${PILL} w-full justify-between`}
-      onClick={() => onChange(!on)}
-    >
-      <span className={`${LABEL} shrink-0`}>{label}</span>
-      <span
-        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-border"}`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${on ? "translate-x-3" : ""}`}
-        />
-      </span>
-    </button>
   );
 }
 
@@ -515,7 +512,7 @@ function SelectionKeyButton({
       type="button"
       aria-label={`${label}: ${target}, ${ids.length} elements`}
       title={label}
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md hover:bg-text-primary/5 ${
+      className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md hover:bg-text-primary/5 ${
         keyframed
           ? PROP_TEXT[target]
           : "text-text-muted/60 hover:text-text-primary/70"
@@ -615,9 +612,7 @@ function ElementSection({
   return (
     <section className={SECTION}>
       {/* The element's own name, so there is no doubt which one these fields belong
-          to once the composition's settings are sitting right above them. The two
-          centring buttons ride the same line: they act on the whole element rather
-          than on any one field under it, which is what the heading names. */}
+          to once the composition's settings are sitting right above them. */}
       <div className={`flex items-center gap-1 mb-2`}>
         <input
           className={`${LABEL} min-w-0 flex-1 truncate bg-transparent outline-none focus:text-text-primary`}
@@ -625,9 +620,9 @@ function ElementSection({
           title={name}
           onChange={(e) => useStudio.getState().renameLayer(layer.id, e.target.value)}
         />
-        <CentreButton layerId={layer.id} axis="x" />
-        <CentreButton layerId={layer.id} axis="y" />
       </div>
+
+      <AlignToFrame layerId={layer.id} />
 
       {/* Which part of which drawing this is. Read-only: it says where this came
           from, and nothing about the drawing is edited from here. */}
@@ -801,28 +796,46 @@ function ShapeFillStrokeSection({ track }: { track: Track }) {
   );
 }
 
-/**
- * Put the element on one of the frame's centre lines.
- *
- * The icon is the line it aligns to, so the vertical one centres across the width and
- * the horizontal one centres down the height — the same two lines a drag already draws
- * when it passes through the middle, reachable without the drag.
- */
-function CentreButton({ layerId, axis }: { layerId: string; axis: "x" | "y" }) {
-  const label =
-    axis === "x"
-      ? "Centre horizontally"
-      : "Centre vertically";
+const ALIGN_GROUPS: { edge: AlignEdge; label: string; icon: ReactNode }[][] = [
+  [
+    { edge: "left", label: "Align left", icon: <AlignLeftIcon /> },
+    { edge: "center", label: "Align centre", icon: <AlignCenterIcon /> },
+    { edge: "right", label: "Align right", icon: <AlignRightIcon /> },
+  ],
+  [
+    { edge: "top", label: "Align top", icon: <AlignTopIcon /> },
+    { edge: "middle", label: "Align middle", icon: <AlignMiddleIcon /> },
+    { edge: "bottom", label: "Align bottom", icon: <AlignBottomIcon /> },
+  ],
+];
+
+/** Lines the element up with the frame: across its width, then down its height. */
+function AlignToFrame({ layerId }: { layerId: string }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
-      onClick={() => useStudio.getState().centreLayer(layerId, axis)}
-    >
-      {axis === "x" ? <AlignCenterIcon /> : <AlignMiddleIcon />}
-    </button>
+    <>
+      <p className={`${SUBLABEL} mb-1`}>Align to frame</p>
+      <div className="mb-2 grid grid-cols-2 gap-1.5">
+        {ALIGN_GROUPS.map((group) => (
+          <div
+            key={group[0].edge}
+            className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg bg-text-primary/5 [&_svg]:size-(--align-icon) [&_svg]:[stroke-width:var(--align-stroke)]"
+          >
+            {group.map(({ edge, label, icon }) => (
+              <button
+                key={edge}
+                type="button"
+                aria-label={label}
+                title={label}
+                className="grid h-(--align-height) place-items-center text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
+                onClick={() => useStudio.getState().alignLayer(layerId, edge)}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -885,7 +898,7 @@ function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
       aria-label={label}
       aria-pressed={locked}
       title={label}
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
+      className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md ${
         locked ? "text-accent" : "text-text-muted/60 hover:text-text-primary/70"
       } hover:bg-text-primary/5`}
       onClick={() => useStudio.getState().toggleLayerLock(layerId)}
@@ -1052,7 +1065,7 @@ function SeparateButton({
       aria-label="separate dimensions"
       aria-pressed={separate}
       title="Separate dimensions"
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
+      className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md ${
         separate
           ? "bg-accent/10 text-accent"
           : "text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
@@ -1061,7 +1074,7 @@ function SeparateButton({
         useStudio.getState().setSeparatePosition(layerId, !separate)
       }
     >
-      <SeparatorVerticalIcon />
+      <SplitIcon size={14} />
     </button>
   );
 }
@@ -1070,6 +1083,11 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
   const fonts = useStudio((s) => s.fonts);
   const [fontSearch, setFontSearch] = useState("");
   const [fontOpen, setFontOpen] = useState(false);
+  const fontBtnRef = useRef<HTMLButtonElement>(null);
+  const fontListRef = useRef<HTMLDivElement>(null);
+  // Only the last pick of each kind applies, however late an earlier one arrives.
+  const latest = useRef({ font: 0, weight: 0 });
+  const hoverTimer = useRef<number>(undefined);
 
   const set = (patch: Partial<TextSource>) =>
     useStudio.getState().setTextProp(layerId, patch);
@@ -1077,6 +1095,12 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
   const filtered = fontSearch
     ? fonts.filter((f) => f.family.toLowerCase().includes(fontSearch.toLowerCase()))
     : fonts;
+
+  const shown = filtered.slice(0, 50);
+  useEffect(() => {
+    ensureFontPreview(source.fontFamily);
+    if (fontOpen) shown.forEach((f) => ensureFontPreview(f.family));
+  }, [fontOpen, source.fontFamily, fontSearch, fonts]);
 
   const weights = fonts.find((f) => f.family === source.fontFamily)?.variants ?? [];
   const weightOptions = weights
@@ -1094,19 +1118,41 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
         <p className={`${SUBLABEL} mb-1`}>Font</p>
         <div className="relative mb-1">
           <button
+            ref={fontBtnRef}
             type="button"
             className={`${BOX} w-full justify-between`}
             onClick={() => setFontOpen(!fontOpen)}
+            onKeyDown={(e) => {
+              if (!fontOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault();
+                setFontOpen(true);
+              }
+            }}
           >
-            <span className="min-w-0 truncate text-[11px] text-text-primary">
+            <span
+              className="min-w-0 truncate text-[12px] text-text-primary"
+              style={{ fontFamily: faceOf(source.fontFamily) }}
+            >
               {source.fontFamily}
             </span>
-            <span className="shrink-0 text-[10px] text-text-muted/60">
-              {fontOpen ? "▲" : "▼"}
-            </span>
+            <ChevronDown
+              size={12}
+              aria-hidden="true"
+              className={`shrink-0 text-text-muted transition-transform ${fontOpen ? "rotate-180" : ""}`}
+            />
           </button>
           {fontOpen ? (
-            <div className="absolute left-0 top-full z-20 mt-0.5 flex max-h-[200px] w-full flex-col overflow-hidden rounded-md border border-border bg-bg shadow-lg">
+            <div
+              ref={fontListRef}
+              className="absolute left-0 top-full z-20 mt-0.5 flex max-h-[200px] w-full flex-col overflow-hidden rounded-md border border-border bg-bg shadow-lg"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setFontOpen(false);
+                  fontBtnRef.current?.focus();
+                } else stepFocus(e, fontListRef.current, "input, button");
+              }}
+            >
               <input
                 autoFocus
                 className={`${INPUT} border-b border-border px-2 py-1`}
@@ -1115,20 +1161,36 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
                 onChange={(e) => setFontSearch(e.target.value)}
               />
               <div className="overflow-y-auto">
-                {filtered.slice(0, 50).map((f) => (
+                {shown.map((f) => (
                   <button
                     key={f.family}
                     type="button"
-                    className={`block w-full px-2 py-1 text-left text-[11px] hover:bg-text-primary/5 ${
+                    className={`block w-full px-2 py-1 text-left text-[13px] outline-none hover:bg-text-primary/5 focus-visible:bg-text-primary/10 ${
                       f.family === source.fontFamily ? "bg-accent/10 text-accent" : "text-text-primary"
                     }`}
+                    onPointerEnter={() => {
+                      window.clearTimeout(hoverTimer.current);
+                      // Rows swept past on the way down are not fetched.
+                      hoverTimer.current = window.setTimeout(
+                        () => void getFont(f.family, source.fontWeight).catch(() => {}),
+                        150,
+                      );
+                    }}
+                    onPointerLeave={() => window.clearTimeout(hoverTimer.current)}
                     onClick={() => {
-                      set({ fontFamily: f.family });
+                      // The font is applied once it has arrived, so the element and these
+                      // fields change once, not through a stretch with no font at all.
+                      const pick = ++latest.current.font;
+                      void getFont(f.family, source.fontWeight)
+                        .catch(() => {})
+                        .then(() => {
+                          if (latest.current.font === pick) set({ fontFamily: f.family });
+                        });
                       setFontOpen(false);
                       setFontSearch("");
                     }}
                   >
-                    {f.family}
+                    <span style={{ fontFamily: faceOf(f.family) }}>{f.family}</span>
                   </button>
                 ))}
               </div>
@@ -1141,10 +1203,17 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
             <SelectField
               label="Weight"
               value={String(source.fontWeight)}
-              onChange={(v) => set({ fontWeight: Number(v) })}
+              onChange={(v) => {
+                const pick = ++latest.current.weight;
+                void getFont(source.fontFamily, Number(v))
+                  .catch(() => {})
+                  .then(() => {
+                    if (latest.current.weight === pick) set({ fontWeight: Number(v) });
+                  });
+              }}
               options={weightOptions.map((w) => ({
                 value: String(w),
-                label: String(w),
+                label: weightName(w),
               }))}
             />
           </div>
@@ -1179,24 +1248,16 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
         </div>
 
         <p className={`${SUBLABEL} mb-1 mt-2`}>Align</p>
-        <div className="mb-1 flex gap-0.5">
-          {(["left", "center", "right"] as const).map((a) => (
-            <button
-              key={a}
-              type="button"
-              title={`Align ${a}`}
-              aria-label={`align ${a}`}
-              aria-pressed={source.align === a}
-              className={`grid h-[22px] w-[26px] place-items-center rounded-md ${
-                source.align === a
-                  ? "bg-accent text-white"
-                  : "text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary"
-              }`}
-              onClick={() => set({ align: a })}
-            >
-              <TextAlignIcon align={a} />
-            </button>
-          ))}
+        <div className="mb-1">
+          <Segmented
+            value={source.align}
+            options={(["left", "center", "right"] as const).map((a) => ({
+              value: a,
+              label: `Align ${a}`,
+              content: <TextAlignIcon align={a} />,
+            }))}
+            onChange={(align) => set({ align })}
+          />
         </div>
       </section>
 
@@ -1230,27 +1291,5 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
         ) : null}
       </section>
     </>
-  );
-}
-
-/** Lucide `separator-vertical` — one field parting into two, which is what the
- *  button beside a position does to its axes. */
-function SeparatorVerticalIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="13"
-      height="13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3v18" />
-      <path d="m16 16 4-4-4-4" />
-      <path d="m8 8-4 4 4 4" />
-    </svg>
   );
 }

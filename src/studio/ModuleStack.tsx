@@ -154,7 +154,7 @@ function ClonerRow({
         type="button"
         aria-label="remove cloner"
         title="Remove cloner"
-        className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
+        className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
         onClick={() => onChange(null)}
       >
         <CloseIcon />
@@ -681,7 +681,7 @@ function ModuleRow({ row, layerId }: { row: StackRow; layerId: string }) {
           type="button"
           aria-label={`remove ${label}`}
           title="Remove"
-          className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
+          className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
           onClick={() => useStudio.getState().removeModule(layerId, row.index)}
         >
           <CloseIcon />

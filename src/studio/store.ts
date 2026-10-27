@@ -25,6 +25,7 @@ import type {
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
 import { onFontLoaded, peekFont, registerFontFiles } from "../render/fontCache";
+import { isIconFont } from "./text";
 import { layoutSource, textSize } from "../render/textLayout";
 import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
@@ -589,12 +590,13 @@ function defaultEllipseProps(w: number, h: number): EllipseProps {
   return { width: w, height: h, sweepAngle: 360, startAngle: 0, fill: { ...DEFAULT_FILL }, stroke: { ...DEFAULT_STROKE } };
 }
 
+export type AlignEdge = "left" | "center" | "right" | "top" | "middle" | "bottom";
+
 /** The editor's backdrop inside the frame. A view aid: it is never drawn into an export. */
-export type CanvasPattern = "dots" | "grid";
+export type CanvasPattern = "off" | "dots" | "grid";
 
 type StudioState = {
   activeTool: ActiveTool;
-  patternOn: boolean;
   pattern: CanvasPattern;
   shapeCounters: { rect: number; ellipse: number; text: number };
   composition: Composition;
@@ -669,7 +671,6 @@ type StudioState = {
   setFps: (fps: number) => void;
   setResolution: (size: Size) => void;
   setBackground: (hex: string) => void;
-  setPatternOn: (on: boolean) => void;
   setPattern: (pattern: CanvasPattern) => void;
   setViewport: (viewport: Size) => void;
   zoomAroundPoint: (screen: Point, nextZoom: number) => void;
@@ -832,6 +833,8 @@ type StudioState = {
   nudgeSelected: (dx: number, dy: number) => void;
   /** Put the element on the composition's centre line, on one axis. */
   centreLayer: (layerId: string, axis: "x" | "y") => void;
+  /** Line the element's bounds up with an edge or a centre line of the frame. */
+  alignLayer: (layerId: string, edge: AlignEdge) => void;
   /**
    * Take one part off a drawing, at a point on the frame.
    *
@@ -974,7 +977,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
 
   return {
     activeTool: "select",
-    patternOn: true,
     pattern: "dots",
     shapeCounters: { rect: 0, ellipse: 0, text: 0 },
     composition: emptyComposition(),
@@ -1053,7 +1055,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     },
 
     // View state, not an edit: it stays out of the undo history.
-    setPatternOn: (on) => set({ patternOn: on }),
     setPattern: (pattern) => set({ pattern }),
 
     setViewport: (viewport) => {
@@ -2289,6 +2290,36 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     },
 
     /**
+     * Line the element up with the frame by its bounds, turned or scaled as it is. An
+     * element standing in several places is lined up as the one shape they make
+     * together. The centre lines are `centreLayer`'s: they act on where it stands, not
+     * on how far it reaches.
+     */
+    alignLayer: (layerId, edge) => {
+      if (edge === "center") return get().centreLayer(layerId, "x");
+      if (edge === "middle") return get().centreLayer(layerId, "y");
+      const { composition, moduleLibrary, assets, frame, moveAnchor, moveLayer, t, sealHistory } =
+        get();
+      const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+      const size = track && designSizeOf(assets, track.layer);
+      const anchor = moveAnchor(layerId);
+      if (!track || !size || !anchor) return;
+      const instances = renderState(composition, t, moduleLibrary).filter((it) => it.id === layerId);
+      const states = instances.length > 0 ? instances.map((it) => it.state) : [track.layer.base];
+      const reach = states.map((s) => ({ s, half: boundsHalf(s, size) }));
+      const horizontal = edge === "left" || edge === "right";
+      const lo = Math.min(...reach.map(({ s, half }) => (horizontal ? s.x - half.x : s.y - half.y)));
+      const hi = Math.max(...reach.map(({ s, half }) => (horizontal ? s.x + half.x : s.y + half.y)));
+      const by =
+        edge === "left" || edge === "top"
+          ? -lo
+          : (horizontal ? frame.width : frame.height) - hi;
+      if (by === 0) return;
+      moveLayer(layerId, anchor, horizontal ? by : 0, horizontal ? 0 : by);
+      sealHistory();
+    },
+
+    /**
      * Take one part off a drawing.
      *
      * Both sides come out as their own drawing, each cropped to what it actually
@@ -2562,8 +2593,9 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         const res = await fetch(
           `https://www.googleapis.com/webfonts/v1/webfonts?key=${key}&sort=popularity`,
         );
-        const { items } = await res.json();
-        if (Array.isArray(items)) {
+        const { items: all } = await res.json();
+        if (Array.isArray(all)) {
+          const items = all.filter((f: { family: string }) => !isIconFont(f.family));
           for (const f of items) {
             if (f.files) registerFontFiles(f.family, f.files);
           }
