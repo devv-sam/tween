@@ -20,7 +20,6 @@ export function AssetsPanel({ height }: { height: number }) {
     <section
       className={`flex max-h-[calc(100%_-_96px_-_var(--gap))] shrink-0 flex-col overflow-hidden ${PANEL}`}
       style={{ height }}
-      aria-label="assets"
     >
       <div className="flex h-9 shrink-0 items-center gap-3 px-3">
         <PanelTab label="Assets" active={tab === "assets"} onClick={() => setTab("assets")} />
@@ -90,7 +89,7 @@ function AssetShelf({
         }}
       />
       {assets.length === 0 ? (
-        <p className="m-0 px-3 py-3 text-sm leading-normal text-text-muted/60">
+        <p className="m-0 px-3 py-3 text-xs leading-normal text-text-muted/60">
           Nothing here yet. Import PNG, JPG, WebP, or SVG.
         </p>
       ) : (

@@ -19,7 +19,6 @@ export function EffectsPanel({ height }: { height: number }) {
     <section
       className={`flex max-h-[calc(100%_-_96px_-_var(--gap))] shrink-0 flex-col overflow-hidden ${PANEL}`}
       style={{ height }}
-      aria-label="effects"
     >
       <div className="flex h-9 shrink-0 items-center px-3">
         <span className={PANEL_LABEL}>Effects</span>
@@ -46,7 +45,6 @@ export function EffectsPanel({ height }: { height: number }) {
             type="search"
             className="h-8 w-full rounded-lg border border-border bg-bg px-2.5 text-[12px] text-text-primary outline-none placeholder:text-text-muted/60 focus:border-accent"
             placeholder="Search effects"
-            aria-label="Search effects"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
