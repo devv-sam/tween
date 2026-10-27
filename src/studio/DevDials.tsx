@@ -39,11 +39,11 @@ export default function DevDials({
 }) {
   // Fixed at mount: a config that follows `sizes` would re-register the panel on every drag.
   const [config] = useState(() => ({
-    leftWidth: [sizes.leftWidth, 160, 600, 1] as [number, number, number, number],
-    rightWidth: [sizes.rightWidth, 160, 600, 1] as [number, number, number, number],
-    assetsHeight: [sizes.assetsHeight, 80, 700, 1] as [number, number, number, number],
-    effectsHeight: [sizes.effectsHeight, 80, 700, 1] as [number, number, number, number],
-    timelineHeight: [sizes.timelineHeight, 80, 700, 1] as [number, number, number, number],
+    leftWidth: [sizes.leftWidth, 280, 600, 1] as [number, number, number, number],
+    rightWidth: [sizes.rightWidth, 300, 600, 1] as [number, number, number, number],
+    assetsHeight: [sizes.assetsHeight, 160, 700, 1] as [number, number, number, number],
+    effectsHeight: [sizes.effectsHeight, 200, 700, 1] as [number, number, number, number],
+    timelineHeight: [sizes.timelineHeight, 150, 700, 1] as [number, number, number, number],
   }));
   const dial = useDialKitController("Sizes", config);
   const dialled = dial.values;

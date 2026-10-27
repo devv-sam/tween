@@ -18,7 +18,7 @@ export function AssetsPanel({ height }: { height: number }) {
 
   return (
     <section
-      className={`flex max-h-[calc(100%_-_96px_-_var(--gap))] shrink-0 flex-col overflow-hidden ${PANEL}`}
+      className={`flex max-h-[calc(100%_-_200px_-_var(--gap))] shrink-0 flex-col overflow-hidden ${PANEL}`}
       style={{ height }}
     >
       <div className="flex h-9 shrink-0 items-center gap-3 px-3">

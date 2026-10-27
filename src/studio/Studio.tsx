@@ -9,18 +9,24 @@ import { StudioCanvas } from "./StudioCanvas";
 import { Timeline } from "./Timeline";
 import { Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
+import { clamp } from "../core/math";
 import { useStudio } from "./store";
 import { readNumber, writeNumber } from "./prefs";
 
 /** Panel sizes in px; `fallback` is what a panel opens at until it has been dragged. */
-const SCENE_WIDTH = { key: "tween:width:scene", fallback: 333, min: 220, max: 520 };
-const INSPECTOR_WIDTH = { key: "tween:width:inspector", fallback: 347, min: 220, max: 480 };
-const ASSETS_HEIGHT = { key: "tween:height:assets", fallback: 318, min: 120, max: 640 };
-const EFFECTS_HEIGHT = { key: "tween:height:effects", fallback: 296, min: 120, max: 640 };
-const TIMELINE_HEIGHT = { key: "tween:height:timeline", fallback: 200, min: 120, max: 640 };
-/** What the panel above keeps when the one below it is dragged up as far as it goes. */
-const SCENE_MIN_HEIGHT = 96;
-const CANVAS_MIN_HEIGHT = 160;
+const SCENE_WIDTH = { key: "tween:width:scene", fallback: 333, min: 280, max: 520 };
+const INSPECTOR_WIDTH = { key: "tween:width:inspector", fallback: 347, min: 300, max: 480 };
+const ASSETS_HEIGHT = { key: "tween:height:assets", fallback: 318, min: 160, max: 640 };
+const EFFECTS_HEIGHT = { key: "tween:height:effects", fallback: 296, min: 200, max: 640 };
+const TIMELINE_HEIGHT = { key: "tween:height:timeline", fallback: 200, min: 150, max: 640 };
+/** What the panel above keeps when the one below it is dragged up as far as it goes.
+ *  The `max-h` calcs on the panels below are these numbers again, as classes. */
+const SCENE_MIN_HEIGHT = 200;
+const CANVAS_MIN_HEIGHT = 240;
+
+/** What was saved, held to today's limits: they have been raised since it was written. */
+const saved = (l: { key: string; fallback: number; min: number; max: number }) =>
+  clamp(readNumber(l.key, l.fallback), l.min, l.max);
 
 // Opt-in while the look is settled: add `?dials` to the URL in dev.
 const DevDials =
@@ -40,21 +46,11 @@ export function Studio() {
   // The scene's rows are drawn by the timeline, which owns the selection, the
   // reorder and the clock; this is the box it draws them into.
   const [sceneHost, setSceneHost] = useState<HTMLDivElement | null>(null);
-  const [sceneWidth, setSceneWidth] = useState(() =>
-    readNumber(SCENE_WIDTH.key, SCENE_WIDTH.fallback),
-  );
-  const [inspectorWidth, setInspectorWidth] = useState(() =>
-    readNumber(INSPECTOR_WIDTH.key, INSPECTOR_WIDTH.fallback),
-  );
-  const [assetsHeight, setAssetsHeight] = useState(() =>
-    readNumber(ASSETS_HEIGHT.key, ASSETS_HEIGHT.fallback),
-  );
-  const [effectsHeight, setEffectsHeight] = useState(() =>
-    readNumber(EFFECTS_HEIGHT.key, EFFECTS_HEIGHT.fallback),
-  );
-  const [timelineHeight, setTimelineHeight] = useState(() =>
-    readNumber(TIMELINE_HEIGHT.key, TIMELINE_HEIGHT.fallback),
-  );
+  const [sceneWidth, setSceneWidth] = useState(() => saved(SCENE_WIDTH));
+  const [inspectorWidth, setInspectorWidth] = useState(() => saved(INSPECTOR_WIDTH));
+  const [assetsHeight, setAssetsHeight] = useState(() => saved(ASSETS_HEIGHT));
+  const [effectsHeight, setEffectsHeight] = useState(() => saved(EFFECTS_HEIGHT));
+  const [timelineHeight, setTimelineHeight] = useState(() => saved(TIMELINE_HEIGHT));
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -115,7 +111,7 @@ export function Studio() {
             onResize={(h) => setTimelineHeight(fitBelow(mainRef.current, CANVAS_MIN_HEIGHT, h))}
           />
           <div
-            className="flex max-h-[calc(100%_-_160px_-_var(--gap))] shrink-0 flex-col"
+            className="flex max-h-[calc(100%_-_240px_-_var(--gap))] shrink-0 flex-col"
             style={{ height: timelineHeight }}
           >
             <Timeline sceneHost={sceneHost} />
