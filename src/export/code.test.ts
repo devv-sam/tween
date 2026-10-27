@@ -15,6 +15,24 @@ describe("code export", () => {
   });
 });
 
+describe("html options", () => {
+  it("plays once instead of looping", () => {
+    expect(exportCode(demo, [], 30)).toContain("iterations:Infinity");
+    expect(exportCode(demo, [], 30, {}, { loop: false })).toContain("iterations:1,");
+  });
+  it("adds a pause button only when asked", () => {
+    expect(exportCode(demo, [], 30)).not.toContain('id="toggle"');
+    expect(exportCode(demo, [], 30, {}, { controls: true })).toContain('id="toggle"');
+  });
+  it("minifying drops indentation and blank lines but not content", () => {
+    const plain = exportCode(demo, [], 30);
+    const small = exportCode(demo, [], 30, {}, { minify: true });
+    expect(small.length).toBeLessThan(plain.length);
+    expect(small).not.toMatch(/\n\s/);
+    expect(small).toContain("animate");
+  });
+});
+
 describe("an svg node in the export", () => {
   const comp = {
     fps: 30,
