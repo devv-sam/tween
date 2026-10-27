@@ -18,3 +18,6 @@ const WEIGHT_NAMES: Record<number, string> = {
 
 /** A font weight by name, or the number itself when it falls between the named ones. */
 export const weightName = (weight: number): string => WEIGHT_NAMES[weight] ?? String(weight);
+
+/** Icon fonts are in the font list but draw ligatures, not letters: not for setting text. */
+export const isIconFont = (family: string): boolean => /^Material (Icons|Symbols)/.test(family);

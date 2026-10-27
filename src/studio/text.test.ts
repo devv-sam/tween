@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capitalize, typeName, weightName } from "./text";
+import { capitalize, isIconFont, typeName, weightName } from "./text";
 
 describe("capitalize", () => {
   it("raises the first letter and leaves the rest alone", () => {
@@ -27,5 +27,15 @@ describe("weightName", () => {
 
   it("keeps the number for a weight that has no name", () => {
     expect(weightName(450)).toBe("450");
+  });
+});
+
+describe("isIconFont", () => {
+  it("spots the icon families and leaves text ones alone", () => {
+    expect(isIconFont("Material Icons")).toBe(true);
+    expect(isIconFont("Material Symbols Outlined")).toBe(true);
+    expect(isIconFont("Material Icons Two Tone")).toBe(true);
+    expect(isIconFont("Inter")).toBe(false);
+    expect(isIconFont("Materialist")).toBe(false);
   });
 });

@@ -25,6 +25,7 @@ import type {
 import { isLinked, resolveModule } from "../core/library";
 import { ensureImage, forgetImage } from "../render/images";
 import { onFontLoaded, peekFont, registerFontFiles } from "../render/fontCache";
+import { isIconFont } from "./text";
 import { layoutSource, textSize } from "../render/textLayout";
 import { SHAPE_SIZE } from "../render/canvas2d";
 import { MSG_TYPE, MSG_UNDISSECTED, imageError } from "./files";
@@ -2562,8 +2563,9 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
         const res = await fetch(
           `https://www.googleapis.com/webfonts/v1/webfonts?key=${key}&sort=popularity`,
         );
-        const { items } = await res.json();
-        if (Array.isArray(items)) {
+        const { items: all } = await res.json();
+        if (Array.isArray(all)) {
+          const items = all.filter((f: { family: string }) => !isIconFont(f.family));
           for (const f of items) {
             if (f.files) registerFontFiles(f.family, f.files);
           }

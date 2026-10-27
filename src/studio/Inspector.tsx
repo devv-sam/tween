@@ -20,6 +20,7 @@ import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
 import { Dropdown } from "./Dropdown";
 import { ensureFontPreview, faceOf } from "./fontPreview";
+import { getFont } from "../render/fontCache";
 import { weightName } from "./text";
 import {
   MIN_SEGMENT,
@@ -1136,8 +1137,13 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
                     className={`block w-full px-2 py-1 text-left text-[13px] hover:bg-text-primary/5 ${
                       f.family === source.fontFamily ? "bg-accent/10 text-accent" : "text-text-primary"
                     }`}
+                    onPointerEnter={() => void getFont(f.family, source.fontWeight).catch(() => {})}
                     onClick={() => {
-                      set({ fontFamily: f.family });
+                      // The font is applied once it has arrived, so the element and these
+                      // fields change once, not through a stretch with no font at all.
+                      void getFont(f.family, source.fontWeight)
+                        .catch(() => {})
+                        .then(() => set({ fontFamily: f.family }));
                       setFontOpen(false);
                       setFontSearch("");
                     }}
@@ -1155,7 +1161,11 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
             <SelectField
               label="Weight"
               value={String(source.fontWeight)}
-              onChange={(v) => set({ fontWeight: Number(v) })}
+              onChange={(v) =>
+                void getFont(source.fontFamily, Number(v))
+                  .catch(() => {})
+                  .then(() => set({ fontWeight: Number(v) }))
+              }
               options={weightOptions.map((w) => ({
                 value: String(w),
                 label: weightName(w),
