@@ -239,7 +239,7 @@ function StackButton({
       aria-label={label}
       title={label}
       disabled={disabled}
-      className="grid h-[26px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+      className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
       onClick={onClick}
     >
       {children}

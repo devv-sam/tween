@@ -55,12 +55,9 @@ body {
   --panel-bg: var(--color-bg);
   --gap: 3px;
   --edge: 3px;
-  /* One size and weight for the icon set; the align row can be dialled apart from it. */
-  --icon-size: 16px;
-  --icon-stroke: 2.25;
   --align-height: 24px;
-  --align-icon: var(--icon-size);
-  --align-stroke: var(--icon-stroke);
+  --align-icon: 16px;
+  --align-stroke: 2.25;
   height: 100%;
   display: flex;
   flex-direction: column;

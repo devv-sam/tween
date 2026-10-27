@@ -77,22 +77,6 @@ export default function DevDials({
     el.style.setProperty("--edge", `${look.edge}px`);
   }, [look]);
 
-  const icons = useDialKit("Icons", {
-    size: [parseFloat(read("--icon-size")), 10, 28, 1],
-    stroke: [parseFloat(read("--icon-stroke")), 1, 3, 0.25],
-  });
-
-  useEffect(() => {
-    const el = studio();
-    if (!el) return;
-    el.style.setProperty("--icon-size", `${icons.size}px`);
-    el.style.setProperty("--icon-stroke", String(icons.stroke));
-  }, [icons]);
-
-  const [alignStart] = useState(() => ({
-    icon: parseFloat(read("--align-icon")),
-    stroke: parseFloat(read("--align-stroke")),
-  }));
   const align = useDialKit("Align to frame", {
     height: [parseFloat(read("--align-height")), 16, 40, 1],
     icon: [parseFloat(read("--align-icon")), 8, 24, 1],
@@ -103,12 +87,9 @@ export default function DevDials({
     const el = studio();
     if (!el) return;
     el.style.setProperty("--align-height", `${align.height}px`);
-    // Left at its own start value, the row keeps following the shared icon tokens.
-    if (align.icon === alignStart.icon) el.style.removeProperty("--align-icon");
-    else el.style.setProperty("--align-icon", `${align.icon}px`);
-    if (align.stroke === alignStart.stroke) el.style.removeProperty("--align-stroke");
-    else el.style.setProperty("--align-stroke", String(align.stroke));
-  }, [align, alignStart]);
+    el.style.setProperty("--align-icon", `${align.icon}px`);
+    el.style.setProperty("--align-stroke", String(align.stroke));
+  }, [align]);
 
   return <DialRoot position="bottom-left" theme="light" defaultOpen={false} />;
 }

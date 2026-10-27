@@ -258,7 +258,7 @@ function CompositionPanel() {
               label: "Dots",
               content: (
                 <span className="flex items-center gap-1.5 text-[11px]">
-                  <DotsPatternIcon />
+                  <DotsPatternIcon size={12} />
                   Dots
                 </span>
               ),
@@ -268,7 +268,7 @@ function CompositionPanel() {
               label: "Grid",
               content: (
                 <span className="flex items-center gap-1.5 text-[11px]">
-                  <GridPatternIcon />
+                  <GridPatternIcon size={12} />
                   Grid
                 </span>
               ),
@@ -512,7 +512,7 @@ function SelectionKeyButton({
       type="button"
       aria-label={`${label}: ${target}, ${ids.length} elements`}
       title={label}
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md hover:bg-text-primary/5 ${
+      className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md hover:bg-text-primary/5 ${
         keyframed
           ? PROP_TEXT[target]
           : "text-text-muted/60 hover:text-text-primary/70"
@@ -898,7 +898,7 @@ function LockButton({ layerId, locked }: { layerId: string; locked: boolean }) {
       aria-label={label}
       aria-pressed={locked}
       title={label}
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
+      className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md ${
         locked ? "text-accent" : "text-text-muted/60 hover:text-text-primary/70"
       } hover:bg-text-primary/5`}
       onClick={() => useStudio.getState().toggleLayerLock(layerId)}
@@ -1065,7 +1065,7 @@ function SeparateButton({
       aria-label="separate dimensions"
       aria-pressed={separate}
       title="Separate dimensions"
-      className={`grid h-[26px] w-[20px] shrink-0 place-items-center rounded-md ${
+      className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md ${
         separate
           ? "bg-accent/10 text-accent"
           : "text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
@@ -1074,7 +1074,7 @@ function SeparateButton({
         useStudio.getState().setSeparatePosition(layerId, !separate)
       }
     >
-      <SplitIcon />
+      <SplitIcon size={14} />
     </button>
   );
 }
