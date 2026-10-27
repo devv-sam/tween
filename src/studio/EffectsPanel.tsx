@@ -17,7 +17,7 @@ export function EffectsPanel({ height }: { height: number }) {
 
   return (
     <section
-      className={`flex max-h-[calc(100%-104px)] shrink-0 flex-col overflow-hidden ${PANEL}`}
+      className={`flex max-h-[calc(100%_-_96px_-_var(--gap))] shrink-0 flex-col overflow-hidden ${PANEL}`}
       style={{ height }}
       aria-label="effects"
     >

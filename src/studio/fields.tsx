@@ -14,7 +14,8 @@ export const LABEL = "text-[10px] uppercase tracking-[0.04em] text-text-muted";
  *  groups the fields under it without competing with the heading above them. */
 export const SUBLABEL = "text-[9px] uppercase tracking-[0.04em] text-text-muted/60";
 export const SECTION = "border-b border-border px-3 py-3";
-export const PANEL = "rounded-xl border border-border bg-bg";
+export const PANEL =
+  "rounded-(--panel-radius) border-(length:--panel-border-width) border-(color:--panel-border-color) bg-(color:--panel-bg)";
 /** The heading a floating panel carries in its header. */
 export const PANEL_LABEL = "text-[11px] uppercase tracking-[0.08em] text-text-muted";
 /** A free-standing control: taller and rounder than the dense field `BOX`. */

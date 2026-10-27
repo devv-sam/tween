@@ -48,6 +48,13 @@ body {
 }
 
 .studio {
+  /* The panels' look. Dev dials write over these, so this is also where defaults live. */
+  --panel-radius: 12px;
+  --panel-border-width: 1px;
+  --panel-border-color: var(--color-border);
+  --panel-bg: var(--color-bg);
+  --gap: 8px;
+  --edge: 8px;
   height: 100%;
   display: flex;
   flex-direction: column;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { clamp } from "../core/math";
 import { AssetsPanel } from "./AssetsPanel";
 import { CanvasControls } from "./CanvasControls";
@@ -22,29 +22,32 @@ const TIMELINE_HEIGHT = { key: "tween:height:timeline", share: 0.33, min: 120, m
 /** What the panel above keeps when the one below it is dragged up as far as it goes. */
 const SCENE_MIN_HEIGHT = 96;
 const CANVAS_MIN_HEIGHT = 160;
-/** The space between panels, which is also where they are dragged from. */
-const GAP = 8;
 
 const initial = (l: { key: string; share: number; min: number; max: number }, span: number) =>
   readNumber(l.key, clamp(Math.round(span * l.share), l.min, l.max));
 
-/** Keeps `size` inside the room a column has left once `above` is spared. */
+const DevDials = import.meta.env.DEV ? lazy(() => import("./DevDials")) : null;
+
+/** Keeps `size` inside the room a column has left once `above` and a gap are spared. */
 const fitBelow = (column: HTMLElement | null, above: number, size: number) =>
-  Math.min(size, (column?.clientHeight ?? Infinity) - above - GAP);
+  column
+    ? Math.min(
+        size,
+        column.clientHeight -
+          above -
+          parseFloat(getComputedStyle(column).getPropertyValue("--gap")),
+      )
+    : size;
 
 export function Studio() {
   // The scene's rows are drawn by the timeline, which owns the selection, the
   // reorder and the clock; this is the box it draws them into.
   const [sceneHost, setSceneHost] = useState<HTMLDivElement | null>(null);
   const [sceneWidth, setSceneWidth] = useState(() => initial(SCENE_WIDTH, innerWidth));
-  const [inspectorWidth, setInspectorWidth] = useState(() =>
-    initial(INSPECTOR_WIDTH, innerWidth),
-  );
+  const [inspectorWidth, setInspectorWidth] = useState(() => initial(INSPECTOR_WIDTH, innerWidth));
   const [assetsHeight, setAssetsHeight] = useState(() => initial(ASSETS_HEIGHT, innerHeight));
   const [effectsHeight, setEffectsHeight] = useState(() => initial(EFFECTS_HEIGHT, innerHeight));
-  const [timelineHeight, setTimelineHeight] = useState(() =>
-    initial(TIMELINE_HEIGHT, innerHeight),
-  );
+  const [timelineHeight, setTimelineHeight] = useState(() => initial(TIMELINE_HEIGHT, innerHeight));
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -62,7 +65,7 @@ export function Studio() {
     <div className="studio">
       <TopBar />
       <div ref={stageRef} className="relative flex min-h-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 px-2 pt-2">
+        <div className="flex min-h-0 flex-1 px-(--edge) pt-(--edge)">
           <div
             ref={leftRef}
             className="flex max-w-[40%] shrink-0 flex-col"
@@ -126,12 +129,17 @@ export function Studio() {
           onResize={(h) => setTimelineHeight(fitBelow(stageRef.current, CANVAS_MIN_HEIGHT, h))}
         />
         <div
-          className="flex max-h-[calc(100%-168px)] shrink-0 flex-col"
+          className="flex max-h-[calc(100%_-_160px_-_var(--gap))] shrink-0 flex-col"
           style={{ height: timelineHeight }}
         >
           <Timeline sceneHost={sceneHost} />
         </div>
       </div>
+      {DevDials ? (
+        <Suspense fallback={null}>
+          <DevDials />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

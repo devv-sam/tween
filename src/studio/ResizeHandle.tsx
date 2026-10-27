@@ -45,7 +45,7 @@ export function ResizeHandle({
       aria-valuenow={value}
       tabIndex={0}
       className={`group relative z-10 shrink-0 touch-none outline-none ${
-        horizontal ? "w-2 cursor-col-resize" : "h-2 cursor-row-resize"
+        horizontal ? "w-(--gap) cursor-col-resize" : "h-(--gap) cursor-row-resize"
       }`}
       onPointerDown={(e: PointerEvent<HTMLDivElement>) => {
         if (e.button !== 0) return;
@@ -65,14 +65,14 @@ export function ResizeHandle({
     >
       <div
         className={`absolute ${
-          horizontal ? "inset-y-2 -inset-x-1" : "inset-x-2 -inset-y-1"
+          horizontal ? "inset-y-(--gap) -inset-x-1" : "inset-x-(--gap) -inset-y-1"
         }`}
       />
       <div
         className={`absolute rounded-full group-hover:bg-accent/50 group-focus-visible:bg-accent/50 group-active:bg-accent ${
           horizontal
-            ? "inset-y-2 left-1/2 w-[2px] -translate-x-1/2"
-            : "inset-x-2 top-1/2 h-[2px] -translate-y-1/2"
+            ? "inset-y-(--gap) left-1/2 w-[2px] -translate-x-1/2"
+            : "inset-x-(--gap) top-1/2 h-[2px] -translate-y-1/2"
         }`}
       />
     </div>
