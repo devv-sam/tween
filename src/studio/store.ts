@@ -487,7 +487,7 @@ const retargetPosition = (
  *  from: a resolution change, a resize, or an undo of either. */
 const refit = (viewport: Size, frame: Size, view: View): View => {
   const next = { ...view, scale: fitScale(viewport, frame) };
-  const pan = clampPan({ x: next.panX, y: next.panY }, next, frame);
+  const pan = clampPan({ x: next.panX, y: next.panY }, next, frame, viewport);
   return { ...next, panX: pan.x, panY: pan.y };
 };
 
@@ -1056,9 +1056,9 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     },
 
     panBy: (dx, dy) => {
-      const { frame, view } = get();
-      if (!isPannable(view, frame)) return;
-      const pan = clampPan({ x: view.panX + dx, y: view.panY + dy }, view, frame);
+      const { frame, view, viewport } = get();
+      if (!isPannable(view)) return;
+      const pan = clampPan({ x: view.panX + dx, y: view.panY + dy }, view, frame, viewport);
       set({ view: { ...view, panX: pan.x, panY: pan.y } });
     },
 

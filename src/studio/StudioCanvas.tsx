@@ -63,6 +63,7 @@ import {
   contentScale,
   frameOrigin,
   frameSize,
+  isPannable,
   screenToComposition,
   type Point,
   type Size,
@@ -162,6 +163,8 @@ export function StudioCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag | null>(null);
+  const panRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const spaceRef = useRef(false);
   const textClickRef = useRef<((pt: Point) => void) | null>(null);
 
   const composition = useStudio((s) => s.composition);
@@ -199,8 +202,8 @@ export function StudioCanvas() {
   const drawRef = useRef<{ pointerId: number; from: Point; kind: "rect" | "ellipse" } | null>(null);
 
   const origin = frameOrigin(viewport, frame, view);
-  const size = frameSize(frame, view.scale);
   const scale = contentScale(view);
+  const size = frameSize(frame, scale);
 
   /**
    * What the frame is showing. The bench borrows it: a module is written against its
@@ -443,6 +446,22 @@ export function StudioCanvas() {
   }, []);
 
   useEffect(() => {
+    const typing = (t: EventTarget | null) =>
+      t instanceof HTMLInputElement ||
+      t instanceof HTMLTextAreaElement ||
+      (t instanceof HTMLElement && t.isContentEditable);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !typing(e.target)) spaceRef.current = e.type === "keydown";
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+    };
+  }, []);
+
+  useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
@@ -681,8 +700,8 @@ export function StudioCanvas() {
       0,
       0,
       dpr * scale,
-      (origin.x + view.panX) * dpr,
-      (origin.y + view.panY) * dpr,
+      origin.x * dpr,
+      origin.y * dpr,
     );
     ctx.save();
     ctx.beginPath();
@@ -762,6 +781,19 @@ export function StudioCanvas() {
       ?.layer.base;
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // The middle button, or the left one with space held, moves the frame instead.
+    if (e.button === 1 || (e.button === 0 && spaceRef.current)) {
+      if (!isPannable(view)) return;
+      e.preventDefault();
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        return;
+      }
+      panRef.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
+      setCursor("grabbing");
+      return;
+    }
     if (e.button !== 0) return;
     const screen = screenAt(e);
     const point = screenToComposition(screen, viewport, frame, view);
@@ -928,6 +960,13 @@ export function StudioCanvas() {
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current;
+    if (pan && pan.pointerId === e.pointerId) {
+      useStudio.getState().panBy(e.clientX - pan.x, e.clientY - pan.y);
+      pan.x = e.clientX;
+      pan.y = e.clientY;
+      return;
+    }
     const screen = screenAt(e);
     const drag = dragRef.current;
 
@@ -1201,6 +1240,14 @@ export function StudioCanvas() {
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId === e.pointerId) {
+      panRef.current = null;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      setCursor(null);
+      return;
+    }
     if (drawRef.current && drawRef.current.pointerId === e.pointerId) {
       const d = drawRef.current;
       drawRef.current = null;
@@ -1338,7 +1385,7 @@ export function StudioCanvas() {
               width: frame.width,
               height: frame.height,
               background: composition.background ?? "#fff",
-              transform: `translate(${view.panX}px, ${view.panY}px) scale(${scale})`,
+              transform: `scale(${scale})`,
             }}
           >
             <div className="studio-grid" />
@@ -1364,9 +1411,9 @@ export function StudioCanvas() {
           className="pointer-events-none absolute rounded bg-text-primary px-1.5 py-0.5 text-[10px] leading-[1.4] text-bg"
           style={{
             transform: `translate(${
-              origin.x + view.panX + (frame.width / 2) * scale
+              origin.x + (frame.width / 2) * scale
             }px, ${
-              origin.y + view.panY + (frame.height / 2 + PROXY_SIZE / 2 + 8) * scale
+              origin.y + (frame.height / 2 + PROXY_SIZE / 2 + 8) * scale
             }px) translateX(-50%)`,
           }}
         >

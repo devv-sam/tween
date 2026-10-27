@@ -5,6 +5,7 @@ import {
   MAX_ZOOM,
   MIN_VIEW_SCALE,
   MIN_ZOOM,
+  PAN_KEEP,
   ZOOM_PRESETS,
   clampPan,
   clampZoom,
@@ -38,10 +39,15 @@ describe("viewport scale", () => {
     expect(contentScale(base)).toBe(0.5);
   });
 
-  it("centers the frame without using depth zoom", () => {
-    const origin = frameOrigin(viewport, frame, { ...base, zoom: 4, panX: -100, panY: -40 });
+  it("centres the frame at fit, and a zoomed one moves with its pan", () => {
+    const origin = frameOrigin(viewport, frame, base);
     expect(origin.x).toBeCloseTo((1200 - 960) / 2);
     expect(origin.y).toBeCloseTo((800 - 540) / 2);
+    const zoomed: View = { ...base, zoom: 2 };
+    expect(frameOrigin(viewport, frame, zoomed).x).toBeCloseTo((1200 - 1920) / 2);
+    expect(frameOrigin(viewport, frame, { ...zoomed, panX: -100, panY: -40 }).y).toBeCloseTo(
+      (800 - 1080) / 2 - 40,
+    );
   });
 });
 
@@ -72,14 +78,12 @@ describe("fitScale", () => {
   });
 });
 
-describe("depth zoom", () => {
-  it("does not change the frame's screen size", () => {
-    const before = frameOrigin(viewport, frame, base);
+describe("zoom", () => {
+  it("grows the frame itself, not only what is in it", () => {
     const after = zoomAround({ x: 600, y: 400 }, 3, viewport, frame, base);
     expect(after.scale).toBe(base.scale);
     expect(after.zoom).toBe(3);
-    expect(frameOrigin(viewport, frame, after)).toEqual(before);
-    expect(frameSize(frame, after.scale)).toEqual(frameSize(frame, base.scale));
+    expect(frameSize(frame, contentScale(after))).toEqual({ width: 2880, height: 1620 });
   });
 
   it("cannot zoom out past 1 — the whole composition stays in the frame", () => {
@@ -103,21 +107,21 @@ describe("depth zoom", () => {
   });
 });
 
-describe("pan inside the frame", () => {
-  it("is locked at depth 1", () => {
-    expect(panExtents(base, frame)).toEqual({ x: 0, y: 0 });
-    expect(isPannable(base, frame)).toBe(false);
-    expect(clampPan({ x: 400, y: -200 }, base, frame)).toEqual({ x: 0, y: 0 });
+describe("pan", () => {
+  it("is locked at fit", () => {
+    expect(panExtents(base, frame, viewport)).toEqual({ x: 0, y: 0 });
+    expect(isPannable(base)).toBe(false);
+    expect(clampPan({ x: 400, y: -200 }, base, frame, viewport)).toEqual({ x: 0, y: 0 });
   });
 
-  it("allows pan only to keep the frame filled when zoomed in", () => {
+  it("lets a zoomed frame move until only a strip of it is left", () => {
     const view: View = { ...base, zoom: 2 };
-    const e = panExtents(view, frame);
-    expect(e.x).toBeCloseTo(960);
-    expect(e.y).toBeCloseTo(540);
-    expect(isPannable(view, frame)).toBe(true);
-    expect(clampPan({ x: 1e6, y: 1e6 }, view, frame)).toEqual({ x: 0, y: 0 });
-    expect(clampPan({ x: -1e6, y: -1e6 }, view, frame)).toEqual({ x: -e.x, y: -e.y });
+    const e = panExtents(view, frame, viewport);
+    expect(e.x).toBeCloseTo((1920 + 1200) / 2 - PAN_KEEP);
+    expect(e.y).toBeCloseTo((1080 + 800) / 2 - PAN_KEEP);
+    expect(isPannable(view)).toBe(true);
+    expect(clampPan({ x: 1e6, y: 1e6 }, view, frame, viewport)).toEqual({ x: e.x, y: e.y });
+    expect(clampPan({ x: -1e6, y: -1e6 }, view, frame, viewport)).toEqual({ x: -e.x, y: -e.y });
   });
 });
 
@@ -165,10 +169,10 @@ describe("zoom presets", () => {
     expect([...ZOOM_PRESETS]).toEqual([...ZOOM_PRESETS].sort((a, b) => a - b));
   });
 
-  it("reads depth as a whole percent", () => {
+  it("reads zoom as a whole percent", () => {
     expect(zoomPercent(1)).toBe(100);
     expect(zoomPercent(1.5)).toBe(150);
     expect(zoomPercent(1.3749)).toBe(137);
-    expect(zoomPercent(MAX_ZOOM)).toBe(800);
+    expect(zoomPercent(MAX_ZOOM)).toBe(3200);
   });
 });
