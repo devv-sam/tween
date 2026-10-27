@@ -3,6 +3,9 @@ import { SlotText } from "slot-text/react";
 import "slot-text/style.css";
 import { clamp } from "../core/math";
 
+/** How close, in px, a dragged split has to come to half and half to snap to it. */
+const SNAP_PX = 8;
+
 /**
  * The gap between two panels, which is also where either can be dragged larger. The
  * hit area spills past the gap onto the panels' edges so the grip is wider than the gap.
@@ -26,7 +29,8 @@ export function ResizeHandle({
   onResize: (size: number) => void;
   /**
    * For a handle that splits a column in two: while it is dragged, a pill says how the
-   * column divides. `room` is what the two panels share; `side` is where the pill sits.
+   * column divides, and it snaps to half and half with a line across the window while it
+   * holds there. `room` is what the two panels share; `side` is where the pill sits.
    */
   ratio?: { room: () => number; side: "after" | "before" | "inside" };
 }) {
@@ -34,7 +38,12 @@ export function ResizeHandle({
   const [dragging, setDragging] = useState(false);
   const sign = grows === "right" ? 1 : -1;
   const horizontal = axis === "x";
-  const to = (v: number) => onResize(clamp(v, limits.min, limits.max));
+  const half = () => (ratio ? Math.round(ratio.room() / 2) : null);
+  const to = (v: number) => {
+    const mid = half();
+    onResize(clamp(mid !== null && Math.abs(v - mid) <= SNAP_PX ? mid : v, limits.min, limits.max));
+  };
+  const onHalf = ratio && dragging && value === half();
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const forward = horizontal ? "ArrowRight" : "ArrowDown";
@@ -92,6 +101,13 @@ export function ResizeHandle({
         }`}
       />
       {ratio && dragging ? <Ratio value={value} {...ratio} /> : null}
+      {onHalf ? (
+        <span
+          aria-hidden="true"
+          // Fixed, so it runs the width of the window from where the handle sits.
+          className="pointer-events-none fixed right-0 left-0 z-20 mt-[calc(var(--gap)/2)] -translate-y-px border-t-2 border-dashed border-accent"
+        />
+      ) : null}
     </div>
   );
 }
