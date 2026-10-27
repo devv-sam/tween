@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/types";
 import type { EasingDef } from "../core/easing";
@@ -18,7 +18,7 @@ import {
 } from "./modules";
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
-import { Popover } from "./Popover";
+import { Dropdown } from "./Dropdown";
 import {
   MIN_SEGMENT,
   easesAgree,
@@ -321,64 +321,22 @@ function SelectField({
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLButtonElement>(null);
   const current = options.find((o) => o.value === value);
 
   return (
-    <>
-      <button
-        ref={anchorRef}
-        type="button"
-        className={`${pill ? PILL : BOX} w-full justify-between ${open ? "border-accent" : ""}`}
-        title={title}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <span className={`${LABEL} shrink-0`}>{label}</span>
-        <span className="flex min-w-0 items-center gap-1 text-[11px] text-text-primary">
-          <span className="truncate">{current?.label ?? value}</span>
-          <ChevronDown size={12} aria-hidden="true" className="shrink-0" />
-        </span>
-      </button>
-      {open ? (
-        <Popover
-          anchorRef={anchorRef}
-          placement="below"
-          label={title ?? label}
-          onClose={() => setOpen(false)}
-        >
-          <ul
-            role="listbox"
-            className="m-0 max-h-[260px] list-none overflow-y-auto p-1"
-            // As wide as the control it opens from, so the menu sits square under it.
-            style={{ minWidth: anchorRef.current?.offsetWidth }}
-          >
-            {options.map((o) => (
-              <li key={o.value}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={o.value === value}
-                  className={`flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[11px] ${
-                    o.value === value
-                      ? "bg-accent/[0.06] text-text-primary"
-                      : "text-text-primary/70 hover:bg-text-primary/5"
-                  }`}
-                  onClick={() => {
-                    onChange(o.value);
-                    setOpen(false);
-                  }}
-                >
-                  {o.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Popover>
-      ) : null}
-    </>
+    <Dropdown
+      title={title ?? label}
+      className={`${pill ? PILL : BOX} w-full justify-between`}
+      value={value}
+      options={options}
+      onChange={onChange}
+    >
+      <span className={`${LABEL} shrink-0`}>{label}</span>
+      <span className="flex min-w-0 items-center gap-1 text-[11px] text-text-primary">
+        <span className="truncate">{current?.label ?? value}</span>
+        <ChevronDown size={12} aria-hidden="true" className="shrink-0" />
+      </span>
+    </Dropdown>
   );
 }
 

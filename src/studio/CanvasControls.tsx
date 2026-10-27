@@ -1,3 +1,5 @@
+import { ChevronDown } from "lucide-react";
+import { Dropdown } from "./Dropdown";
 import { useStudio } from "./store";
 import { ZOOM_PRESETS, zoomPercent } from "./view";
 import { PILL } from "./fields";
@@ -49,19 +51,11 @@ function SelectChip({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className={CHIP} title={title}>
-      <select
-        className="bg-transparent text-[11px] text-text-primary outline-none"
-        aria-label={title}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Dropdown title={title} className={CHIP} value={value} options={options} onChange={onChange}>
+      <span className="text-[11px] text-text-primary">
+        {options.find((o) => o.value === value)?.label ?? value}
+      </span>
+      <ChevronDown size={12} aria-hidden="true" className="shrink-0" />
+    </Dropdown>
   );
 }
