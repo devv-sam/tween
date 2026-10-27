@@ -13,11 +13,9 @@ import {
   formatSeconds,
   formatTime,
   scrollForZoom,
-  sliderToZoom,
   ticks,
   timeToX,
   xToTime,
-  zoomToSlider,
 } from "./ruler";
 
 const WIDTH = 800;
@@ -147,15 +145,6 @@ describe("timeline zoom", () => {
     expect(clampTimelineZoom(0.2)).toBe(MIN_TIMELINE_ZOOM);
     expect(clampTimelineZoom(500)).toBe(MAX_TIMELINE_ZOOM);
     expect(clampTimelineZoom(3)).toBe(3);
-  });
-
-  it("maps the slider across the whole range, evenly in ratio", () => {
-    expect(sliderToZoom(0)).toBe(MIN_TIMELINE_ZOOM);
-    expect(sliderToZoom(1)).toBeCloseTo(MAX_TIMELINE_ZOOM);
-    expect(sliderToZoom(0.5)).toBeCloseTo(Math.sqrt(MAX_TIMELINE_ZOOM));
-    for (const zoom of [1, 1.5, 4, 17, MAX_TIMELINE_ZOOM]) {
-      expect(sliderToZoom(zoomToSlider(zoom))).toBeCloseTo(zoom, 6);
-    }
   });
 });
 

@@ -1,5 +1,4 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
-import { clamp } from "../core/math";
 import { AssetsPanel } from "./AssetsPanel";
 import { CanvasControls } from "./CanvasControls";
 import { EffectsPanel } from "./EffectsPanel";
@@ -13,18 +12,15 @@ import { TopBar } from "./TopBar";
 import { useStudio } from "./store";
 import { readNumber, writeNumber } from "./prefs";
 
-/** Panel sizes. `share` is the fraction of the window a panel opens at the first time. */
-const SCENE_WIDTH = { key: "tween:width:scene", share: 0.21, min: 220, max: 520 };
-const INSPECTOR_WIDTH = { key: "tween:width:inspector", share: 0.18, min: 220, max: 480 };
-const ASSETS_HEIGHT = { key: "tween:height:assets", share: 0.3, min: 120, max: 640 };
-const EFFECTS_HEIGHT = { key: "tween:height:effects", share: 0.33, min: 120, max: 640 };
-const TIMELINE_HEIGHT = { key: "tween:height:timeline", share: 0.33, min: 120, max: 640 };
+/** Panel sizes in px; `fallback` is what a panel opens at until it has been dragged. */
+const SCENE_WIDTH = { key: "tween:width:scene", fallback: 333, min: 220, max: 520 };
+const INSPECTOR_WIDTH = { key: "tween:width:inspector", fallback: 347, min: 220, max: 480 };
+const ASSETS_HEIGHT = { key: "tween:height:assets", fallback: 318, min: 120, max: 640 };
+const EFFECTS_HEIGHT = { key: "tween:height:effects", fallback: 296, min: 120, max: 640 };
+const TIMELINE_HEIGHT = { key: "tween:height:timeline", fallback: 200, min: 120, max: 640 };
 /** What the panel above keeps when the one below it is dragged up as far as it goes. */
 const SCENE_MIN_HEIGHT = 96;
 const CANVAS_MIN_HEIGHT = 160;
-
-const initial = (l: { key: string; share: number; min: number; max: number }, span: number) =>
-  readNumber(l.key, clamp(Math.round(span * l.share), l.min, l.max));
 
 // Opt-in while the look is settled: add `?dials` to the URL in dev.
 const DevDials =
@@ -47,11 +43,21 @@ export function Studio() {
   // The scene's rows are drawn by the timeline, which owns the selection, the
   // reorder and the clock; this is the box it draws them into.
   const [sceneHost, setSceneHost] = useState<HTMLDivElement | null>(null);
-  const [sceneWidth, setSceneWidth] = useState(() => initial(SCENE_WIDTH, innerWidth));
-  const [inspectorWidth, setInspectorWidth] = useState(() => initial(INSPECTOR_WIDTH, innerWidth));
-  const [assetsHeight, setAssetsHeight] = useState(() => initial(ASSETS_HEIGHT, innerHeight));
-  const [effectsHeight, setEffectsHeight] = useState(() => initial(EFFECTS_HEIGHT, innerHeight));
-  const [timelineHeight, setTimelineHeight] = useState(() => initial(TIMELINE_HEIGHT, innerHeight));
+  const [sceneWidth, setSceneWidth] = useState(() =>
+    readNumber(SCENE_WIDTH.key, SCENE_WIDTH.fallback),
+  );
+  const [inspectorWidth, setInspectorWidth] = useState(() =>
+    readNumber(INSPECTOR_WIDTH.key, INSPECTOR_WIDTH.fallback),
+  );
+  const [assetsHeight, setAssetsHeight] = useState(() =>
+    readNumber(ASSETS_HEIGHT.key, ASSETS_HEIGHT.fallback),
+  );
+  const [effectsHeight, setEffectsHeight] = useState(() =>
+    readNumber(EFFECTS_HEIGHT.key, EFFECTS_HEIGHT.fallback),
+  );
+  const [timelineHeight, setTimelineHeight] = useState(() =>
+    readNumber(TIMELINE_HEIGHT.key, TIMELINE_HEIGHT.fallback),
+  );
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);

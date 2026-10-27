@@ -42,18 +42,9 @@ export const clampDuration = (seconds: number) =>
 
 export const MIN_TIMELINE_ZOOM = 1;
 export const MAX_TIMELINE_ZOOM = 32;
-export const ZOOM_STEP = 1.5;
 
 export const clampTimelineZoom = (zoom: number) =>
   clamp(zoom, MIN_TIMELINE_ZOOM, MAX_TIMELINE_ZOOM);
-
-const ZOOM_SPAN = Math.log(MAX_TIMELINE_ZOOM / MIN_TIMELINE_ZOOM);
-
-export const zoomToSlider = (zoom: number): number =>
-  clamp(Math.log(clampTimelineZoom(zoom) / MIN_TIMELINE_ZOOM) / ZOOM_SPAN, 0, 1);
-
-export const sliderToZoom = (position: number): number =>
-  clampTimelineZoom(MIN_TIMELINE_ZOOM * Math.exp(clamp(position, 0, 1) * ZOOM_SPAN));
 
 /**
  * The ruler's one mapping: normalized time to a strip-local x. `xToTime` is its
