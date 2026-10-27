@@ -20,6 +20,7 @@ import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
 import { Dropdown } from "./Dropdown";
 import { ensureFontPreview, faceOf } from "./fontPreview";
+import { weightName } from "./text";
 import {
   MIN_SEGMENT,
   easesAgree,
@@ -1157,7 +1158,7 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
               onChange={(v) => set({ fontWeight: Number(v) })}
               options={weightOptions.map((w) => ({
                 value: String(w),
-                label: String(w),
+                label: weightName(w),
               }))}
             />
           </div>
