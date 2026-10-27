@@ -4,7 +4,7 @@ import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/t
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
-import { RESOLUTIONS, resolutionFor, resolutionKey } from "./composition";
+import { FPS_CHOICES, RESOLUTIONS, resolutionFor, resolutionKey } from "./composition";
 import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
 import {
   PROP_STEP,
@@ -95,7 +95,6 @@ function ElementPanels({
   );
   return (
     <>
-      <CompositionPanel />
       {track?.layer.locked ? (
         <>
           <p className={`${SECTION} flex items-center gap-1.5 ${LABEL}`}>
@@ -111,9 +110,7 @@ function ElementPanels({
       ) : track ? (
         <ElementPanel track={track} index={index} />
       ) : selectedIds.length === 0 ? (
-        <p className="m-0 px-3 py-3 text-sm leading-normal text-text-muted/60">
-          Select an element to edit it.
-        </p>
+        <CompositionPanel />
       ) : null}
       {selectedIds.length > 1 && editable.length > 0 ? <SelectionPanel ids={editable} locked={selectedIds.length - editable.length} /> : null}
       {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
@@ -198,22 +195,23 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
 }
 
 /**
- * The composition's own size and background, kept compact so an element's panel has room
- * under them.
+ * The composition's own settings, shown when nothing is selected.
  *
  * No duration field: length is not a setting to fill in before you can animate. It
  * follows from the work, and the ruler's end handle is there when you want to say
  * otherwise.
  */
 function CompositionPanel() {
-  const background = useStudio((s) => s.composition.background);
+  const { fps, background } = useStudio((s) => s.composition);
   const frame = useStudio((s) => s.frame);
 
   return (
     <section className={SECTION}>
       <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
-        <BackgroundField value={background ?? "#ffffff"} />
+      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-1.5">
+        <div className="col-span-2">
+          <BackgroundField value={background ?? "#ffffff"} />
+        </div>
 
         <SelectField
           pill
@@ -228,6 +226,15 @@ function CompositionPanel() {
             value: resolutionKey(r.size),
             label: r.label,
           }))}
+        />
+
+        <SelectField
+          pill
+          label="FPS"
+          title="Frames per second"
+          value={String(fps)}
+          onChange={(v) => useStudio.getState().setFps(Number(v))}
+          options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
         />
       </div>
     </section>
