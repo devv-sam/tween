@@ -1348,6 +1348,9 @@ export function StudioCanvas() {
     return { lines, labels };
   }, [alignment, viewport, frame, view]);
 
+  const typedSource = composition.tracks.find((tr) => tr.layer.id === editingTextId)?.layer.source;
+  const typedChars = typedSource?.kind === "text" ? typedSource.content.length : 0;
+
   const chrome = useMemo(() => {
     if (!selected) return null;
     const toScreen = (p: Point) =>
@@ -1612,7 +1615,7 @@ export function StudioCanvas() {
         scale={scale}
         clickRef={textClickRef}
       /> : null}
-      {selected && chrome && !clonerGroup && editingTextId ? (
+      {selected && chrome && !clonerGroup && editingTextId && typedChars > 0 ? (
         <svg
           className="studio-selection"
           width={viewport.width}
