@@ -4,13 +4,14 @@ export interface EffectGroup {
 }
 
 export const EFFECT_GROUPS: EffectGroup[] = [
-  { category: "Blur & Sharpen", effects: ["Gaussian Blur", "Directional Blur", "Sharpen"] },
-  { category: "Light & Shadow", effects: ["Glow", "Vignette", "Drop Shadow"] },
-  { category: "Color", effects: ["Color", "Levels", "Duotone", "Posterize", "Invert"] },
   {
     category: "Stylize",
-    effects: ["Film Grain", "Mosaic", "Halftone", "Dither", "ASCII", "Pixel", "Scanlines"],
+    effects: ["Halftone", "Dither", "ASCII", "Pixel", "Scanlines", "Edge", "Stipple", "Crosshatch"],
   },
-  { category: "Distort", effects: ["Ripple", "Twirl", "Displace"] },
-  { category: "Generate", effects: ["Noise", "Gradient", "Checkerboard"] },
+  {
+    category: "Motion",
+    effects: ["Follow Path", "Wiggle", "Stagger", "Orbit", "Look At Cursor"],
+  },
+  { category: "Text", effects: ["Split Characters", "Split Words", "Split Lines"] },
+  { category: "Time", effects: ["Loop", "Delay", "Echo", "Flipbook"] },
 ];
