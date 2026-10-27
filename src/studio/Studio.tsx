@@ -60,7 +60,7 @@ export function Studio() {
   );
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => writeNumber(SCENE_WIDTH.key, sceneWidth), [sceneWidth]);
   useEffect(() => writeNumber(INSPECTOR_WIDTH.key, inspectorWidth), [inspectorWidth]);
@@ -74,75 +74,77 @@ export function Studio() {
   return (
     <div className="studio">
       <TopBar />
-      <div ref={stageRef} className="relative flex min-h-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 px-(--edge) pt-(--edge)">
-          <div
-            ref={leftRef}
-            className="flex max-w-[40%] shrink-0 flex-col"
-            style={{ width: sceneWidth }}
-          >
-            <ScenePanel onHost={setSceneHost} />
+      <div className="relative flex min-h-0 flex-1">
+        <div ref={mainRef} className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 pt-(--edge) pl-(--edge)">
+            <div
+              ref={leftRef}
+              className="flex max-w-[40%] shrink-0 flex-col"
+              style={{ width: sceneWidth }}
+            >
+              <ScenePanel onHost={setSceneHost} />
+              <ResizeHandle
+                label="Resize assets height"
+                axis="y"
+                value={assetsHeight}
+                limits={ASSETS_HEIGHT}
+                grows="up"
+                onResize={(h) => setAssetsHeight(fitBelow(leftRef.current, SCENE_MIN_HEIGHT, h))}
+              />
+              <AssetsPanel height={assetsHeight} />
+            </div>
             <ResizeHandle
-              label="Resize assets height"
-              axis="y"
-              value={assetsHeight}
-              limits={ASSETS_HEIGHT}
-              grows="up"
-              onResize={(h) => setAssetsHeight(fitBelow(leftRef.current, SCENE_MIN_HEIGHT, h))}
+              label="Resize scene width"
+              axis="x"
+              value={sceneWidth}
+              limits={SCENE_WIDTH}
+              grows="right"
+              onResize={setSceneWidth}
             />
-            <AssetsPanel height={assetsHeight} />
+            <div className="relative flex min-w-0 flex-1 overflow-hidden">
+              <StudioCanvas />
+              <CanvasControls />
+              <Toolbar />
+            </div>
           </div>
           <ResizeHandle
-            label="Resize scene width"
-            axis="x"
-            value={sceneWidth}
-            limits={SCENE_WIDTH}
-            grows="right"
-            onResize={setSceneWidth}
-          />
-          <div className="relative flex min-w-0 flex-1 overflow-hidden">
-            <StudioCanvas />
-            <CanvasControls />
-            <Toolbar />
-          </div>
-          <ResizeHandle
-            label="Resize inspector"
-            axis="x"
-            value={inspectorWidth}
-            limits={INSPECTOR_WIDTH}
-            grows="left"
-            onResize={setInspectorWidth}
+            label="Resize timeline"
+            axis="y"
+            value={timelineHeight}
+            limits={TIMELINE_HEIGHT}
+            grows="up"
+            onResize={(h) => setTimelineHeight(fitBelow(mainRef.current, CANVAS_MIN_HEIGHT, h))}
           />
           <div
-            ref={rightRef}
-            className="flex max-w-[40%] shrink-0 flex-col"
-            style={{ width: inspectorWidth }}
+            className="flex max-h-[calc(100%_-_160px_-_var(--gap))] shrink-0 flex-col"
+            style={{ height: timelineHeight }}
           >
-            <Inspector />
-            <ResizeHandle
-              label="Resize effects height"
-              axis="y"
-              value={effectsHeight}
-              limits={EFFECTS_HEIGHT}
-              grows="up"
-              onResize={(h) => setEffectsHeight(fitBelow(rightRef.current, SCENE_MIN_HEIGHT, h))}
-            />
-            <EffectsPanel height={effectsHeight} />
+            <Timeline sceneHost={sceneHost} />
           </div>
         </div>
         <ResizeHandle
-          label="Resize timeline"
-          axis="y"
-          value={timelineHeight}
-          limits={TIMELINE_HEIGHT}
-          grows="up"
-          onResize={(h) => setTimelineHeight(fitBelow(stageRef.current, CANVAS_MIN_HEIGHT, h))}
+          label="Resize inspector"
+          axis="x"
+          value={inspectorWidth}
+          limits={INSPECTOR_WIDTH}
+          grows="left"
+          onResize={setInspectorWidth}
         />
         <div
-          className="flex max-h-[calc(100%_-_160px_-_var(--gap))] shrink-0 flex-col"
-          style={{ height: timelineHeight }}
+          ref={rightRef}
+          className="mt-(--edge) mr-(--edge) mb-(--edge) flex max-w-[40%] shrink-0 flex-col"
+          style={{ width: inspectorWidth }}
         >
-          <Timeline sceneHost={sceneHost} />
+          <Inspector />
+          <ResizeHandle
+            label="Resize effects height"
+            axis="y"
+            value={effectsHeight}
+            limits={EFFECTS_HEIGHT}
+            grows="up"
+            onResize={(h) => setEffectsHeight(fitBelow(rightRef.current, SCENE_MIN_HEIGHT, h))}
+          />
+          <EffectsPanel height={effectsHeight} />
         </div>
       </div>
       {DevDials ? (
