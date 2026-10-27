@@ -818,7 +818,7 @@ function AlignToFrame({ layerId }: { layerId: string }) {
         {ALIGN_GROUPS.map((group) => (
           <div
             key={group[0].edge}
-            className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg bg-text-primary/5"
+            className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg bg-text-primary/5 [&_svg]:size-(--align-icon) [&_svg]:[stroke-width:var(--align-stroke)]"
           >
             {group.map(({ edge, label, icon }) => (
               <button
@@ -826,7 +826,7 @@ function AlignToFrame({ layerId }: { layerId: string }) {
                 type="button"
                 aria-label={label}
                 title={label}
-                className="grid h-8 place-items-center text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
+                className="grid h-(--align-height) place-items-center text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
                 onClick={() => useStudio.getState().alignLayer(layerId, edge)}
               >
                 {icon}
