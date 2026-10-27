@@ -116,7 +116,10 @@ function Ratio({
     <span
       className={`pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 rounded-full bg-accent px-2.5 py-1 text-[11px] font-medium whitespace-nowrap text-white tabular-nums ${SIDE[side]}`}
     >
-      <SlotText text={`${100 - lower} / ${lower}`} options={{ direction: "up", duration: 220 }} />
+      <SlotText
+        text={`${100 - lower} / ${lower}`}
+        options={{ direction: "up", duration: 220, stagger: 0, bounce: 0 }}
+      />
     </span>
   );
 }
