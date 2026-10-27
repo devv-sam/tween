@@ -205,6 +205,8 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
  */
 function CompositionPanel() {
   const { fps, background } = useStudio((s) => s.composition);
+  const patternOn = useStudio((s) => s.patternOn);
+  const pattern = useStudio((s) => s.pattern);
 
   return (
     <section className={SECTION}>
@@ -220,6 +222,27 @@ function CompositionPanel() {
           onChange={(v) => useStudio.getState().setFps(Number(v))}
           options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
         />
+        <div className="grid grid-cols-2 gap-1.5">
+          <ToggleField
+            label="Pattern"
+            title="Canvas pattern"
+            on={patternOn}
+            onChange={(on) => useStudio.getState().setPatternOn(on)}
+          />
+          <div className={patternOn ? "" : "pointer-events-none opacity-50"} aria-disabled={!patternOn}>
+            <SelectField
+              pill
+              label="Type"
+              title="Pattern type"
+              value={pattern}
+              onChange={(v) => useStudio.getState().setPattern(v === "grid" ? "grid" : "dots")}
+              options={[
+                { value: "dots", label: "Dots" },
+                { value: "grid", label: "Grid" },
+              ]}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -285,6 +308,38 @@ function BackgroundField({ value }: { value: string }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function ToggleField({
+  label,
+  title,
+  on,
+  onChange,
+}: {
+  label: string;
+  title: string;
+  on: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      title={title}
+      className={`${PILL} w-full justify-between`}
+      onClick={() => onChange(!on)}
+    >
+      <span className={`${LABEL} shrink-0`}>{label}</span>
+      <span
+        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-border"}`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${on ? "translate-x-3" : ""}`}
+        />
+      </span>
+    </button>
   );
 }
 

@@ -70,6 +70,11 @@ import {
 } from "./view";
 
 /** An in-flight move, resize, or rotate. `handle` is set only when resizing. */
+const PATTERN_CLASS = {
+  dots: "bg-[radial-gradient(circle,var(--color-border)_1px,transparent_1.15px)]",
+  grid: "bg-[linear-gradient(var(--color-border)_1px,transparent_1px),linear-gradient(90deg,var(--color-border)_1px,transparent_1px)]",
+} as const;
+
 type Drag = {
   id: string;
   pointerId: number;
@@ -174,6 +179,8 @@ export function StudioCanvas() {
   const pendingAttach = useStudio((s) => s.pendingAttach);
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
+  const patternOn = useStudio((s) => s.patternOn);
+  const pattern = useStudio((s) => s.pattern);
   const t = useStudio((s) => s.t);
   const viewport = useStudio((s) => s.viewport);
   const view = useStudio((s) => s.view);
@@ -1388,7 +1395,11 @@ export function StudioCanvas() {
               transform: `scale(${scale})`,
             }}
           >
-            <div className="studio-grid" />
+            {patternOn ? (
+              <div
+                className={`absolute inset-0 bg-[length:20px_20px] ${PATTERN_CLASS[pattern]}`}
+              />
+            ) : null}
           </div>
         </div>
       ) : null}
