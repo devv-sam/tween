@@ -242,7 +242,7 @@ function CompositionPanel() {
           options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
         />
       </div>
-      <div className="mt-3 border-t border-border pt-3">
+      <div className="mt-3">
         <p className={`${LABEL} mb-2`}>Pattern</p>
         <Segmented
           outlined
