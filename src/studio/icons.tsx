@@ -37,6 +37,16 @@ export function ClonersIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
+export function SplitIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M9.5 7H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h4.5" />
+      <path d="M14.5 7H19a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.5" />
+      <path d="M12 3v18" />
+    </Icon>
+  );
+}
+
 export function FpsIcon({ size }: { size?: number }): ReactElement {
   return (
     <Icon size={size}>

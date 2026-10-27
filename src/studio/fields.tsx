@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { clamp } from "../core/math";
 import { useStudio } from "./store";
 import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
@@ -535,6 +535,55 @@ export function ColorField({
         />
         <span className="shrink-0 text-[11px] text-text-muted">%</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A row of equal choices where one is picked. The highlight is a single piece that
+ * slides to the choice made, rather than each choice painting its own.
+ */
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  /** `label` names a choice that shows only an icon. */
+  options: { value: T; label: string; content: ReactNode }[];
+  onChange: (value: T) => void;
+}) {
+  const index = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+
+  return (
+    <div role="radiogroup" className="relative grid auto-cols-fr grid-flow-col rounded-lg bg-text-primary/5 p-0.5">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md border border-border bg-bg shadow-sm transition-transform duration-150 ease-out"
+        style={{
+          width: `calc((100% - 4px) / ${options.length})`,
+          transform: `translateX(${index * 100}%)`,
+        }}
+      />
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={o.value === value}
+          aria-label={o.label}
+          title={o.label}
+          className={`relative grid h-7 place-items-center rounded-md transition-colors ${
+            o.value === value ? "text-text-primary" : "text-text-muted hover:text-text-primary"
+          }`}
+          onClick={() => onChange(o.value)}
+        >
+          {o.content}
+        </button>
+      ))}
     </div>
   );
 }

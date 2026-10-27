@@ -28,7 +28,7 @@ import {
   type SegmentView,
 } from "./segments";
 import { BenchPanel } from "./ModuleShelf";
-import { AlignCenterIcon, AlignMiddleIcon, TextAlignIcon } from "./icons";
+import { AlignCenterIcon, AlignMiddleIcon, SplitIcon, TextAlignIcon } from "./icons";
 import {
   BOX,
   ColorField,
@@ -43,6 +43,7 @@ import {
   PANEL_LABEL,
   PILL,
   SECTION,
+  Segmented,
   SUBLABEL,
   type Join,
 } from "./fields";
@@ -1061,7 +1062,7 @@ function SeparateButton({
         useStudio.getState().setSeparatePosition(layerId, !separate)
       }
     >
-      <SeparatorVerticalIcon />
+      <SplitIcon size={14} />
     </button>
   );
 }
@@ -1179,24 +1180,16 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
         </div>
 
         <p className={`${SUBLABEL} mb-1 mt-2`}>Align</p>
-        <div className="mb-1 flex gap-0.5">
-          {(["left", "center", "right"] as const).map((a) => (
-            <button
-              key={a}
-              type="button"
-              title={`Align ${a}`}
-              aria-label={`align ${a}`}
-              aria-pressed={source.align === a}
-              className={`grid h-[22px] w-[26px] place-items-center rounded-md ${
-                source.align === a
-                  ? "bg-accent text-white"
-                  : "text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary"
-              }`}
-              onClick={() => set({ align: a })}
-            >
-              <TextAlignIcon align={a} />
-            </button>
-          ))}
+        <div className="mb-1">
+          <Segmented
+            value={source.align}
+            options={(["left", "center", "right"] as const).map((a) => ({
+              value: a,
+              label: `Align ${a}`,
+              content: <TextAlignIcon align={a} />,
+            }))}
+            onChange={(align) => set({ align })}
+          />
         </div>
       </section>
 
@@ -1230,27 +1223,5 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
         ) : null}
       </section>
     </>
-  );
-}
-
-/** Lucide `separator-vertical` — one field parting into two, which is what the
- *  button beside a position does to its axes. */
-function SeparatorVerticalIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="13"
-      height="13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3v18" />
-      <path d="m16 16 4-4-4-4" />
-      <path d="m8 8-4 4 4 4" />
-    </svg>
   );
 }
