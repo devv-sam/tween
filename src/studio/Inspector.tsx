@@ -4,7 +4,8 @@ import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/t
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
-import { RESOLUTIONS, normalizeHex, resolutionFor, resolutionKey } from "./composition";
+import { RESOLUTIONS, resolutionFor, resolutionKey } from "./composition";
+import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
 import {
   PROP_STEP,
   PROP_TEXT,
@@ -211,9 +212,7 @@ function CompositionPanel() {
   return (
     <section className={SECTION}>
       <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
-      {/* The right column carries the widest values — a resolution, a hex — so it
-          takes the room the left one does not need. */}
-      <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
         <BackgroundField value={background ?? "#ffffff"} />
 
         <SelectField
@@ -236,41 +235,64 @@ function CompositionPanel() {
 }
 
 /**
- * Swatch and hex, one value. The swatch is the native picker; the text field takes a
- * typed colour and only commits once it is a whole one, so a half-typed `#ab` does
- * not repaint the frame.
+ * A swatch and a field. The swatch is the native picker; the field takes a typed
+ * colour in whichever format the label on its right names, and only commits once it is
+ * a whole one, so a half-typed `#ab` does not repaint the frame. Clicking the label
+ * moves on to the next format.
  */
 function BackgroundField({ value }: { value: string }) {
+  const [mode, setMode] = useState<ColorMode>("HEX");
   const [draft, setDraft] = useState<string | null>(null);
   const set = (hex: string) => useStudio.getState().setBackground(hex);
 
   return (
-    <div className={PILL} title="Background">
-      <input
-        type="color"
-        aria-label="background colour"
-        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
-        value={value}
-        onChange={(e) => {
-          setDraft(null);
-          set(e.target.value);
-        }}
-      />
-      <input
-        className={`${INPUT} min-w-0 flex-1 text-right uppercase`}
-        aria-label="background hex"
-        spellCheck={false}
-        value={draft ?? value}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          const hex = normalizeHex(e.target.value);
-          if (hex) set(hex);
-        }}
-        onBlur={() => {
-          setDraft(null);
-          useStudio.getState().sealHistory();
-        }}
-      />
+    <div className="flex items-center gap-2" title="Background">
+      <label
+        className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border focus-within:border-accent"
+        style={{ background: value }}
+      >
+        <input
+          type="color"
+          aria-label="background colour"
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          value={value}
+          onChange={(e) => {
+            setDraft(null);
+            set(e.target.value);
+          }}
+        />
+      </label>
+      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-text-primary/5 px-2.5 focus-within:border-accent">
+        <input
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary tabular-nums outline-none"
+          aria-label={`background ${mode}`}
+          spellCheck={false}
+          value={draft ?? formatColor(value, mode)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            const hex = parseColor(e.target.value, mode);
+            if (hex) set(hex);
+          }}
+          onBlur={() => {
+            setDraft(null);
+            useStudio.getState().sealHistory();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+          }}
+        />
+        <button
+          type="button"
+          className="shrink-0 text-[10px] tracking-[0.08em] text-text-muted uppercase hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+          title="Change colour format"
+          onClick={() => {
+            setDraft(null);
+            setMode(COLOR_MODES[(COLOR_MODES.indexOf(mode) + 1) % COLOR_MODES.length]);
+          }}
+        >
+          {mode}
+        </button>
+      </div>
     </div>
   );
 }
