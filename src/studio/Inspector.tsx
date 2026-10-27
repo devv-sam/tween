@@ -1085,6 +1085,9 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
   const [fontOpen, setFontOpen] = useState(false);
   const fontBtnRef = useRef<HTMLButtonElement>(null);
   const fontListRef = useRef<HTMLDivElement>(null);
+  // Only the last pick of each kind applies, however late an earlier one arrives.
+  const latest = useRef({ font: 0, weight: 0 });
+  const hoverTimer = useRef<number>(undefined);
 
   const set = (patch: Partial<TextSource>) =>
     useStudio.getState().setTextProp(layerId, patch);
@@ -1165,13 +1168,24 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
                     className={`block w-full px-2 py-1 text-left text-[13px] outline-none hover:bg-text-primary/5 focus-visible:bg-text-primary/10 ${
                       f.family === source.fontFamily ? "bg-accent/10 text-accent" : "text-text-primary"
                     }`}
-                    onPointerEnter={() => void getFont(f.family, source.fontWeight).catch(() => {})}
+                    onPointerEnter={() => {
+                      window.clearTimeout(hoverTimer.current);
+                      // Rows swept past on the way down are not fetched.
+                      hoverTimer.current = window.setTimeout(
+                        () => void getFont(f.family, source.fontWeight).catch(() => {}),
+                        150,
+                      );
+                    }}
+                    onPointerLeave={() => window.clearTimeout(hoverTimer.current)}
                     onClick={() => {
                       // The font is applied once it has arrived, so the element and these
                       // fields change once, not through a stretch with no font at all.
+                      const pick = ++latest.current.font;
                       void getFont(f.family, source.fontWeight)
                         .catch(() => {})
-                        .then(() => set({ fontFamily: f.family }));
+                        .then(() => {
+                          if (latest.current.font === pick) set({ fontFamily: f.family });
+                        });
                       setFontOpen(false);
                       setFontSearch("");
                     }}
@@ -1189,11 +1203,14 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
             <SelectField
               label="Weight"
               value={String(source.fontWeight)}
-              onChange={(v) =>
+              onChange={(v) => {
+                const pick = ++latest.current.weight;
                 void getFont(source.fontFamily, Number(v))
                   .catch(() => {})
-                  .then(() => set({ fontWeight: Number(v) }))
-              }
+                  .then(() => {
+                    if (latest.current.weight === pick) set({ fontWeight: Number(v) });
+                  });
+              }}
               options={weightOptions.map((w) => ({
                 value: String(w),
                 label: weightName(w),
