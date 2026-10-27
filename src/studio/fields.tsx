@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent } from "react";
 import { clamp } from "../core/math";
 import { useStudio } from "./store";
-import { normalizeHex } from "./composition";
+import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
 import { THUMB_INSET, sliderFraction, sliderValueAt } from "./slider";
 
 /**
@@ -423,11 +423,77 @@ export function LockOpenIcon({ size = 12 }: { size?: number }) {
 }
 
 /**
- * A colour and how much of it, as one field: swatch and hex, then the opacity as a
- * percentage. The two are one thing to the eye — "this red, at this strength" — so
- * they share a box. Like the background's hex, a half-typed value is held as a draft
- * and only commits once it is a whole one.
+ * A swatch and a field. The swatch is the native picker; the field takes a typed
+ * colour in whichever format the label on its right names, and only commits once it is
+ * a whole one, so a half-typed `#ab` does not repaint anything. Clicking the label
+ * moves on to the next format.
  */
+export function ColorInput({
+  label,
+  value,
+  onChange,
+}: {
+  /** Names the two inputs, which have no text of their own. */
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const [mode, setMode] = useState<ColorMode>("HEX");
+  const [draft, setDraft] = useState<string | null>(null);
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <label
+        className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border focus-within:border-accent"
+        style={{ background: value }}
+      >
+        <input
+          type="color"
+          aria-label={`${label} colour`}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          value={value}
+          onChange={(e) => {
+            setDraft(null);
+            onChange(e.target.value);
+          }}
+        />
+      </label>
+      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-text-primary/5 px-2.5 focus-within:border-accent">
+        <input
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary tabular-nums outline-none"
+          aria-label={`${label} ${mode}`}
+          spellCheck={false}
+          value={draft ?? formatColor(value, mode)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            const hex = parseColor(e.target.value, mode);
+            if (hex) onChange(hex);
+          }}
+          onBlur={() => {
+            setDraft(null);
+            useStudio.getState().sealHistory();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+          }}
+        />
+        <button
+          type="button"
+          className="shrink-0 text-[10px] tracking-[0.08em] text-text-muted uppercase hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+          title="Change colour format"
+          onClick={() => {
+            setDraft(null);
+            setMode(COLOR_MODES[(COLOR_MODES.indexOf(mode) + 1) % COLOR_MODES.length]);
+          }}
+        >
+          {mode}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A colour and how much of it: the colour input, and the opacity as a percentage beside it. */
 export function ColorField({
   label,
   color,
@@ -441,58 +507,34 @@ export function ColorField({
   onColor: (hex: string) => void;
   onOpacity: (value: number) => void;
 }) {
-  const [hexDraft, setHexDraft] = useState<string | null>(null);
   const [pctDraft, setPctDraft] = useState<string | null>(null);
 
   return (
-    <div className={`${BOX} min-w-0 flex-1`}>
-      <input
-        type="color"
-        aria-label={`${label} colour`}
-        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
-        value={color}
-        onChange={(e) => {
-          setHexDraft(null);
-          onColor(e.target.value);
-        }}
-      />
-      <input
-        className={`${INPUT} min-w-0 flex-1 uppercase`}
-        aria-label={`${label} hex`}
-        spellCheck={false}
-        value={hexDraft ?? color.replace("#", "")}
-        onChange={(e) => {
-          setHexDraft(e.target.value);
-          const hex = normalizeHex(e.target.value);
-          if (hex) onColor(hex);
-        }}
-        onBlur={() => {
-          setHexDraft(null);
-          useStudio.getState().sealHistory();
-        }}
-      />
-      <span className="h-full w-px shrink-0 bg-border" aria-hidden="true" />
-      <input
-        className={`${INPUT} w-7 shrink-0 text-right`}
-        aria-label={`${label} opacity`}
-        inputMode="numeric"
-        value={pctDraft ?? String(Math.round(opacity * 100))}
-        onChange={(e) => {
-          setPctDraft(e.target.value);
-          const n = Number(e.target.value);
-          if (e.target.value.trim() !== "" && Number.isFinite(n)) {
-            onOpacity(clamp(n, 0, 100) / 100);
-          }
-        }}
-        onBlur={() => {
-          setPctDraft(null);
-          useStudio.getState().sealHistory();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-        }}
-      />
-      <span className="shrink-0 text-[11px] text-text-muted">%</span>
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <ColorInput label={label} value={color} onChange={onColor} />
+      <div className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-transparent bg-text-primary/5 px-2.5 focus-within:border-accent">
+        <input
+          className="w-7 min-w-0 bg-transparent text-right text-[12px] text-text-primary tabular-nums outline-none"
+          aria-label={`${label} opacity`}
+          inputMode="numeric"
+          value={pctDraft ?? String(Math.round(opacity * 100))}
+          onChange={(e) => {
+            setPctDraft(e.target.value);
+            const n = Number(e.target.value);
+            if (e.target.value.trim() !== "" && Number.isFinite(n)) {
+              onOpacity(clamp(n, 0, 100) / 100);
+            }
+          }}
+          onBlur={() => {
+            setPctDraft(null);
+            useStudio.getState().sealHistory();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+          }}
+        />
+        <span className="shrink-0 text-[11px] text-text-muted">%</span>
+      </div>
     </div>
   );
 }

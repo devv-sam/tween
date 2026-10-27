@@ -6,7 +6,6 @@ import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
 import { FPS_CHOICES } from "./composition";
 import { ResolutionPicker } from "./ResolutionPicker";
-import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
 import {
   PROP_STEP,
   PROP_TEXT,
@@ -33,6 +32,7 @@ import { AlignCenterIcon, AlignMiddleIcon, TextAlignIcon } from "./icons";
 import {
   BOX,
   ColorField,
+  ColorInput,
   DiamondIcon,
   INPUT,
   LABEL,
@@ -212,7 +212,11 @@ function CompositionPanel() {
     <section className={SECTION}>
       <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
-        <BackgroundField value={background ?? "#ffffff"} />
+        <ColorInput
+          label="background"
+          value={background ?? "#ffffff"}
+          onChange={(hex) => useStudio.getState().setBackground(hex)}
+        />
         <ResolutionPicker />
         <SelectField
           pill
@@ -245,69 +249,6 @@ function CompositionPanel() {
         </div>
       </div>
     </section>
-  );
-}
-
-/**
- * A swatch and a field. The swatch is the native picker; the field takes a typed
- * colour in whichever format the label on its right names, and only commits once it is
- * a whole one, so a half-typed `#ab` does not repaint the frame. Clicking the label
- * moves on to the next format.
- */
-function BackgroundField({ value }: { value: string }) {
-  const [mode, setMode] = useState<ColorMode>("HEX");
-  const [draft, setDraft] = useState<string | null>(null);
-  const set = (hex: string) => useStudio.getState().setBackground(hex);
-
-  return (
-    <div className="flex items-center gap-2" title="Background">
-      <label
-        className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border focus-within:border-accent"
-        style={{ background: value }}
-      >
-        <input
-          type="color"
-          aria-label="background colour"
-          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-          value={value}
-          onChange={(e) => {
-            setDraft(null);
-            set(e.target.value);
-          }}
-        />
-      </label>
-      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-text-primary/5 px-2.5 focus-within:border-accent">
-        <input
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary tabular-nums outline-none"
-          aria-label={`background ${mode}`}
-          spellCheck={false}
-          value={draft ?? formatColor(value, mode)}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            const hex = parseColor(e.target.value, mode);
-            if (hex) set(hex);
-          }}
-          onBlur={() => {
-            setDraft(null);
-            useStudio.getState().sealHistory();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-          }}
-        />
-        <button
-          type="button"
-          className="shrink-0 text-[10px] tracking-[0.08em] text-text-muted uppercase hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
-          title="Change colour format"
-          onClick={() => {
-            setDraft(null);
-            setMode(COLOR_MODES[(COLOR_MODES.indexOf(mode) + 1) % COLOR_MODES.length]);
-          }}
-        >
-          {mode}
-        </button>
-      </div>
-    </div>
   );
 }
 
