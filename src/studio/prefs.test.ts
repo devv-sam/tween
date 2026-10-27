@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readAssetsCollapsed, readFlag, writeAssetsCollapsed, writeFlag } from "./prefs";
+import {
+  readAssetsCollapsed,
+  readFlag,
+  readNumber,
+  writeAssetsCollapsed,
+  writeFlag,
+  writeNumber,
+} from "./prefs";
 
 /** The suite runs in node, where there is no `localStorage` — the same shape a
  *  browser with site data blocked presents, minus the throwing. */
@@ -26,6 +33,15 @@ describe("prefs", () => {
     stubStorage();
     expect(readFlag("tween:missing", true)).toBe(true);
     expect(readFlag("tween:missing", false)).toBe(false);
+  });
+
+  it("round-trips a number and ignores one that is not", () => {
+    stubStorage();
+    expect(readNumber("tween:w", 320)).toBe(320);
+    writeNumber("tween:w", 288.6);
+    expect(readNumber("tween:w", 320)).toBe(289);
+    localStorage.setItem("tween:w", "junk");
+    expect(readNumber("tween:w", 320)).toBe(320);
   });
 
   it("survives storage that is missing or throws", () => {

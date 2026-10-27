@@ -9,6 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Circle, Eye, EyeOff, Image, Lock, LockOpen, Shapes, Square, Type } from "lucide-react";
 import type { LayerSource, Transform } from "../core/types";
 import type { Stop } from "../core/curve";
@@ -17,7 +18,8 @@ import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
-import { ChevronIcon, GHOST_BTN, LABEL, NumberField } from "./fields";
+import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
+import { ClonersIcon, ModulesIcon } from "./icons";
 import { ModuleIcon, PropIcon } from "./propIcons";
 import { collectKeyframeTimes, nextKeyframe, previousKeyframe } from "./transport";
 import { landingIndex, slotAt, type Span } from "./reorder";
@@ -81,7 +83,7 @@ import {
   type Unit,
 } from "./ruler";
 
-export function Timeline() {
+export function Timeline({ sceneHost }: { sceneHost: HTMLElement | null }) {
   const composition = useStudio((s) => s.composition);
   const assets = useStudio((s) => s.assets);
   useStudio((s) => s.fontTick);
@@ -592,7 +594,7 @@ export function Timeline() {
 
   return (
     <div
-      className="timeline outline-none"
+      className="timeline overflow-hidden border-t border-border outline-none"
       aria-label="timeline"
       tabIndex={-1}
       onPointerDownCapture={claimKeys}
@@ -683,12 +685,7 @@ export function Timeline() {
         {/* Pinned inside the scroller, not above it, so the head and the rows are
             measured against the same box and ticks stay over their keyframes. */}
         <div className="timeline-head" style={{ height: RULER_HEIGHT }}>
-          <div className="flex w-[var(--gutter-w)] shrink-0 items-center gap-2 border-r border-b border-border pr-2 pl-2.5">
-            <span className={LABEL}>Scene</span>
-            <span className="text-[10px] text-text-muted/70 tabular-nums">{rows.length}</span>
-            <span className={`${LABEL} ml-auto`}>Value</span>
-            <span className={`${LABEL} w-[46px] text-center`}>Key</span>
-          </div>
+          <div className="w-[var(--gutter-w)] shrink-0 border-r border-b border-border" />
 
           <div
             className="timeline-ruler overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
@@ -743,57 +740,15 @@ export function Timeline() {
         </div>
 
         <div className="timeline-rows">
-          <div
-            className="timeline-gutter relative"
-            ref={gutterRef}
-            onPointerMove={onReorderMove}
-            onPointerUp={endReorder}
-            onPointerCancel={endReorder}
-          >
-            {gutter.map((item, i) =>
-              item.block === null ? (
-                <TrackLabel
-                  key={item.row.id}
-                  layerId={item.row.id}
-                  name={item.row.name}
-                  given={item.row.given}
-                  kind={item.row.track.layer.source.kind}
-                  value={firstValue(item.row.blocks, states.get(item.row.id), item.row.size)}
-                  blocks={item.row.blocks.length}
-                  open={item.row.open}
-                  selected={selectedIds.includes(item.row.id)}
-                  visible={item.row.track.layer.visible !== false}
-                  locked={Boolean(item.row.track.layer.locked)}
-                  soloed={soloIds.includes(item.row.id)}
-                  dimmed={soloing && !soloIds.includes(item.row.id)}
-                  grabbed={grabbed === item.row.id}
-                  rail={caps[i]}
-                  onGrab={(e) => onGrab(e, item.row.id)}
-                />
-              ) : (
-                <PropertyLabel
-                  key={`${item.row.id}:${blockKey(item.block)}`}
-                  layerId={item.row.id}
-                  block={item.block}
-                  state={states.get(item.row.id)}
-                  size={item.row.size}
-                  rail={caps[i]}
-                  last={item.last}
-                  link={linkOf(item.block)}
-                  hot={hotLink === motionKey(item.block)}
-                  onEnter={enterLink}
-                  onLeave={leaveLink}
-                  onJump={jumpTo}
-                />
-              ),
-            )}
-            {drop ? (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-x-0 z-[3] h-0.5 bg-accent"
-                style={{ top: drop.y }}
+          <div className="timeline-gutter">
+            {gutter.map((item) => (
+              <NameRow
+                key={`${item.row.id}:${item.block ? blockKey(item.block) : ""}`}
+                name={item.block ? item.block.label : item.row.name}
+                selected={selectedIds.includes(item.row.id)}
+                property={item.block !== null}
               />
-            ) : null}
+            ))}
           </div>
 
           <div
@@ -883,6 +838,92 @@ export function Timeline() {
       </div>
 
       <ZoomControl zoom={zoom} onZoom={zoomTo} onStep={zoomBy} />
+      {sceneHost
+        ? createPortal(
+          <div
+            className="relative"
+            ref={gutterRef}
+            onPointerMove={onReorderMove}
+            onPointerUp={endReorder}
+            onPointerCancel={endReorder}
+          >
+            {gutter.map((item, i) =>
+              item.block === null ? (
+                <TrackLabel
+                  key={item.row.id}
+                  layerId={item.row.id}
+                  name={item.row.name}
+                  given={item.row.given}
+                  kind={item.row.track.layer.source.kind}
+                  cloned={Boolean(item.row.track.layer.distributor)}
+                  hasModules={item.row.track.modules.length > 0}
+                  value={firstValue(item.row.blocks, states.get(item.row.id), item.row.size)}
+                  blocks={item.row.blocks.length}
+                  open={item.row.open}
+                  selected={selectedIds.includes(item.row.id)}
+                  visible={item.row.track.layer.visible !== false}
+                  locked={Boolean(item.row.track.layer.locked)}
+                  soloed={soloIds.includes(item.row.id)}
+                  dimmed={soloing && !soloIds.includes(item.row.id)}
+                  grabbed={grabbed === item.row.id}
+                  rail={caps[i]}
+                  onGrab={(e) => onGrab(e, item.row.id)}
+                />
+              ) : (
+                <PropertyLabel
+                  key={`${item.row.id}:${blockKey(item.block)}`}
+                  layerId={item.row.id}
+                  block={item.block}
+                  state={states.get(item.row.id)}
+                  size={item.row.size}
+                  rail={caps[i]}
+                  last={item.last}
+                  link={linkOf(item.block)}
+                  hot={hotLink === motionKey(item.block)}
+                  onEnter={enterLink}
+                  onLeave={leaveLink}
+                  onJump={jumpTo}
+                />
+              ),
+            )}
+            {drop ? (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 z-[3] h-0.5 bg-accent"
+                style={{ top: drop.y }}
+              />
+            ) : null}
+          </div>,
+          sceneHost,
+        )
+        : null}
+    </div>
+  );
+}
+
+/** An element or property in the timeline's own name column: a label for the lane
+ *  beside it, with nothing to press — everything that acts on it is in the scene. */
+function NameRow({
+  name,
+  selected,
+  property,
+}: {
+  name: string;
+  selected: boolean;
+  property: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center overflow-hidden border-b border-border/60 text-[11px] whitespace-nowrap ${
+        property
+          ? "bg-bg pl-6 text-text-muted"
+          : `border-t border-t-border pl-2.5 font-medium text-text-primary first:border-t-0 ${
+              selected ? "bg-accent/[0.06]" : "bg-text-primary/[0.04]"
+            }`
+      }`}
+      style={{ height: property ? PROPERTY_HEIGHT : TRACK_HEIGHT }}
+    >
+      <span className="truncate pr-2">{name}</span>
     </div>
   );
 }
@@ -962,6 +1003,8 @@ function TrackLabel({
   name,
   given,
   kind,
+  cloned,
+  hasModules,
   value,
   blocks,
   open,
@@ -978,6 +1021,8 @@ function TrackLabel({
   name: string;
   given: string;
   kind: LayerSource["kind"];
+  cloned: boolean;
+  hasModules: boolean;
   /** The first animated property at the playhead, or empty when nothing animates. */
   value: string;
   blocks: number;
@@ -1112,6 +1157,20 @@ function TrackLabel({
           onFocus={(e) => e.currentTarget.select()}
         />
       )}
+      {cloned || hasModules ? (
+        <span className={`flex shrink-0 items-center gap-1 pl-1 text-text-muted ${faded}`}>
+          {cloned ? (
+            <span role="img" aria-label="has a cloner" title="Cloner">
+              <ClonersIcon size={12} />
+            </span>
+          ) : null}
+          {hasModules ? (
+            <span role="img" aria-label="has modules" title="Modules">
+              <ModulesIcon size={12} />
+            </span>
+          ) : null}
+        </span>
+      ) : null}
       <span className={`shrink-0 pl-1 text-[10px] text-text-muted tabular-nums ${faded}`}>
         {value}
       </span>

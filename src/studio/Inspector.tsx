@@ -4,13 +4,7 @@ import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/t
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
-import {
-  FPS_CHOICES,
-  RESOLUTIONS,
-  normalizeHex,
-  resolutionFor,
-  resolutionKey,
-} from "./composition";
+import { RESOLUTIONS, normalizeHex, resolutionFor, resolutionKey } from "./composition";
 import {
   PROP_STEP,
   PROP_TEXT,
@@ -22,7 +16,6 @@ import {
   type KeyTarget,
 } from "./modules";
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
-import { Toolbar } from "./Toolbar";
 import { EasingSection } from "./EasingControls";
 import {
   MIN_SEGMENT,
@@ -33,9 +26,10 @@ import {
   type SegmentView,
 } from "./segments";
 import { BenchPanel } from "./ModuleShelf";
-import { ZOOM_PRESETS, zoomPercent } from "./view";
+import { AlignCenterIcon, AlignMiddleIcon, TextAlignIcon } from "./icons";
 import {
   BOX,
+  ColorField,
   DiamondIcon,
   INPUT,
   LABEL,
@@ -47,7 +41,7 @@ import {
   type Join,
 } from "./fields";
 
-export function Inspector() {
+export function Inspector({ width }: { width: number }) {
   const composition = useStudio((s) => s.composition);
   const selectedId = useStudio((s) => s.selectedId);
   const selectedIds = useStudio((s) => s.selectedIds);
@@ -59,7 +53,8 @@ export function Inspector() {
 
   return (
     <aside
-      className="flex h-full w-[260px] shrink-0 flex-col border-l border-border bg-bg"
+      className="my-[3px] flex max-w-[40%] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-bg"
+      style={{ width }}
       aria-label={bench ? "module bench" : "inspector"}
     >
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -97,7 +92,6 @@ function ElementPanels({
   );
   return (
     <>
-      <Toolbar />
       <CompositionPanel />
       {track?.layer.locked ? (
         <>
@@ -113,6 +107,10 @@ function ElementPanels({
         </>
       ) : track ? (
         <ElementPanel track={track} index={index} />
+      ) : selectedIds.length === 0 ? (
+        <p className="m-0 px-3 py-3 text-xs leading-normal text-text-muted/60">
+          Select an element to edit it.
+        </p>
       ) : null}
       {selectedIds.length > 1 && editable.length > 0 ? <SelectionPanel ids={editable} locked={selectedIds.length - editable.length} /> : null}
       {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
@@ -197,15 +195,15 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
 }
 
 /**
- * The composition's own settings, kept compact so an element's panel has room under
- * them.
+ * The composition's own size and background, kept compact so an element's panel has room
+ * under them.
  *
  * No duration field: length is not a setting to fill in before you can animate. It
  * follows from the work, and the ruler's end handle is there when you want to say
  * otherwise.
  */
 function CompositionPanel() {
-  const { fps, background } = useStudio((s) => s.composition);
+  const background = useStudio((s) => s.composition.background);
   const frame = useStudio((s) => s.frame);
 
   return (
@@ -214,18 +212,6 @@ function CompositionPanel() {
       {/* The right column carries the widest values — a resolution, a hex — so it
           takes the room the left one does not need. */}
       <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
-        <SelectField
-          label="FPS"
-          value={String(fps)}
-          onChange={(v) => useStudio.getState().setFps(Number(v))}
-          options={FPS_CHOICES.map((f) => ({
-            value: String(f),
-            label: String(f),
-          }))}
-        />
-
-        <ZoomField />
-
         <BackgroundField value={background ?? "#ffffff"} />
 
         <SelectField
@@ -283,29 +269,6 @@ function BackgroundField({ value }: { value: string }) {
         }}
       />
     </div>
-  );
-}
-
-function ZoomField() {
-  const zoom = useStudio((s) => s.view.zoom);
-  const current = zoomPercent(zoom);
-  const percents = [
-    ...new Set([...ZOOM_PRESETS.map(zoomPercent), current]),
-  ].sort((a, b) => a - b);
-
-  return (
-    <SelectField
-      label="Zoom"
-      value={String(current)}
-      onChange={(v) => {
-        const { viewport, zoomAroundPoint } = useStudio.getState();
-        zoomAroundPoint(
-          { x: viewport.width / 2, y: viewport.height / 2 },
-          Number(v) / 100,
-        );
-      }}
-      options={percents.map((p) => ({ value: String(p), label: `${p}%` }))}
-    />
   );
 }
 
@@ -778,22 +741,14 @@ function ShapeFillStrokeSection({ track }: { track: Track }) {
     <>
       <section className={SECTION}>
         <p className={`${SUBLABEL} mb-1`}>Fill</p>
-        <div className="mb-2 flex items-center gap-1.5">
-          <input
-            type="color"
-            value={props.fill.color}
-            className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
-            onChange={(e) => setFill({ color: e.target.value })}
+        <div className="mb-2 flex">
+          <ColorField
+            label="fill"
+            color={props.fill.color}
+            opacity={props.fill.opacity}
+            onColor={(color) => setFill({ color })}
+            onOpacity={(opacity) => setFill({ opacity })}
           />
-          <input
-            className={INPUT}
-            value={props.fill.color}
-            onChange={(e) => {
-              const v = normalizeHex(e.target.value);
-              if (v) setFill({ color: v });
-            }}
-          />
-          <NumberField label="A" value={props.fill.opacity} step={0.01} min={0} max={1} onChange={(v) => setFill({ opacity: v })} />
         </div>
       </section>
 
@@ -812,25 +767,17 @@ function ShapeFillStrokeSection({ track }: { track: Track }) {
         </div>
         {props.stroke.enabled ? (
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-1.5">
-              <input
-                type="color"
-                value={props.stroke.color}
-                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
-                onChange={(e) => setStroke({ color: e.target.value })}
-              />
-              <input
-                className={INPUT}
-                value={props.stroke.color}
-                onChange={(e) => {
-                  const v = normalizeHex(e.target.value);
-                  if (v) setStroke({ color: v });
-                }}
+            <div className="flex">
+              <ColorField
+                label="stroke"
+                color={props.stroke.color}
+                opacity={props.stroke.opacity}
+                onColor={(color) => setStroke({ color })}
+                onOpacity={(opacity) => setStroke({ opacity })}
               />
             </div>
             <div className="grid grid-cols-2 gap-x-1.5">
               <NumberField label="W" value={props.stroke.width} step={0.5} min={0} onChange={(v) => setStroke({ width: v })} />
-              <NumberField label="A" value={props.stroke.opacity} step={0.01} min={0} max={1} onChange={(v) => setStroke({ opacity: v })} />
               <NumberField label="Dash" value={props.stroke.dashOffset} step={1} min={0} onChange={(v) => setStroke({ dashOffset: v })} />
             </div>
           </div>
@@ -860,58 +807,8 @@ function CentreButton({ layerId, axis }: { layerId: string; axis: "x" | "y" }) {
       className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
       onClick={() => useStudio.getState().centreLayer(layerId, axis)}
     >
-      {axis === "x" ? (
-        <AlignCentreVerticalIcon />
-      ) : (
-        <AlignCentreHorizontalIcon />
-      )}
+      {axis === "x" ? <AlignCenterIcon /> : <AlignMiddleIcon />}
     </button>
-  );
-}
-
-/** Lucide `align-center-vertical` — boxes gathered onto a vertical line. */
-function AlignCentreVerticalIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="13"
-      height="13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v20" />
-      <path d="M8 10H4a2 2 0 0 1-2-2V6c0-1.1.9-2 2-2h4" />
-      <path d="M16 10h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4" />
-      <path d="M8 20H7a2 2 0 0 1-2-2v-2c0-1.1.9-2 2-2h1" />
-      <path d="M16 14h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1" />
-    </svg>
-  );
-}
-
-/** Lucide `align-center-horizontal` — boxes gathered onto a horizontal line. */
-function AlignCentreHorizontalIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="13"
-      height="13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2 12h20" />
-      <path d="M10 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
-      <path d="M10 8V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v4" />
-      <path d="M20 16v1a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-1" />
-      <path d="M14 8V7c0-1.1.9-2 2-2h2a2 2 0 0 1 2 2v1" />
-    </svg>
   );
 }
 
@@ -1273,14 +1170,17 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
             <button
               key={a}
               type="button"
-              className={`rounded px-2 py-0.5 text-[10px] ${
+              title={`Align ${a}`}
+              aria-label={`align ${a}`}
+              aria-pressed={source.align === a}
+              className={`grid h-[22px] w-[26px] place-items-center rounded-md ${
                 source.align === a
                   ? "bg-accent text-white"
                   : "text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary"
               }`}
               onClick={() => set({ align: a })}
             >
-              {a.charAt(0).toUpperCase() + a.slice(1)}
+              <TextAlignIcon align={a} />
             </button>
           ))}
         </div>
@@ -1288,28 +1188,13 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
 
       <section className={SECTION}>
         <p className={`${SUBLABEL} mb-1`}>Fill</p>
-        <div className="mb-1 flex items-center gap-1.5">
-          <input
-            type="color"
-            value={source.fill.color}
-            className="h-6 w-6 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded [&::-webkit-color-swatch]:border-0"
-            onChange={(e) => set({ fill: { ...source.fill, color: e.target.value } })}
-          />
-          <input
-            className={INPUT}
-            value={source.fill.color}
-            onChange={(e) => {
-              const v = normalizeHex(e.target.value);
-              if (v) set({ fill: { ...source.fill, color: v } });
-            }}
-          />
-          <NumberField
-            label="A"
-            value={source.fill.opacity}
-            step={0.01}
-            min={0}
-            max={1}
-            onChange={(v) => set({ fill: { ...source.fill, opacity: v } })}
+        <div className="mb-1 flex">
+          <ColorField
+            label="fill"
+            color={source.fill.color}
+            opacity={source.fill.opacity}
+            onColor={(color) => set({ fill: { ...source.fill, color } })}
+            onOpacity={(opacity) => set({ fill: { ...source.fill, opacity } })}
           />
         </div>
       </section>

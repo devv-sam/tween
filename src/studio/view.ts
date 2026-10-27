@@ -22,7 +22,7 @@ export const ZOOM_EPS = 1e-4;
 export const ZOOM_PRESETS = [1, 1.5, 2, 4, 8] as const;
 
 /** Clear space kept between the frame and every edge of the viewport. */
-export const FRAME_MARGIN = 24;
+export const FRAME_MARGIN = 44;
 /** Floor for `fitScale`, so a sliver of a viewport still leaves a frame to draw. */
 export const MIN_VIEW_SCALE = 0.02;
 
