@@ -13,10 +13,27 @@ export const FPS_CHOICES = [24, 30, 60] as const;
  * numbers are shown alongside, but the shape is what a user is choosing.
  */
 export const RESOLUTIONS: { label: string; size: Size }[] = [
-  { label: "1920×1080", size: { width: 1920, height: 1080 } },
-  { label: "1080×1080", size: { width: 1080, height: 1080 } },
-  { label: "1080×1920", size: { width: 1080, height: 1920 } },
+  { label: "Full HD", size: { width: 1920, height: 1080 } },
+  { label: "4K", size: { width: 3840, height: 2160 } },
+  { label: "720p", size: { width: 1280, height: 720 } },
+  { label: "Square", size: { width: 1080, height: 1080 } },
+  { label: "Vertical", size: { width: 1080, height: 1920 } },
 ];
+
+/** What a typed size is held to: a frame must be drawable, and 4K portrait fits. */
+const MIN_SIDE = 64;
+const MAX_SIDE = 4096;
+
+export const customResolution = (width: number, height: number): Size => ({
+  width: clamp(Math.round(width), MIN_SIDE, MAX_SIDE),
+  height: clamp(Math.round(height), MIN_SIDE, MAX_SIDE),
+});
+
+export const resolutionName = (size: Size): string =>
+  RESOLUTIONS.find((r) => r.size.width === size.width && r.size.height === size.height)
+    ?.label ?? "Custom";
+
+export const formatSize = (size: Size): string => `${size.width} × ${size.height}`;
 
 export const clampFps = (fps: number): number => clamp(Math.round(fps), 1, 240);
 

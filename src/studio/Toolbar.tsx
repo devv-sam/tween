@@ -24,7 +24,7 @@ export function Toolbar() {
           title={`${t.label} (${t.shortcut})`}
           aria-label={t.label}
           aria-pressed={activeTool === t.id}
-          className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${
+          className={`grid h-9 w-9 place-items-center rounded-lg transition-colors ${
             activeTool === t.id
               ? "bg-accent text-white"
               : "text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"

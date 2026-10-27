@@ -1,10 +1,11 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Lock } from "lucide-react";
+import { ChevronDown, Lock } from "lucide-react";
 import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/types";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
-import { RESOLUTIONS, normalizeHex, resolutionFor, resolutionKey } from "./composition";
+import { FPS_CHOICES } from "./composition";
+import { ResolutionPicker } from "./ResolutionPicker";
 import {
   PROP_STEP,
   PROP_TEXT,
@@ -17,6 +18,7 @@ import {
 } from "./modules";
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
+import { Dropdown } from "./Dropdown";
 import {
   MIN_SEGMENT,
   easesAgree,
@@ -30,18 +32,22 @@ import { AlignCenterIcon, AlignMiddleIcon, TextAlignIcon } from "./icons";
 import {
   BOX,
   ColorField,
+  ColorInput,
   DiamondIcon,
   INPUT,
   LABEL,
   LockIcon,
   LockOpenIcon,
   NumberField,
+  PANEL,
+  PANEL_LABEL,
+  PILL,
   SECTION,
   SUBLABEL,
   type Join,
 } from "./fields";
 
-export function Inspector({ width }: { width: number }) {
+export function Inspector() {
   const composition = useStudio((s) => s.composition);
   const selectedId = useStudio((s) => s.selectedId);
   const selectedIds = useStudio((s) => s.selectedIds);
@@ -53,8 +59,7 @@ export function Inspector({ width }: { width: number }) {
 
   return (
     <aside
-      className="my-[3px] flex max-w-[40%] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-bg"
-      style={{ width }}
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden ${PANEL}`}
       aria-label={bench ? "module bench" : "inspector"}
     >
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -92,7 +97,6 @@ function ElementPanels({
   );
   return (
     <>
-      <CompositionPanel />
       {track?.layer.locked ? (
         <>
           <p className={`${SECTION} flex items-center gap-1.5 ${LABEL}`}>
@@ -108,9 +112,7 @@ function ElementPanels({
       ) : track ? (
         <ElementPanel track={track} index={index} />
       ) : selectedIds.length === 0 ? (
-        <p className="m-0 px-3 py-3 text-xs leading-normal text-text-muted/60">
-          Select an element to edit it.
-        </p>
+        <CompositionPanel />
       ) : null}
       {selectedIds.length > 1 && editable.length > 0 ? <SelectionPanel ids={editable} locked={selectedIds.length - editable.length} /> : null}
       {segments.length > 0 ? <SegmentPanel ids={segments} /> : null}
@@ -195,113 +197,125 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
 }
 
 /**
- * The composition's own size and background, kept compact so an element's panel has room
- * under them.
+ * The composition's own settings, shown when nothing is selected.
  *
  * No duration field: length is not a setting to fill in before you can animate. It
  * follows from the work, and the ruler's end handle is there when you want to say
  * otherwise.
  */
 function CompositionPanel() {
-  const background = useStudio((s) => s.composition.background);
-  const frame = useStudio((s) => s.frame);
+  const { fps, background } = useStudio((s) => s.composition);
+  const patternOn = useStudio((s) => s.patternOn);
+  const pattern = useStudio((s) => s.pattern);
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>Composition</p>
-      {/* The right column carries the widest values — a resolution, a hex — so it
-          takes the room the left one does not need. */}
-      <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
-        <BackgroundField value={background ?? "#ffffff"} />
-
-        <SelectField
-          label="Res"
-          title="Resolution"
-          value={resolutionKey(frame)}
-          onChange={(v) => {
-            const size = resolutionFor(v);
-            if (size) useStudio.getState().setResolution(size);
-          }}
-          options={RESOLUTIONS.map((r) => ({
-            value: resolutionKey(r.size),
-            label: r.label,
-          }))}
+      <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+        <ColorInput
+          label="background"
+          value={background ?? "#ffffff"}
+          onChange={(hex) => useStudio.getState().setBackground(hex)}
         />
+        <ResolutionPicker />
+        <SelectField
+          pill
+          label="FPS"
+          title="Frames per second"
+          value={String(fps)}
+          onChange={(v) => useStudio.getState().setFps(Number(v))}
+          options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
+        />
+        <div className="grid grid-cols-2 gap-1.5">
+          <ToggleField
+            label="Pattern"
+            title="Canvas pattern"
+            on={patternOn}
+            onChange={(on) => useStudio.getState().setPatternOn(on)}
+          />
+          <div className={patternOn ? "" : "pointer-events-none opacity-50"} aria-disabled={!patternOn}>
+            <SelectField
+              pill
+              label="Type"
+              title="Pattern type"
+              value={pattern}
+              onChange={(v) => useStudio.getState().setPattern(v === "grid" ? "grid" : "dots")}
+              options={[
+                { value: "dots", label: "Dots" },
+                { value: "grid", label: "Grid" },
+              ]}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
-/**
- * Swatch and hex, one value. The swatch is the native picker; the text field takes a
- * typed colour and only commits once it is a whole one, so a half-typed `#ab` does
- * not repaint the frame.
- */
-function BackgroundField({ value }: { value: string }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const set = (hex: string) => useStudio.getState().setBackground(hex);
-
+function ToggleField({
+  label,
+  title,
+  on,
+  onChange,
+}: {
+  label: string;
+  title: string;
+  on: boolean;
+  onChange: (on: boolean) => void;
+}) {
   return (
-    <div className={BOX} title="Background">
-      <input
-        type="color"
-        aria-label="background colour"
-        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
-        value={value}
-        onChange={(e) => {
-          setDraft(null);
-          set(e.target.value);
-        }}
-      />
-      <input
-        className={`${INPUT} min-w-0 flex-1 text-right uppercase`}
-        aria-label="background hex"
-        spellCheck={false}
-        value={draft ?? value}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          const hex = normalizeHex(e.target.value);
-          if (hex) set(hex);
-        }}
-        onBlur={() => {
-          setDraft(null);
-          useStudio.getState().sealHistory();
-        }}
-      />
-    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      title={title}
+      className={`${PILL} w-full justify-between`}
+      onClick={() => onChange(!on)}
+    >
+      <span className={`${LABEL} shrink-0`}>{label}</span>
+      <span
+        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-border"}`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${on ? "translate-x-3" : ""}`}
+        />
+      </span>
+    </button>
   );
 }
 
 function SelectField({
   label,
   title,
+  pill,
   value,
   options,
   onChange,
 }: {
   label: string;
   title?: string;
+  /** The taller free-standing control, rather than the dense field. */
+  pill?: boolean;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
 }) {
+  const current = options.find((o) => o.value === value);
+
   return (
-    <label className={`${BOX} justify-between`} title={title}>
+    <Dropdown
+      title={title ?? label}
+      className={`${pill ? PILL : BOX} w-full justify-between`}
+      value={value}
+      options={options}
+      onChange={onChange}
+    >
       <span className={`${LABEL} shrink-0`}>{label}</span>
-      {/* The select is free to shrink: a native control sizes itself to its widest
-          option, which walks the chevron straight out of the box. */}
-      <select
-        className="min-w-0 flex-1 bg-transparent text-right text-[11px] text-text-primary outline-none"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
+      <span className="flex min-w-0 items-center gap-1 text-[11px] text-text-primary">
+        <span className="truncate">{current?.label ?? value}</span>
+        <ChevronDown size={12} aria-hidden="true" className="shrink-0" />
+      </span>
+    </Dropdown>
   );
 }
 

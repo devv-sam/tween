@@ -18,7 +18,7 @@ import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
-import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
+import { ChevronIcon, NumberField, PANEL } from "./fields";
 import { ClonersIcon, ModulesIcon } from "./icons";
 import { ModuleIcon, PropIcon } from "./propIcons";
 import { collectKeyframeTimes, nextKeyframe, previousKeyframe } from "./transport";
@@ -63,23 +63,18 @@ import {
 } from "./linked";
 import {
   MAX_DURATION,
-  MAX_TIMELINE_ZOOM,
   MIN_DURATION,
-  MIN_TIMELINE_ZOOM,
   PROPERTY_HEIGHT,
   RULER_HEIGHT,
   TRACK_HEIGHT,
-  ZOOM_STEP,
   clampDuration,
   clampTimelineZoom,
   formatTime,
   scrollForZoom,
-  sliderToZoom,
   spanPx,
   ticks,
   timeToX,
   xToTime,
-  zoomToSlider,
   type Unit,
 } from "./ruler";
 
@@ -226,6 +221,22 @@ export function Timeline({ sceneHost }: { sceneHost: HTMLElement | null }) {
   };
   const zoomBy = (factor: number) =>
     zoomTo(useStudio.getState().timelineZoom * factor);
+  const zoomByRef = useRef(zoomBy);
+  zoomByRef.current = zoomBy;
+
+  // Native and non-passive: a React wheel handler could not cancel the page's own zoom.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      zoomByRef.current(Math.exp(-e.deltaY * 0.01));
+    };
+    const strips = [rulerRef.current, areaRef.current];
+    for (const el of strips) el?.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      for (const el of strips) el?.removeEventListener("wheel", onWheel);
+    };
+  }, []);
 
   const followScroll = (from: HTMLElement, to: HTMLElement | null) => {
     if (to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
@@ -594,7 +605,7 @@ export function Timeline({ sceneHost }: { sceneHost: HTMLElement | null }) {
 
   return (
     <div
-      className="timeline overflow-hidden border-t border-border outline-none"
+      className={`timeline overflow-hidden ${PANEL} outline-none`}
       aria-label="timeline"
       tabIndex={-1}
       onPointerDownCapture={claimKeys}
@@ -837,7 +848,6 @@ export function Timeline({ sceneHost }: { sceneHost: HTMLElement | null }) {
         </div>
       </div>
 
-      <ZoomControl zoom={zoom} onZoom={zoomTo} onStep={zoomBy} />
       {sceneHost
         ? createPortal(
           <div
@@ -924,51 +934,6 @@ function NameRow({
       style={{ height: property ? PROPERTY_HEIGHT : TRACK_HEIGHT }}
     >
       <span className="truncate pr-2">{name}</span>
-    </div>
-  );
-}
-
-function ZoomControl({
-  zoom,
-  onZoom,
-  onStep,
-}: {
-  zoom: number;
-  onZoom: (zoom: number) => void;
-  onStep: (factor: number) => void;
-}) {
-  const button =
-    "grid h-5 w-5 place-items-center rounded text-text-primary hover:bg-text-primary/5 disabled:pointer-events-none disabled:text-text-muted/60";
-  return (
-    <div className="flex h-7 shrink-0 items-center justify-end gap-1.5 border-t border-border px-3">
-      <button
-        type="button"
-        className={button}
-        aria-label="zoom out"
-        disabled={zoom <= MIN_TIMELINE_ZOOM}
-        onClick={() => onStep(1 / ZOOM_STEP)}
-      >
-        <ZoomOutIcon />
-      </button>
-      <input
-        type="range"
-        className="h-4 w-[112px] cursor-pointer appearance-none bg-transparent focus-visible:outline-none [&::-moz-range-thumb]:h-[11px] [&::-moz-range-thumb]:w-[11px] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-text-muted/60 [&::-moz-range-track]:h-[3px] [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border [&::-webkit-slider-thumb]:-mt-[4px] [&::-webkit-slider-thumb]:h-[11px] [&::-webkit-slider-thumb]:w-[11px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-text-muted/60 hover:[&::-webkit-slider-thumb]:bg-text-muted focus-visible:[&::-webkit-slider-thumb]:bg-text-muted"
-        aria-label="timeline zoom"
-        min={0}
-        max={1}
-        step={0.01}
-        value={zoomToSlider(zoom)}
-        onChange={(e) => onZoom(sliderToZoom(Number(e.target.value)))}
-      />
-      <button
-        type="button"
-        className={button}
-        aria-label="zoom in"
-        disabled={zoom >= MAX_TIMELINE_ZOOM}
-        onClick={() => onStep(ZOOM_STEP)}
-      >
-        <ZoomInIcon />
-      </button>
     </div>
   );
 }
@@ -2174,15 +2139,15 @@ function Readout({
     : { step: 0.1, precision: 2 };
 
   return (
-    <div className="flex min-w-0 items-center gap-1 text-[11px]">
+    <div className="flex min-w-0 items-center gap-1 text-[10px]">
       <div className="flex min-w-0">
-        <div className="w-[52px]">
+        <div>
           <NumberField
             label=""
             ariaLabel={`current time in ${name}`}
             title="Current time"
             join="left"
-            tight
+            fit
             value={time * scale}
             min={0}
             max={duration * scale}
@@ -2190,13 +2155,13 @@ function Readout({
             onChange={(v) => onSeek(v / scale)}
           />
         </div>
-        <div className="w-[52px]">
+        <div>
           <NumberField
             label=""
             ariaLabel={`duration in ${name}`}
             title="Duration"
             join="right"
-            tight
+            fit
             value={duration * scale}
             min={MIN_DURATION * scale}
             max={MAX_DURATION * scale}
@@ -2207,7 +2172,7 @@ function Readout({
       </div>
       <button
         type="button"
-        className={`${GHOST_BTN} shrink-0 tabular-nums`}
+        className="h-[22px] shrink-0 rounded-md border border-border px-1.5 text-[10px] text-text-primary/70 tabular-nums hover:bg-text-primary/5 hover:text-text-primary"
         title={name}
         aria-label={`readout unit: ${name}`}
         onClick={onToggleUnit}
@@ -2312,47 +2277,6 @@ function LoopIcon() {
       <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
       <path d="m7 22-4-4 4-4" />
       <path d="M21 13v1a4 4 0 0 1-4 4H3" />
-    </svg>
-  );
-}
-
-function ZoomInIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="15"
-      height="15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.35-4.35" />
-      <path d="M11 8v6" />
-      <path d="M8 11h6" />
-    </svg>
-  );
-}
-
-function ZoomOutIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="15"
-      height="15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.35-4.35" />
-      <path d="M8 11h6" />
     </svg>
   );
 }

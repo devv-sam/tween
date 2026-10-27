@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent } from "react";
 import { clamp } from "../core/math";
 import { useStudio } from "./store";
-import { normalizeHex } from "./composition";
+import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
 import { THUMB_INSET, sliderFraction, sliderValueAt } from "./slider";
 
 /**
@@ -14,8 +14,20 @@ export const LABEL = "text-[10px] uppercase tracking-[0.04em] text-text-muted";
  *  groups the fields under it without competing with the heading above them. */
 export const SUBLABEL = "text-[9px] uppercase tracking-[0.04em] text-text-muted/60";
 export const SECTION = "border-b border-border px-3 py-3";
+export const PANEL =
+  "rounded-(--panel-radius) border-(length:--panel-border-width) border-(color:--panel-border-color) bg-(color:--panel-bg)";
+/** The heading a floating panel carries in its header. */
+export const PANEL_LABEL = "text-[11px] uppercase tracking-[0.08em] text-text-muted";
+/** A free-standing control: taller and rounder than the dense field `BOX`. */
+export const PILL =
+  "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 focus-within:border-accent";
 export const INPUT =
   "min-w-0 bg-transparent text-[11px] text-text-primary tabular-nums outline-none placeholder:text-text-muted/60";
+/** `INPUT` and its box at the size of a readout, for numbers that sit in a toolbar. */
+const INPUT_SMALL =
+  "min-w-0 bg-transparent text-[10px] text-text-primary tabular-nums outline-none placeholder:text-text-muted/60";
+const BOX_SMALL =
+  "flex items-center rounded-md border border-border px-1.5 h-[22px] focus-within:border-accent";
 export const BOX =
   "flex items-center gap-1.5 rounded-md border border-border px-2 h-[26px] focus-within:border-accent";
 /** `BOX` with the padding pulled in, for a field holding a number and nothing else. */
@@ -47,6 +59,7 @@ export function NumberField({
   autoFocus,
   compact,
   tight,
+  fit,
   onDone,
   mixed,
   onStep,
@@ -70,6 +83,8 @@ export function NumberField({
   compact?: boolean;
   /** No label beside the number, so it does not need the room for one. */
   tight?: boolean;
+  /** Small, and only as wide as what is in it, growing as more is typed. */
+  fit?: boolean;
   /** The edit is over: enter, or focus leaving. Lets a field that only exists while
    *  it is being edited put itself away. */
   onDone?: () => void;
@@ -109,9 +124,11 @@ export function NumberField({
 
   const box = compact
     ? "flex items-center gap-1 rounded-[3px] border border-transparent px-1 h-[18px] hover:border-border focus-within:border-accent"
-    : tight
-      ? BOX_TIGHT
-      : BOX;
+    : fit
+      ? BOX_SMALL
+      : tight
+        ? BOX_TIGHT
+        : BOX;
 
   return (
     <label
@@ -122,7 +139,8 @@ export function NumberField({
     >
       {label ? <span className={`${LABEL} shrink-0`}>{label}</span> : null}
       <input
-        className={`${INPUT} w-full text-right disabled:text-text-muted/60`}
+        className={`${fit ? INPUT_SMALL : INPUT} ${fit ? "" : "w-full"} text-right disabled:text-text-muted/60`}
+        style={fit ? { width: `${Math.max(2, shown.length)}ch` } : undefined}
         inputMode="decimal"
         aria-label={ariaLabel}
         placeholder={mixed ? "Mixed" : undefined}
@@ -405,11 +423,77 @@ export function LockOpenIcon({ size = 12 }: { size?: number }) {
 }
 
 /**
- * A colour and how much of it, as one field: swatch and hex, then the opacity as a
- * percentage. The two are one thing to the eye — "this red, at this strength" — so
- * they share a box. Like the background's hex, a half-typed value is held as a draft
- * and only commits once it is a whole one.
+ * A swatch and a field. The swatch is the native picker; the field takes a typed
+ * colour in whichever format the label on its right names, and only commits once it is
+ * a whole one, so a half-typed `#ab` does not repaint anything. Clicking the label
+ * moves on to the next format.
  */
+export function ColorInput({
+  label,
+  value,
+  onChange,
+}: {
+  /** Names the two inputs, which have no text of their own. */
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const [mode, setMode] = useState<ColorMode>("HEX");
+  const [draft, setDraft] = useState<string | null>(null);
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <label
+        className="relative h-6 w-6 shrink-0 cursor-pointer overflow-hidden rounded-md border border-border focus-within:border-accent"
+        style={{ background: value }}
+      >
+        <input
+          type="color"
+          aria-label={`${label} colour`}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          value={value}
+          onChange={(e) => {
+            setDraft(null);
+            onChange(e.target.value);
+          }}
+        />
+      </label>
+      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-text-primary/5 px-2 focus-within:border-accent">
+        <input
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary tabular-nums outline-none"
+          aria-label={`${label} ${mode}`}
+          spellCheck={false}
+          value={draft ?? formatColor(value, mode)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            const hex = parseColor(e.target.value, mode);
+            if (hex) onChange(hex);
+          }}
+          onBlur={() => {
+            setDraft(null);
+            useStudio.getState().sealHistory();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+          }}
+        />
+        <button
+          type="button"
+          className="shrink-0 text-[10px] tracking-[0.08em] text-text-muted uppercase hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+          title="Change colour format"
+          onClick={() => {
+            setDraft(null);
+            setMode(COLOR_MODES[(COLOR_MODES.indexOf(mode) + 1) % COLOR_MODES.length]);
+          }}
+        >
+          {mode}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A colour and how much of it: the colour input, and the opacity as a percentage beside it. */
 export function ColorField({
   label,
   color,
@@ -423,58 +507,34 @@ export function ColorField({
   onColor: (hex: string) => void;
   onOpacity: (value: number) => void;
 }) {
-  const [hexDraft, setHexDraft] = useState<string | null>(null);
   const [pctDraft, setPctDraft] = useState<string | null>(null);
 
   return (
-    <div className={`${BOX} min-w-0 flex-1`}>
-      <input
-        type="color"
-        aria-label={`${label} colour`}
-        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
-        value={color}
-        onChange={(e) => {
-          setHexDraft(null);
-          onColor(e.target.value);
-        }}
-      />
-      <input
-        className={`${INPUT} min-w-0 flex-1 uppercase`}
-        aria-label={`${label} hex`}
-        spellCheck={false}
-        value={hexDraft ?? color.replace("#", "")}
-        onChange={(e) => {
-          setHexDraft(e.target.value);
-          const hex = normalizeHex(e.target.value);
-          if (hex) onColor(hex);
-        }}
-        onBlur={() => {
-          setHexDraft(null);
-          useStudio.getState().sealHistory();
-        }}
-      />
-      <span className="h-full w-px shrink-0 bg-border" aria-hidden="true" />
-      <input
-        className={`${INPUT} w-7 shrink-0 text-right`}
-        aria-label={`${label} opacity`}
-        inputMode="numeric"
-        value={pctDraft ?? String(Math.round(opacity * 100))}
-        onChange={(e) => {
-          setPctDraft(e.target.value);
-          const n = Number(e.target.value);
-          if (e.target.value.trim() !== "" && Number.isFinite(n)) {
-            onOpacity(clamp(n, 0, 100) / 100);
-          }
-        }}
-        onBlur={() => {
-          setPctDraft(null);
-          useStudio.getState().sealHistory();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-        }}
-      />
-      <span className="shrink-0 text-[11px] text-text-muted">%</span>
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <ColorInput label={label} value={color} onChange={onColor} />
+      <div className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-transparent bg-text-primary/5 px-2 focus-within:border-accent">
+        <input
+          className="w-6 min-w-0 bg-transparent text-right text-[12px] text-text-primary tabular-nums outline-none"
+          aria-label={`${label} opacity`}
+          inputMode="numeric"
+          value={pctDraft ?? String(Math.round(opacity * 100))}
+          onChange={(e) => {
+            setPctDraft(e.target.value);
+            const n = Number(e.target.value);
+            if (e.target.value.trim() !== "" && Number.isFinite(n)) {
+              onOpacity(clamp(n, 0, 100) / 100);
+            }
+          }}
+          onBlur={() => {
+            setPctDraft(null);
+            useStudio.getState().sealHistory();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+          }}
+        />
+        <span className="shrink-0 text-[11px] text-text-muted">%</span>
+      </div>
     </div>
   );
 }

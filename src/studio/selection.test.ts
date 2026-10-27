@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Scene, Transform } from "../core/types";
 import {
+  badgePlacement,
   MIN_SCALE,
   ROTATE_REACH,
   ROTATE_SNAP,
@@ -486,3 +487,39 @@ describe("frame bounds", () => {
   });
 });
 
+
+describe("badgePlacement", () => {
+  const box = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 50 },
+    { x: 0, y: 50 },
+  ];
+
+  it("hangs from the middle of the lowest edge, level, when the box is upright", () => {
+    const at = badgePlacement(box, 10);
+    expect(at.x).toBeCloseTo(50);
+    expect(at.y).toBeCloseTo(60);
+    expect(at.angle).toBeCloseTo(0);
+  });
+
+  it("moves to whichever edge is lowest as the box turns, not the box's own bottom", () => {
+    const turned = (deg: number) => {
+      const r = (deg * Math.PI) / 180;
+      return box.map((p) => ({
+        x: 50 + (p.x - 50) * Math.cos(r) - (p.y - 25) * Math.sin(r),
+        y: 25 + (p.x - 50) * Math.sin(r) + (p.y - 25) * Math.cos(r),
+      }));
+    };
+    // Turned half way round, the box's bottom edge is on top: the label stays below.
+    const upside = badgePlacement(turned(180), 10);
+    expect(upside.y).toBeCloseTo(60);
+    expect(upside.angle).toBeCloseTo(0);
+    // A turn of 30 leaves the original bottom lowest, and the label runs along it.
+    expect(badgePlacement(turned(30), 10).angle).toBeCloseTo(30);
+    // At 60 the right-hand edge has become the lowest, and the text stays readable.
+    const sixty = badgePlacement(turned(60), 10);
+    expect(Math.abs(sixty.angle)).toBeLessThanOrEqual(90);
+    expect(sixty.angle).toBeCloseTo(-30);
+  });
+});

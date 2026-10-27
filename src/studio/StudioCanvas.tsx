@@ -41,6 +41,7 @@ import {
   HANDLE_CURSOR,
   HANDLE_SIZE,
   angleTo,
+  badgePlacement,
   boundsHalf,
   boxSize,
   clampToFrame,
@@ -63,10 +64,16 @@ import {
   contentScale,
   frameOrigin,
   frameSize,
+  isPannable,
   screenToComposition,
   type Point,
   type Size,
 } from "./view";
+
+const PATTERN_CLASS = {
+  dots: "bg-[radial-gradient(circle,var(--color-border)_1px,transparent_1.15px)]",
+  grid: "bg-[linear-gradient(var(--color-border)_1px,transparent_1px),linear-gradient(90deg,var(--color-border)_1px,transparent_1px)]",
+} as const;
 
 /** An in-flight move, resize, or rotate. `handle` is set only when resizing. */
 type Drag = {
@@ -162,6 +169,8 @@ export function StudioCanvas() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag | null>(null);
+  const panRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const spaceRef = useRef(false);
   const textClickRef = useRef<((pt: Point) => void) | null>(null);
 
   const composition = useStudio((s) => s.composition);
@@ -171,6 +180,9 @@ export function StudioCanvas() {
   const pendingAttach = useStudio((s) => s.pendingAttach);
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
+  const patternOn = useStudio((s) => s.patternOn);
+  const playing = useStudio((s) => s.playing);
+  const pattern = useStudio((s) => s.pattern);
   const t = useStudio((s) => s.t);
   const viewport = useStudio((s) => s.viewport);
   const view = useStudio((s) => s.view);
@@ -199,8 +211,8 @@ export function StudioCanvas() {
   const drawRef = useRef<{ pointerId: number; from: Point; kind: "rect" | "ellipse" } | null>(null);
 
   const origin = frameOrigin(viewport, frame, view);
-  const size = frameSize(frame, view.scale);
   const scale = contentScale(view);
+  const size = frameSize(frame, scale);
 
   /**
    * What the frame is showing. The bench borrows it: a module is written against its
@@ -443,6 +455,29 @@ export function StudioCanvas() {
   }, []);
 
   useEffect(() => {
+    const typing = (t: EventTarget | null) =>
+      t instanceof HTMLInputElement ||
+      t instanceof HTMLTextAreaElement ||
+      (t instanceof HTMLElement && t.isContentEditable);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      if (e.type === "keyup") spaceRef.current = false;
+      else if (!typing(e.target)) spaceRef.current = true;
+    };
+    const release = () => {
+      spaceRef.current = false;
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", release);
+    };
+  }, []);
+
+  useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
@@ -681,8 +716,8 @@ export function StudioCanvas() {
       0,
       0,
       dpr * scale,
-      (origin.x + view.panX) * dpr,
-      (origin.y + view.panY) * dpr,
+      origin.x * dpr,
+      origin.y * dpr,
     );
     ctx.save();
     ctx.beginPath();
@@ -762,6 +797,19 @@ export function StudioCanvas() {
       ?.layer.base;
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // The middle button, or the left one with space held, moves the frame instead.
+    if (e.button === 1 || (e.button === 0 && spaceRef.current && isPannable(view))) {
+      e.preventDefault();
+      if (!isPannable(view)) return;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        return;
+      }
+      panRef.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
+      setCursor("grabbing");
+      return;
+    }
     if (e.button !== 0) return;
     const screen = screenAt(e);
     const point = screenToComposition(screen, viewport, frame, view);
@@ -928,6 +976,13 @@ export function StudioCanvas() {
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current;
+    if (pan && pan.pointerId === e.pointerId) {
+      useStudio.getState().panBy(e.clientX - pan.x, e.clientY - pan.y);
+      pan.x = e.clientX;
+      pan.y = e.clientY;
+      return;
+    }
     const screen = screenAt(e);
     const drag = dragRef.current;
 
@@ -1201,6 +1256,14 @@ export function StudioCanvas() {
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId === e.pointerId) {
+      panRef.current = null;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      setCursor(null);
+      return;
+    }
     if (drawRef.current && drawRef.current.pointerId === e.pointerId) {
       const d = drawRef.current;
       drawRef.current = null;
@@ -1299,8 +1362,7 @@ export function StudioCanvas() {
       outline,
       handles,
       badge: {
-        x: (outline[0].x + outline[1].x + outline[2].x + outline[3].x) / 4,
-        y: Math.max(...outline.map((p) => p.y)) + BADGE_GAP,
+        ...badgePlacement(outline, BADGE_GAP),
         size: boxSize(selected.item.state, selected.size),
       },
     };
@@ -1338,10 +1400,14 @@ export function StudioCanvas() {
               width: frame.width,
               height: frame.height,
               background: composition.background ?? "#fff",
-              transform: `translate(${view.panX}px, ${view.panY}px) scale(${scale})`,
+              transform: `scale(${scale})`,
             }}
           >
-            <div className="studio-grid" />
+            {patternOn ? (
+              <div
+                className={`absolute inset-0 bg-[length:20px_20px] ${PATTERN_CLASS[pattern]}`}
+              />
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1364,9 +1430,9 @@ export function StudioCanvas() {
           className="pointer-events-none absolute rounded bg-text-primary px-1.5 py-0.5 text-[10px] leading-[1.4] text-bg"
           style={{
             transform: `translate(${
-              origin.x + view.panX + (frame.width / 2) * scale
+              origin.x + (frame.width / 2) * scale
             }px, ${
-              origin.y + view.panY + (frame.height / 2 + PROXY_SIZE / 2 + 8) * scale
+              origin.y + (frame.height / 2 + PROXY_SIZE / 2 + 8) * scale
             }px) translateX(-50%)`,
           }}
         >
@@ -1578,11 +1644,11 @@ export function StudioCanvas() {
               );
             })}
           </svg>
-          {rotating ? null : (
+          {rotating || playing ? null : (
             <div
-              className="studio-badge"
+              className="studio-badge origin-top-left"
               style={{
-                transform: `translate(${chrome.badge.x}px, ${chrome.badge.y}px) translate(-50%, 0)`,
+                transform: `translate(${chrome.badge.x}px, ${chrome.badge.y}px) rotate(${chrome.badge.angle}deg) translate(-50%, 0)`,
               }}
             >
               {`${Math.round(chrome.badge.size.width)} × ${Math.round(chrome.badge.size.height)}`}
