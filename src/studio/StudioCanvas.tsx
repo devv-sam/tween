@@ -1340,7 +1340,9 @@ export function StudioCanvas() {
               background: composition.background ?? "#fff",
               transform: `translate(${view.panX}px, ${view.panY}px) scale(${scale})`,
             }}
-          />
+          >
+            <div className="studio-grid" />
+          </div>
         </div>
       ) : null}
       <canvas ref={canvasRef} className="studio-render" />

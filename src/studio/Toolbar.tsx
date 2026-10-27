@@ -1,5 +1,4 @@
 import { useStudio, type ActiveTool } from "./store";
-import { FRAME_MARGIN } from "./view";
 
 const tools: { id: ActiveTool; label: string; shortcut: string }[] = [
   { id: "select", label: "Select", shortcut: "V" },
@@ -14,9 +13,7 @@ export function Toolbar() {
 
   return (
     <div
-      className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-bg p-1 shadow-sm"
-      // Centred on the frame's bottom edge, which sits one margin above the viewport's.
-      style={{ bottom: FRAME_MARGIN - 23 }}
+      className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-bg p-1 shadow-sm"
       role="toolbar"
       aria-label="tools"
     >
