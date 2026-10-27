@@ -28,6 +28,10 @@ import { ChevronIcon, LABEL } from "./fields";
 const PANEL = "rounded-lg border border-border bg-bg";
 const SCENE_WIDTH = { key: "tween:width:scene", fallback: 320, min: 220, max: 520 };
 const INSPECTOR_WIDTH = { key: "tween:width:inspector", fallback: 260, min: 220, max: 480 };
+const ASSETS_HEIGHT = { key: "tween:height:assets", fallback: 220, min: 120, max: 640 };
+/** What the scene panel keeps when the assets panel is dragged up as far as it goes. */
+const SCENE_MIN_HEIGHT = 96;
+const HANDLE = 3;
 
 export function Studio() {
   const assets = useStudio((s) => s.assets);
@@ -47,9 +51,14 @@ export function Studio() {
   const [inspectorWidth, setInspectorWidth] = useState(() =>
     readNumber(INSPECTOR_WIDTH.key, INSPECTOR_WIDTH.fallback),
   );
+  const [assetsHeight, setAssetsHeight] = useState(() =>
+    readNumber(ASSETS_HEIGHT.key, ASSETS_HEIGHT.fallback),
+  );
   const inputRef = useRef<HTMLInputElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => writeAssetsCollapsed(collapsed), [collapsed]);
+  useEffect(() => writeNumber(ASSETS_HEIGHT.key, assetsHeight), [assetsHeight]);
   useEffect(() => writeNumber(SCENE_WIDTH.key, sceneWidth), [sceneWidth]);
   useEffect(() => writeNumber(INSPECTOR_WIDTH.key, inspectorWidth), [inspectorWidth]);
   useEffect(() => { void useStudio.getState().fetchFonts(); }, []);
@@ -60,7 +69,8 @@ export function Studio() {
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className="flex min-h-0 flex-1 px-[3px]">
           <div
-            className="my-[3px] flex shrink-0 flex-col gap-[3px]"
+            ref={columnRef}
+            className={`my-[3px] flex shrink-0 flex-col ${collapsed ? "gap-[3px]" : ""}`}
             style={{ width: sceneWidth }}
           >
             <section
@@ -78,10 +88,26 @@ export function Studio() {
                 className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none]"
               />
             </section>
+            {collapsed ? null : (
+              <ResizeHandle
+                label="Resize assets panel"
+                axis="y"
+                value={assetsHeight}
+                limits={ASSETS_HEIGHT}
+                grows="up"
+                onResize={(h) =>
+                  setAssetsHeight(
+                    Math.min(
+                      h,
+                      (columnRef.current?.clientHeight ?? Infinity) - SCENE_MIN_HEIGHT - HANDLE,
+                    ),
+                  )
+                }
+              />
+            )}
             <section
-              className={`flex shrink-0 flex-col overflow-hidden ${PANEL} ${
-                collapsed ? "" : "h-[220px]"
-              }`}
+              className={`flex max-h-[calc(100%-99px)] shrink-0 flex-col overflow-hidden ${PANEL}`}
+              style={collapsed ? undefined : { height: assetsHeight }}
               id="assets-drawer"
               aria-label="assets"
             >
@@ -144,7 +170,8 @@ export function Studio() {
           </div>
           <ResizeHandle
             label="Resize scene panel"
-            width={sceneWidth}
+            axis="x"
+            value={sceneWidth}
             limits={SCENE_WIDTH}
             grows="right"
             onResize={setSceneWidth}
@@ -156,7 +183,8 @@ export function Studio() {
           </div>
           <ResizeHandle
             label="Resize inspector"
-            width={inspectorWidth}
+            axis="x"
+            value={inspectorWidth}
             limits={INSPECTOR_WIDTH}
             grows="left"
             onResize={setInspectorWidth}
@@ -170,57 +198,77 @@ export function Studio() {
 }
 
 /**
- * The gap between two panels, which is also where either can be dragged wider. The
+ * The gap between two panels, which is also where either can be dragged larger. The
  * hit area spills past the gap onto the panels' edges so the grip is not three pixels.
  */
 function ResizeHandle({
   label,
-  width,
+  axis,
+  value,
   limits,
   grows,
   onResize,
 }: {
   label: string;
-  width: number;
+  axis: "x" | "y";
+  /** The panel's current width (x) or height (y). */
+  value: number;
   limits: { min: number; max: number };
-  /** Which way a drag has to go to make the panel wider. */
-  grows: "left" | "right";
-  onResize: (width: number) => void;
+  /** Which way a drag has to go to make the panel larger. */
+  grows: "left" | "right" | "up";
+  onResize: (size: number) => void;
 }) {
-  const start = useRef<{ x: number; width: number } | null>(null);
+  const start = useRef<{ at: number; value: number } | null>(null);
   const sign = grows === "right" ? 1 : -1;
-  const to = (w: number) => onResize(clamp(w, limits.min, limits.max));
+  const horizontal = axis === "x";
+  const to = (v: number) => onResize(clamp(v, limits.min, limits.max));
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const forward = horizontal ? "ArrowRight" : "ArrowDown";
+    const back = horizontal ? "ArrowLeft" : "ArrowUp";
+    if (e.key !== forward && e.key !== back) return;
     e.preventDefault();
-    to(width + (e.key === "ArrowRight" ? 1 : -1) * sign * (e.shiftKey ? 48 : 16));
+    to(value + (e.key === forward ? 1 : -1) * sign * (e.shiftKey ? 48 : 16));
   };
 
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={horizontal ? "vertical" : "horizontal"}
       aria-label={label}
       aria-valuemin={limits.min}
       aria-valuemax={limits.max}
-      aria-valuenow={width}
+      aria-valuenow={value}
       tabIndex={0}
-      className="group relative z-10 w-[3px] shrink-0 cursor-col-resize touch-none outline-none"
+      className={`group relative z-10 shrink-0 touch-none outline-none ${
+        horizontal ? "w-[3px] cursor-col-resize" : "h-[3px] cursor-row-resize"
+      }`}
       onPointerDown={(e: PointerEvent<HTMLDivElement>) => {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
-        start.current = { x: e.clientX, width };
+        start.current = { at: horizontal ? e.clientX : e.clientY, value };
       }}
       onPointerMove={(e) => {
-        if (start.current) to(start.current.width + (e.clientX - start.current.x) * sign);
+        if (start.current) {
+          to(start.current.value + ((horizontal ? e.clientX : e.clientY) - start.current.at) * sign);
+        }
       }}
       onPointerUp={() => (start.current = null)}
       onPointerCancel={() => (start.current = null)}
       onKeyDown={onKeyDown}
     >
-      <div className="absolute inset-y-[3px] -inset-x-[3px]" />
-      <div className="absolute inset-y-[3px] left-1/2 w-[2px] -translate-x-1/2 rounded-full group-hover:bg-accent/50 group-focus-visible:bg-accent/50 group-active:bg-accent" />
+      <div
+        className={`absolute ${
+          horizontal ? "inset-y-[3px] -inset-x-[3px]" : "inset-x-[3px] -inset-y-[3px]"
+        }`}
+      />
+      <div
+        className={`absolute rounded-full group-hover:bg-accent/50 group-focus-visible:bg-accent/50 group-active:bg-accent ${
+          horizontal
+            ? "inset-y-[3px] left-1/2 w-[2px] -translate-x-1/2"
+            : "inset-x-[3px] top-1/2 h-[2px] -translate-y-1/2"
+        }`}
+      />
     </div>
   );
 }
