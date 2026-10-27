@@ -1,13 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, Download } from "lucide-react";
 import { Dropdown } from "./Dropdown";
-import {
-  FORMATS,
-  QUALITY_STOPS,
-  evenSize,
-  runExport,
-  type ExportSettings,
-} from "./exportRun";
+import { FORMATS, QUALITY_STOPS, evenSize, runExport, type ExportSettings } from "./exportRun";
 import { LABEL, PILL, Segmented } from "./fields";
 import { useStudio } from "./store";
 
@@ -33,6 +27,8 @@ export function ExportPanel({
   const go = async () => {
     setBusy(true);
     setError(null);
+    // Lets "Exporting…" paint before the render takes the thread.
+    await new Promise((r) => setTimeout(r, 30));
     try {
       await runExport(settings);
       onDone();

@@ -14,6 +14,9 @@ export type Placement = "left" | "below";
 
 const GAP = POPOVER_GAP;
 
+/** Open cards, newest last: Escape closes only the one on top. */
+const openCards: symbol[] = [];
+
 /** Every ancestor that can scroll the anchor out from under the card. */
 function scrollParentsOf(el: HTMLElement | null): HTMLElement[] {
   const out: HTMLElement[] = [];
@@ -91,12 +94,21 @@ export function Popover({
     };
   }, [anchorRef, placement]);
 
+  const card = useRef(Symbol("popover"));
+  useEffect(() => {
+    const me = card.current;
+    openCards.push(me);
+    return () => {
+      openCards.splice(openCards.indexOf(me), 1);
+    };
+  }, []);
+
   useEffect(() => {
     // Capture, and the event stops here: escape with a card open means close the
     // card, not clear the selection underneath it. The canvas listens on `document`
     // too, and only a capture-phase listener gets there first.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || openCards[openCards.length - 1] !== card.current) return;
       e.stopPropagation();
       onClose();
     };

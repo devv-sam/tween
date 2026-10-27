@@ -44,6 +44,8 @@ export async function exportMp4(comp: Composition, library: ModuleAsset[], w = 8
     const frame = new VideoFrame(canvas, { timestamp: Math.round((f * 1e6) / comp.fps) });
     encoder.encode(frame, { keyFrame: f % comp.fps === 0 });
     frame.close();
+    // Frames waiting to be encoded are whole pictures in memory: let the encoder catch up.
+    while (encoder.encodeQueueSize > 4) await new Promise((r) => setTimeout(r));
   }
 
   await encoder.flush();

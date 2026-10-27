@@ -81,7 +81,7 @@ export async function runExport(s: ExportSettings): Promise<string> {
   }
 
   await Promise.all(
-    assets.filter((a) => a.kind === "image").map((a) => ensureImage(a.id, a.src).catch(() => null)),
+    assets.map((a) => ensureImage(a.id, a.src).catch(() => null)),
   );
   const imageOf: ImageLookup = (id) => {
     const img = getCachedImage(id);

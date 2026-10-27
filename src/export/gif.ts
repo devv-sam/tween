@@ -17,6 +17,8 @@ export async function exportGif(comp: Composition, library: ModuleAsset[], w = 8
     const palette = quantize(data, options.colors ?? 256);
     const index = applyPalette(data, palette);
     gif.writeFrame(index, w, h, { palette, delay });
+    // Hands the thread back between frames, so the page stays alive while it works.
+    await new Promise((r) => setTimeout(r));
   }
   gif.finish();
   return new Blob([gif.bytes() as BlobPart], { type: "image/gif" });
