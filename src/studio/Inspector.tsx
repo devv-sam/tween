@@ -4,7 +4,8 @@ import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/t
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
-import { FPS_CHOICES, RESOLUTIONS, resolutionFor, resolutionKey } from "./composition";
+import { FPS_CHOICES } from "./composition";
+import { ResolutionPicker } from "./ResolutionPicker";
 import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
 import {
   PROP_STEP,
@@ -204,31 +205,13 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
  */
 function CompositionPanel() {
   const { fps, background } = useStudio((s) => s.composition);
-  const frame = useStudio((s) => s.frame);
 
   return (
     <section className={SECTION}>
       <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
-      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-1.5">
-        <div className="col-span-2">
-          <BackgroundField value={background ?? "#ffffff"} />
-        </div>
-
-        <SelectField
-          pill
-          label="Res"
-          title="Resolution"
-          value={resolutionKey(frame)}
-          onChange={(v) => {
-            const size = resolutionFor(v);
-            if (size) useStudio.getState().setResolution(size);
-          }}
-          options={RESOLUTIONS.map((r) => ({
-            value: resolutionKey(r.size),
-            label: r.label,
-          }))}
-        />
-
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+        <BackgroundField value={background ?? "#ffffff"} />
+        <ResolutionPicker />
         <SelectField
           pill
           label="FPS"

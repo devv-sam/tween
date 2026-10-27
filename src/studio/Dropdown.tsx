@@ -11,14 +11,18 @@ export function Dropdown({
   value,
   options,
   onChange,
+  footer,
   children,
 }: {
   title: string;
   /** The button's classes; the open state is added on top. */
   className: string;
   value: string;
-  options: { value: string; label: string }[];
+  /** `detail` sits at the end of the row, quieter than the label. */
+  options: { value: string; label: string; detail?: string }[];
   onChange: (value: string) => void;
+  /** Under the list, for a choice the list cannot offer. Given a way to close the menu. */
+  footer?: (close: () => void) => ReactNode;
   /** What the button shows. */
   children: ReactNode;
 }) {
@@ -57,9 +61,9 @@ export function Dropdown({
                   type="button"
                   role="option"
                   aria-selected={o.value === value}
-                  className={`flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[11px] ${
+                  className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-[11px] ${
                     o.value === value
-                      ? "bg-accent/[0.06] text-text-primary"
+                      ? "bg-text-primary/5 text-accent"
                       : "text-text-primary/70 hover:bg-text-primary/5"
                   }`}
                   onClick={() => {
@@ -68,10 +72,16 @@ export function Dropdown({
                   }}
                 >
                   {o.label}
+                  {o.detail ? (
+                    <span className="text-[10px] text-text-muted tabular-nums">{o.detail}</span>
+                  ) : null}
                 </button>
               </li>
             ))}
           </ul>
+          {footer ? (
+            <div className="border-t border-border p-2">{footer(() => setOpen(false))}</div>
+          ) : null}
         </Popover>
       ) : null}
     </>

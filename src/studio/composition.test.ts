@@ -4,9 +4,12 @@ import {
   RESOLUTIONS,
   clampFps,
   contentEnd,
+  customResolution,
+  formatSize,
   normalizeHex,
   resolutionFor,
   resolutionKey,
+  resolutionName,
   retimed,
 } from "./composition";
 
@@ -30,6 +33,18 @@ describe("resolutions", () => {
 
   it("has no answer for a size it does not offer", () => {
     expect(resolutionFor("640x480")).toBeUndefined();
+  });
+
+  it("names a preset by its shape and anything else Custom", () => {
+    expect(resolutionName({ width: 1920, height: 1080 })).toBe("Full HD");
+    expect(resolutionName({ width: 1080, height: 1920 })).toBe("Vertical");
+    expect(resolutionName({ width: 1000, height: 700 })).toBe("Custom");
+    expect(formatSize({ width: 1920, height: 1080 })).toBe("1920 × 1080");
+  });
+
+  it("rounds a typed size and keeps it drawable", () => {
+    expect(customResolution(1000.6, 700)).toEqual({ width: 1001, height: 700 });
+    expect(customResolution(1, 99999)).toEqual({ width: 64, height: 4096 });
   });
 });
 
