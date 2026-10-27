@@ -19,6 +19,7 @@ import {
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
 import { Dropdown } from "./Dropdown";
+import { ScrollArea } from "./ScrollArea";
 import { ensureFontPreview, faceOf } from "./fontPreview";
 import { getFont } from "../render/fontCache";
 import { weightName } from "./text";
@@ -66,7 +67,7 @@ export function Inspector() {
       className={`flex min-h-0 flex-1 flex-col overflow-hidden ${PANEL}`}
       aria-label={bench ? "module bench" : "inspector"}
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <ScrollArea className="min-h-0 flex-1">
         {/* The bench takes the panel rather than floating over it: a module is being
             written against the proxy on the frame, and the element that happened to
             be picked has nothing to do with it. */}
@@ -79,7 +80,7 @@ export function Inspector() {
             selectedIds={selectedIds}
           />
         )}
-      </div>
+      </ScrollArea>
     </aside>
   );
 }
