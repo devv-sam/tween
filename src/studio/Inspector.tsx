@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/types";
 import type { EasingDef } from "../core/easing";
@@ -19,6 +19,7 @@ import {
 import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
 import { Dropdown } from "./Dropdown";
+import { ensureFontPreview, faceOf } from "./fontPreview";
 import {
   MIN_SEGMENT,
   easesAgree,
@@ -1079,6 +1080,12 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
     ? fonts.filter((f) => f.family.toLowerCase().includes(fontSearch.toLowerCase()))
     : fonts;
 
+  const shown = filtered.slice(0, 50);
+  useEffect(() => {
+    ensureFontPreview(source.fontFamily);
+    if (fontOpen) shown.forEach((f) => ensureFontPreview(f.family));
+  }, [fontOpen, source.fontFamily, fontSearch, fonts]);
+
   const weights = fonts.find((f) => f.family === source.fontFamily)?.variants ?? [];
   const weightOptions = weights
     .map((v) => {
@@ -1099,12 +1106,17 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
             className={`${BOX} w-full justify-between`}
             onClick={() => setFontOpen(!fontOpen)}
           >
-            <span className="min-w-0 truncate text-[11px] text-text-primary">
+            <span
+              className="min-w-0 truncate text-[12px] text-text-primary"
+              style={{ fontFamily: faceOf(source.fontFamily) }}
+            >
               {source.fontFamily}
             </span>
-            <span className="shrink-0 text-[10px] text-text-muted/60">
-              {fontOpen ? "▲" : "▼"}
-            </span>
+            <ChevronDown
+              size={12}
+              aria-hidden="true"
+              className={`shrink-0 text-text-muted transition-transform ${fontOpen ? "rotate-180" : ""}`}
+            />
           </button>
           {fontOpen ? (
             <div className="absolute left-0 top-full z-20 mt-0.5 flex max-h-[200px] w-full flex-col overflow-hidden rounded-md border border-border bg-bg shadow-lg">
@@ -1116,11 +1128,11 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
                 onChange={(e) => setFontSearch(e.target.value)}
               />
               <div className="overflow-y-auto">
-                {filtered.slice(0, 50).map((f) => (
+                {shown.map((f) => (
                   <button
                     key={f.family}
                     type="button"
-                    className={`block w-full px-2 py-1 text-left text-[11px] hover:bg-text-primary/5 ${
+                    className={`block w-full px-2 py-1 text-left text-[13px] hover:bg-text-primary/5 ${
                       f.family === source.fontFamily ? "bg-accent/10 text-accent" : "text-text-primary"
                     }`}
                     onClick={() => {
@@ -1129,7 +1141,7 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
                       setFontSearch("");
                     }}
                   >
-                    {f.family}
+                    <span style={{ fontFamily: faceOf(f.family) }}>{f.family}</span>
                   </button>
                 ))}
               </div>
