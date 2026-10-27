@@ -65,7 +65,7 @@ export function Studio() {
   }, []);
 
   return (
-    <div className="studio">
+    <div className="studio [&_svg.lucide]:size-(--icon-size) [&_svg.lucide]:[stroke-width:var(--icon-stroke)]">
       <TopBar />
       <div className="relative flex min-h-0 flex-1">
         <div ref={mainRef} className="flex min-w-0 flex-1 flex-col">

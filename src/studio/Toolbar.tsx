@@ -40,7 +40,7 @@ export function Toolbar() {
 
 function CursorIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="size-(--icon-size) [stroke-width:var(--icon-stroke)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
       <path d="m4 4 7.07 17 2.51-7.39L21 11.07z" />
     </svg>
   );
@@ -48,7 +48,7 @@ function CursorIcon() {
 
 function RectIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="size-(--icon-size) [stroke-width:var(--icon-stroke)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2" />
     </svg>
   );
@@ -56,7 +56,7 @@ function RectIcon() {
 
 function EllipseIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="size-(--icon-size) [stroke-width:var(--icon-stroke)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10" />
     </svg>
   );
@@ -64,7 +64,7 @@ function EllipseIcon() {
 
 function TypeIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="size-(--icon-size) [stroke-width:var(--icon-stroke)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="4 7 4 4 20 4 20 7" />
       <line x1="9" y1="20" x2="15" y2="20" />
       <line x1="12" y1="4" x2="12" y2="20" />

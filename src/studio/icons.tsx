@@ -1,14 +1,13 @@
 import type { ReactElement, ReactNode } from "react";
 
-function Icon({ size = 14, children }: { size?: number; children: ReactNode }) {
+/** Every icon in the set is the size and weight the studio's icon tokens say. */
+function Icon({ children }: { children: ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width={size}
-      height={size}
+      className="size-(--icon-size) [stroke-width:var(--icon-stroke)]"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -27,9 +26,9 @@ const RING = [
   [15.5, 5.94],
 ];
 
-export function ClonersIcon({ size }: { size?: number }): ReactElement {
+export function ClonersIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       {RING.map(([cx, cy]) => (
         <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="2.25" />
       ))}
@@ -37,9 +36,9 @@ export function ClonersIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function DotsPatternIcon({ size }: { size?: number }): ReactElement {
+export function DotsPatternIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       {[5, 12, 19].flatMap((x) =>
         [5, 12, 19].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1" />),
       )}
@@ -47,17 +46,17 @@ export function DotsPatternIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function GridPatternIcon({ size }: { size?: number }): ReactElement {
+export function GridPatternIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M9 4v16M15 4v16M4 9h16M4 15h16" />
     </Icon>
   );
 }
 
-export function SplitIcon({ size }: { size?: number }): ReactElement {
+export function SplitIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M9.5 7H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h4.5" />
       <path d="M14.5 7H19a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.5" />
       <path d="M12 3v18" />
@@ -65,9 +64,9 @@ export function SplitIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function FpsIcon({ size }: { size?: number }): ReactElement {
+export function FpsIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M4.6 17.5a8.5 8.5 0 1 1 14.8 0" />
       <path d="M12 13.3 15.5 9.3" />
       <circle cx="12" cy="13.3" r="0.75" />
@@ -75,9 +74,9 @@ export function FpsIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function ModulesIcon({ size }: { size?: number }): ReactElement {
+export function ModulesIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M12 1.6 16.5 4.2v4.5L12 11.3 7.5 8.7V4.2Z" />
       <path d="M7.5 4.2 12 6.8l4.5-2.6M12 6.8v4.5" />
       <path d="M7.5 11 12 13.6v4.5l-4.5 2.6L3 18.1v-4.5Z" />
@@ -88,9 +87,9 @@ export function ModulesIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function AlignLeftIcon({ size }: { size?: number }): ReactElement {
+export function AlignLeftIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M5 4V20" />
       <path d="M9 8H19" />
       <path d="M9 16H14" />
@@ -98,9 +97,9 @@ export function AlignLeftIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function AlignRightIcon({ size }: { size?: number }): ReactElement {
+export function AlignRightIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M19 4V20" />
       <path d="M15 8H5" />
       <path d="M15 16H10" />
@@ -108,9 +107,9 @@ export function AlignRightIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function AlignTopIcon({ size }: { size?: number }): ReactElement {
+export function AlignTopIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M4 5H20" />
       <path d="M8 9V20" />
       <path d="M16 9V15" />
@@ -118,9 +117,9 @@ export function AlignTopIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function AlignBottomIcon({ size }: { size?: number }): ReactElement {
+export function AlignBottomIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M4 19H20" />
       <path d="M8 4V15" />
       <path d="M16 9V15" />
@@ -128,9 +127,9 @@ export function AlignBottomIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function AlignCenterIcon({ size }: { size?: number }): ReactElement {
+export function AlignCenterIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M12 4V20" />
       <path d="M6.5 8H17.5" />
       <path d="M9 16H15" />
@@ -138,9 +137,9 @@ export function AlignCenterIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function AlignMiddleIcon({ size }: { size?: number }): ReactElement {
+export function AlignMiddleIcon(): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       <path d="M4 12H20" />
       <path d="M8 6.5V17.5" />
       <path d="M16 9V15" />
@@ -154,15 +153,9 @@ const TEXT_LINES = {
   right: ["M4 6H20", "M10 10.5H20", "M4 15H20", "M13 19.5H20"],
 };
 
-export function TextAlignIcon({
-  align,
-  size,
-}: {
-  align: keyof typeof TEXT_LINES;
-  size?: number;
-}): ReactElement {
+export function TextAlignIcon({ align }: { align: keyof typeof TEXT_LINES }): ReactElement {
   return (
-    <Icon size={size}>
+    <Icon>
       {TEXT_LINES[align].map((d) => (
         <path key={d} d={d} />
       ))}

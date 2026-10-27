@@ -258,7 +258,7 @@ function CompositionPanel() {
               label: "Dots",
               content: (
                 <span className="flex items-center gap-1.5 text-[11px]">
-                  <DotsPatternIcon size={12} />
+                  <DotsPatternIcon />
                   Dots
                 </span>
               ),
@@ -268,7 +268,7 @@ function CompositionPanel() {
               label: "Grid",
               content: (
                 <span className="flex items-center gap-1.5 text-[11px]">
-                  <GridPatternIcon size={12} />
+                  <GridPatternIcon />
                   Grid
                 </span>
               ),
@@ -1074,7 +1074,7 @@ function SeparateButton({
         useStudio.getState().setSeparatePosition(layerId, !separate)
       }
     >
-      <SplitIcon size={14} />
+      <SplitIcon />
     </button>
   );
 }

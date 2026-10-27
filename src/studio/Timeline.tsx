@@ -1126,12 +1126,12 @@ function TrackLabel({
         <span className={`flex shrink-0 items-center gap-1 pl-1 text-text-muted ${faded}`}>
           {cloned ? (
             <span role="img" aria-label="has a cloner" title="Cloner">
-              <ClonersIcon size={12} />
+              <ClonersIcon />
             </span>
           ) : null}
           {hasModules ? (
             <span role="img" aria-label="has modules" title="Modules">
-              <ModulesIcon size={12} />
+              <ModulesIcon />
             </span>
           ) : null}
         </span>
