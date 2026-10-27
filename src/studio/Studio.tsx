@@ -141,7 +141,24 @@ export function Studio() {
       </div>
       {DevDials ? (
         <Suspense fallback={null}>
-          <DevDials />
+          <DevDials
+            sizes={{
+              leftWidth: sceneWidth,
+              rightWidth: inspectorWidth,
+              assetsHeight,
+              effectsHeight,
+              timelineHeight,
+            }}
+            onSize={(key, value) =>
+              ({
+                leftWidth: setSceneWidth,
+                rightWidth: setInspectorWidth,
+                assetsHeight: setAssetsHeight,
+                effectsHeight: setEffectsHeight,
+                timelineHeight: setTimelineHeight,
+              })[key](value)
+            }
+          />
         </Suspense>
       ) : null}
     </div>

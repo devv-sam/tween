@@ -1,9 +1,28 @@
-import { useEffect } from "react";
-import { DialRoot, useDialKit } from "dialkit";
+import { useEffect, useState } from "react";
+import { DialRoot, useDialKit, useDialKitController } from "dialkit";
 import "dialkit/styles.css";
 
 const studio = () => document.querySelector<HTMLElement>(".studio");
 const read = (name: string) => getComputedStyle(studio()!).getPropertyValue(name).trim();
+
+/** The panels' sizes in px. The scene and assets share the left column's width, and the
+ *  properties and effects share the right one's; the scene and properties take the height
+ *  the panel under them leaves. */
+export interface PanelSizes {
+  leftWidth: number;
+  rightWidth: number;
+  assetsHeight: number;
+  effectsHeight: number;
+  timelineHeight: number;
+}
+
+const SIZE_KEYS: (keyof PanelSizes)[] = [
+  "leftWidth",
+  "rightWidth",
+  "assetsHeight",
+  "effectsHeight",
+  "timelineHeight",
+];
 
 /**
  * Live dials for the panels' radius, border, fill and spacing, writing the custom
@@ -11,7 +30,33 @@ const read = (name: string) => getComputedStyle(studio()!).getPropertyValue(name
  * `import.meta.env.DEV` and `?dials`, so none of it ships. Defaults are whatever the stylesheet says,
  * so an untouched dial changes nothing.
  */
-export default function DevDials() {
+export default function DevDials({
+  sizes,
+  onSize,
+}: {
+  sizes: PanelSizes;
+  onSize: (key: keyof PanelSizes, value: number) => void;
+}) {
+  // Fixed at mount: a config that follows `sizes` would re-register the panel on every drag.
+  const [config] = useState(() => ({
+    leftWidth: [sizes.leftWidth, 160, 600, 1] as [number, number, number, number],
+    rightWidth: [sizes.rightWidth, 160, 600, 1] as [number, number, number, number],
+    assetsHeight: [sizes.assetsHeight, 80, 700, 1] as [number, number, number, number],
+    effectsHeight: [sizes.effectsHeight, 80, 700, 1] as [number, number, number, number],
+    timelineHeight: [sizes.timelineHeight, 80, 700, 1] as [number, number, number, number],
+  }));
+  const dial = useDialKitController("Sizes", config);
+  const dialled = dial.values;
+
+  // Two ways: a dial moves its panel, and dragging a panel moves its dial. Each side
+  // only acts when the other disagrees, so neither can echo the other back.
+  useEffect(() => {
+    for (const key of SIZE_KEYS) if (dialled[key] !== sizes[key]) onSize(key, dialled[key]);
+  }, [dialled]);
+  useEffect(() => {
+    for (const key of SIZE_KEYS) if (dialled[key] !== sizes[key]) dial.setValue(key, sizes[key]);
+  }, [sizes]);
+
   const look = useDialKit("Panels", {
     radius: [parseFloat(read("--panel-radius")), 0, 32, 1],
     borderWidth: [parseFloat(read("--panel-border-width")), 0, 4, 1],
