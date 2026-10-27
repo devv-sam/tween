@@ -70,12 +70,12 @@ import {
   type Size,
 } from "./view";
 
-/** An in-flight move, resize, or rotate. `handle` is set only when resizing. */
 const PATTERN_CLASS = {
   dots: "bg-[radial-gradient(circle,var(--color-border)_1px,transparent_1.15px)]",
   grid: "bg-[linear-gradient(var(--color-border)_1px,transparent_1px),linear-gradient(90deg,var(--color-border)_1px,transparent_1px)]",
 } as const;
 
+/** An in-flight move, resize, or rotate. `handle` is set only when resizing. */
 type Drag = {
   id: string;
   pointerId: number;
@@ -460,13 +460,20 @@ export function StudioCanvas() {
       t instanceof HTMLTextAreaElement ||
       (t instanceof HTMLElement && t.isContentEditable);
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Space" && !typing(e.target)) spaceRef.current = e.type === "keydown";
+      if (e.code !== "Space") return;
+      if (e.type === "keyup") spaceRef.current = false;
+      else if (!typing(e.target)) spaceRef.current = true;
+    };
+    const release = () => {
+      spaceRef.current = false;
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKey);
+    window.addEventListener("blur", release);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", release);
     };
   }, []);
 
@@ -791,9 +798,9 @@ export function StudioCanvas() {
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     // The middle button, or the left one with space held, moves the frame instead.
-    if (e.button === 1 || (e.button === 0 && spaceRef.current)) {
-      if (!isPannable(view)) return;
+    if (e.button === 1 || (e.button === 0 && spaceRef.current && isPannable(view))) {
       e.preventDefault();
+      if (!isPannable(view)) return;
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {

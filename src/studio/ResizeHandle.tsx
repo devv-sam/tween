@@ -2,9 +2,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { SlotText } from "slot-text/react";
 import "slot-text/style.css";
 import { clamp } from "../core/math";
-
-/** How close, in px, a dragged split has to come to half and half to snap to it. */
-const SNAP_PX = 8;
+import { lowerPercent, snapToMid } from "./split";
 
 /**
  * The gap between two panels, which is also where either can be dragged larger. The
@@ -41,7 +39,7 @@ export function ResizeHandle({
   const half = () => (ratio ? Math.round(ratio.room() / 2) : null);
   const to = (v: number) => {
     const mid = half();
-    onResize(clamp(mid !== null && Math.abs(v - mid) <= SNAP_PX ? mid : v, limits.min, limits.max));
+    onResize(clamp(mid === null ? v : snapToMid(v, mid), limits.min, limits.max));
   };
   const onHalf = ratio && dragging && value === half();
 
@@ -126,7 +124,7 @@ function Ratio({
 }) {
   const total = room();
   if (total <= 0) return null;
-  const lower = clamp(Math.round((value / total) * 20) * 5, 5, 95);
+  const lower = lowerPercent(value, total);
 
   return (
     <span
