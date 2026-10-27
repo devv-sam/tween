@@ -971,7 +971,8 @@ export function StudioCanvas() {
     const item = scene.find((it) => it.id === id);
     const itemSize = item && sizeOf(item);
     if (!item || !itemSize) return;
-    setCursor("move");
+    const isText = composition.tracks.find((tr) => tr.layer.id === id)?.layer.source.kind === "text";
+    setCursor(isText ? null : "move");
     begin(item, itemSize, "move", null);
   };
 
