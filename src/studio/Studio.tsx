@@ -23,7 +23,6 @@ import { ChevronIcon, LABEL } from "./fields";
 const PANEL = "rounded-lg border border-border bg-bg";
 const SCENE_WIDTH = { key: "tween:width:scene", fallback: 320, min: 220, max: 520 };
 const INSPECTOR_WIDTH = { key: "tween:width:inspector", fallback: 260, min: 220, max: 480 };
-const ASSETS_WIDTH = { key: "tween:width:assets", fallback: 320, min: 220, max: 520 };
 const TIMELINE_HEIGHT = { key: "tween:height:timeline", fallback: 264, min: 120, max: 640 };
 const ASSETS_HEIGHT = { key: "tween:height:assets", fallback: 220, min: 120, max: 640 };
 /** What the scene panel keeps when the assets panel is dragged up as far as it goes. */
@@ -50,9 +49,6 @@ export function Studio() {
   const [inspectorWidth, setInspectorWidth] = useState(() =>
     readNumber(INSPECTOR_WIDTH.key, INSPECTOR_WIDTH.fallback),
   );
-  const [assetsWidth, setAssetsWidth] = useState(() =>
-    readNumber(ASSETS_WIDTH.key, ASSETS_WIDTH.fallback),
-  );
   const [timelineHeight, setTimelineHeight] = useState(() =>
     readNumber(TIMELINE_HEIGHT.key, TIMELINE_HEIGHT.fallback),
   );
@@ -66,7 +62,6 @@ export function Studio() {
   useEffect(() => writeAssetsCollapsed(collapsed), [collapsed]);
   useEffect(() => writeNumber(ASSETS_HEIGHT.key, assetsHeight), [assetsHeight]);
   useEffect(() => writeNumber(SCENE_WIDTH.key, sceneWidth), [sceneWidth]);
-  useEffect(() => writeNumber(ASSETS_WIDTH.key, assetsWidth), [assetsWidth]);
   useEffect(() => writeNumber(TIMELINE_HEIGHT.key, timelineHeight), [timelineHeight]);
   useEffect(() => writeNumber(INSPECTOR_WIDTH.key, inspectorWidth), [inspectorWidth]);
   useEffect(() => {
@@ -81,33 +76,22 @@ export function Studio() {
           <div
             ref={columnRef}
             className="my-[3px] flex shrink-0 flex-col"
-            style={{ width: Math.max(sceneWidth, assetsWidth) + HANDLE }}
+            style={{ width: sceneWidth }}
           >
-            <div className="flex min-h-0 flex-1">
-              <section
-                className={`flex min-h-0 shrink-0 flex-col overflow-hidden ${PANEL}`}
-                style={{ width: sceneWidth }}
-                aria-label="scene"
-              >
-                <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-                  <span className={LABEL}>Scene</span>
-                  <span className="text-[10px] text-text-muted/70 tabular-nums">{layerCount}</span>
-                </div>
-                <div
-                  ref={setSceneHost}
-                  className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none]"
-                />
-              </section>
-              <ResizeHandle
-                label="Resize scene width"
-                axis="x"
-                value={sceneWidth}
-                limits={SCENE_WIDTH}
-                grows="right"
-                onResize={setSceneWidth}
+            <section
+              className={`flex min-h-0 flex-1 flex-col overflow-hidden ${PANEL}`}
+              aria-label="scene"
+            >
+              <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+                <span className={LABEL}>Scene</span>
+                <span className="text-[10px] text-text-muted/70 tabular-nums">{layerCount}</span>
+              </div>
+              <div
+                ref={setSceneHost}
+                className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none]"
               />
-            </div>
-            <div className="h-[3px] shrink-0" style={{ width: Math.min(sceneWidth, assetsWidth) }}>
+            </section>
+            <div className="h-[3px] shrink-0">
               {collapsed ? null : (
                 <ResizeHandle
                   label="Resize assets height"
@@ -126,82 +110,77 @@ export function Studio() {
                 />
               )}
             </div>
-            <div
-              className="flex max-h-[calc(100%-99px)] shrink-0"
+            <section
+              className={`flex max-h-[calc(100%-99px)] shrink-0 flex-col overflow-hidden ${PANEL}`}
               style={collapsed ? undefined : { height: assetsHeight }}
+              id="assets-drawer"
+              aria-label="assets"
             >
-              <section
-                className={`flex shrink-0 flex-col overflow-hidden ${PANEL}`}
-                style={{ width: assetsWidth }}
-                id="assets-drawer"
-                aria-label="assets"
-              >
-                <div className="flex h-9 shrink-0 items-center gap-3 px-3">
-                  <PanelTab
-                    label="Assets"
-                    active={tab === "assets"}
-                    onClick={() => {
-                      setCollapsed(false);
-                      setTab("assets");
-                    }}
-                  />
-                  <PanelTab
-                    label="Modules"
-                    active={tab === "modules"}
-                    onClick={() => {
-                      setCollapsed(false);
-                      setTab("modules");
-                    }}
-                  />
-                  <div className="ml-auto flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      className={PANEL_BTN}
-                      aria-label={tab === "assets" ? "Import images" : "New module"}
-                      title={tab === "assets" ? "Import images" : "New module"}
-                      onClick={() =>
-                        tab === "assets"
-                          ? inputRef.current?.click()
-                          : useStudio.getState().openBench()
-                      }
-                    >
-                      <PlusIcon />
-                    </button>
-                    <button
-                      type="button"
-                      className={`${PANEL_BTN} transition-transform duration-[120ms] ${
-                        collapsed ? "" : "rotate-90"
-                      }`}
-                      aria-label={collapsed ? "Expand" : "Collapse"}
-                      aria-expanded={!collapsed}
-                      aria-controls="assets-drawer"
-                      title={collapsed ? "Expand" : "Collapse"}
-                      onClick={() => setCollapsed(!collapsed)}
-                    >
-                      <ChevronIcon />
-                    </button>
-                  </div>
+              <div className="flex h-9 shrink-0 items-center gap-3 px-3">
+                <PanelTab
+                  label="Assets"
+                  active={tab === "assets"}
+                  onClick={() => {
+                    setCollapsed(false);
+                    setTab("assets");
+                  }}
+                />
+                <PanelTab
+                  label="Modules"
+                  active={tab === "modules"}
+                  onClick={() => {
+                    setCollapsed(false);
+                    setTab("modules");
+                  }}
+                />
+                <div className="ml-auto flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    className={PANEL_BTN}
+                    aria-label={tab === "assets" ? "Import images" : "New module"}
+                    title={tab === "assets" ? "Import images" : "New module"}
+                    onClick={() =>
+                      tab === "assets"
+                        ? inputRef.current?.click()
+                        : useStudio.getState().openBench()
+                    }
+                  >
+                    <PlusIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className={`${PANEL_BTN} transition-transform duration-[120ms] ${
+                      collapsed ? "" : "rotate-90"
+                    }`}
+                    aria-label={collapsed ? "Expand" : "Collapse"}
+                    aria-expanded={!collapsed}
+                    aria-controls="assets-drawer"
+                    title={collapsed ? "Expand" : "Collapse"}
+                    onClick={() => setCollapsed(!collapsed)}
+                  >
+                    <ChevronIcon />
+                  </button>
                 </div>
-                {collapsed ? null : (
-                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border [scrollbar-width:none]">
-                    {tab === "assets" ? (
-                      <AssetShelf assets={assets} inputRef={inputRef} />
-                    ) : (
-                      <ModuleShelf />
-                    )}
-                  </div>
-                )}
-              </section>
-              <ResizeHandle
-                label="Resize assets width"
-                axis="x"
-                value={assetsWidth}
-                limits={ASSETS_WIDTH}
-                grows="right"
-                onResize={setAssetsWidth}
-              />
-            </div>
+              </div>
+              {collapsed ? null : (
+                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border [scrollbar-width:none]">
+                  {tab === "assets" ? (
+                    <AssetShelf assets={assets} inputRef={inputRef} />
+                  ) : (
+                    <ModuleShelf />
+                  )}
+                </div>
+              )}
+            </section>
           </div>
+          <ResizeHandle
+            label="Resize scene width"
+            axis="x"
+            value={sceneWidth}
+            limits={SCENE_WIDTH}
+            grows="right"
+            onResize={setSceneWidth}
+          />
           <div className="relative flex min-w-0 flex-1 overflow-hidden">
             <StudioCanvas />
             <CanvasControls />
