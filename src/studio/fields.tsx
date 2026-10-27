@@ -442,9 +442,9 @@ export function ColorInput({
   const [draft, setDraft] = useState<string | null>(null);
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
       <label
-        className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border focus-within:border-accent"
+        className="relative h-6 w-6 shrink-0 cursor-pointer overflow-hidden rounded-md border border-border focus-within:border-accent"
         style={{ background: value }}
       >
         <input
@@ -458,7 +458,7 @@ export function ColorInput({
           }}
         />
       </label>
-      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-text-primary/5 px-2.5 focus-within:border-accent">
+      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-text-primary/5 px-2 focus-within:border-accent">
         <input
           className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary tabular-nums outline-none"
           aria-label={`${label} ${mode}`}
@@ -512,9 +512,9 @@ export function ColorField({
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1.5">
       <ColorInput label={label} value={color} onChange={onColor} />
-      <div className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-transparent bg-text-primary/5 px-2.5 focus-within:border-accent">
+      <div className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-transparent bg-text-primary/5 px-2 focus-within:border-accent">
         <input
-          className="w-7 min-w-0 bg-transparent text-right text-[12px] text-text-primary tabular-nums outline-none"
+          className="w-6 min-w-0 bg-transparent text-right text-[12px] text-text-primary tabular-nums outline-none"
           aria-label={`${label} opacity`}
           inputMode="numeric"
           value={pctDraft ?? String(Math.round(opacity * 100))}
