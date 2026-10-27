@@ -47,18 +47,6 @@ export function FpsIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
-export function ResolutionIcon({ size }: { size?: number }): ReactElement {
-  return (
-    <Icon size={size}>
-      <path d="M4 9V6a2 2 0 0 1 2-2h3" />
-      <path d="M15 4h3a2 2 0 0 1 2 2v3" />
-      <path d="M20 15v3a2 2 0 0 1-2 2h-3" />
-      <path d="M9 20H6a2 2 0 0 1-2-2v-3" />
-      <rect x="8.5" y="9" width="7" height="6" rx="1" />
-    </Icon>
-  );
-}
-
 export function ModulesIcon({ size }: { size?: number }): ReactElement {
   return (
     <Icon size={size}>

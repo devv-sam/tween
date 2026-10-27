@@ -4,6 +4,7 @@ import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/t
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
 import { designSizeOf, isSvg, useStudio } from "./store";
+import { RESOLUTIONS, normalizeHex, resolutionFor, resolutionKey } from "./composition";
 import {
   PROP_STEP,
   PROP_TEXT,
@@ -91,6 +92,7 @@ function ElementPanels({
   );
   return (
     <>
+      <CompositionPanel />
       {track?.layer.locked ? (
         <>
           <p className={`${SECTION} flex items-center gap-1.5 ${LABEL}`}>
@@ -188,6 +190,84 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
           }
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * The composition's own size and background, kept compact so an element's panel has room
+ * under them.
+ *
+ * No duration field: length is not a setting to fill in before you can animate. It
+ * follows from the work, and the ruler's end handle is there when you want to say
+ * otherwise.
+ */
+function CompositionPanel() {
+  const background = useStudio((s) => s.composition.background);
+  const frame = useStudio((s) => s.frame);
+
+  return (
+    <section className={SECTION}>
+      <p className={`${LABEL} mb-2`}>Composition</p>
+      {/* The right column carries the widest values — a resolution, a hex — so it
+          takes the room the left one does not need. */}
+      <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
+        <BackgroundField value={background ?? "#ffffff"} />
+
+        <SelectField
+          label="Res"
+          title="Resolution"
+          value={resolutionKey(frame)}
+          onChange={(v) => {
+            const size = resolutionFor(v);
+            if (size) useStudio.getState().setResolution(size);
+          }}
+          options={RESOLUTIONS.map((r) => ({
+            value: resolutionKey(r.size),
+            label: r.label,
+          }))}
+        />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Swatch and hex, one value. The swatch is the native picker; the text field takes a
+ * typed colour and only commits once it is a whole one, so a half-typed `#ab` does
+ * not repaint the frame.
+ */
+function BackgroundField({ value }: { value: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const set = (hex: string) => useStudio.getState().setBackground(hex);
+
+  return (
+    <div className={BOX} title="Background">
+      <input
+        type="color"
+        aria-label="background colour"
+        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
+        value={value}
+        onChange={(e) => {
+          setDraft(null);
+          set(e.target.value);
+        }}
+      />
+      <input
+        className={`${INPUT} min-w-0 flex-1 text-right uppercase`}
+        aria-label="background hex"
+        spellCheck={false}
+        value={draft ?? value}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const hex = normalizeHex(e.target.value);
+          if (hex) set(hex);
+        }}
+        onBlur={() => {
+          setDraft(null);
+          useStudio.getState().sealHistory();
+        }}
+      />
     </div>
   );
 }
