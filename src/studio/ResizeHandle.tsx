@@ -105,7 +105,7 @@ export function ResizeHandle({
         <span
           aria-hidden="true"
           // Fixed, so it runs the width of the window from where the handle sits.
-          className="pointer-events-none fixed right-0 left-0 z-20 mt-[calc(var(--gap)/2)] -translate-y-px border-t-2 border-dashed border-accent"
+          className="pointer-events-none fixed right-0 left-0 z-10 mt-[calc(var(--gap)/2)] -translate-y-px border-t-2 border-dashed border-accent"
         />
       ) : null}
     </div>
