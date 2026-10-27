@@ -1612,11 +1612,20 @@ export function StudioCanvas() {
         scale={scale}
         clickRef={textClickRef}
       /> : null}
-      {selected && chrome && !clonerGroup && (() => {
-        if (!editingTextId) return true;
-        const et = composition.tracks.find((tr) => tr.layer.id === editingTextId);
-        return et?.layer.source.kind === "text" && et.layer.source.boxWidth != null;
-      })() ? (
+      {selected && chrome && !clonerGroup && editingTextId ? (
+        <svg
+          className="studio-selection"
+          width={viewport.width}
+          height={viewport.height}
+          aria-hidden="true"
+        >
+          <polygon
+            className="studio-selection-outline opacity-40"
+            points={chrome.outline.map((p) => `${p.x},${p.y}`).join(" ")}
+          />
+        </svg>
+      ) : null}
+      {selected && chrome && !clonerGroup && !editingTextId ? (
         <>
           <svg
             className="studio-selection"
