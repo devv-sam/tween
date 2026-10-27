@@ -26,7 +26,11 @@ const CANVAS_MIN_HEIGHT = 160;
 const initial = (l: { key: string; share: number; min: number; max: number }, span: number) =>
   readNumber(l.key, clamp(Math.round(span * l.share), l.min, l.max));
 
-const DevDials = import.meta.env.DEV ? lazy(() => import("./DevDials")) : null;
+// Opt-in while the look is settled: add `?dials` to the URL in dev.
+const DevDials =
+  import.meta.env.DEV && new URLSearchParams(location.search).has("dials")
+    ? lazy(() => import("./DevDials"))
+    : null;
 
 /** Keeps `size` inside the room a column has left once `above` and a gap are spared. */
 const fitBelow = (column: HTMLElement | null, above: number, size: number) =>

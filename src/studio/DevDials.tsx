@@ -8,7 +8,7 @@ const read = (name: string) => getComputedStyle(studio()!).getPropertyValue(name
 /**
  * Live dials for the panels' radius, border, fill and spacing, writing the custom
  * properties the panels already read. Dev only: it is loaded lazily behind
- * `import.meta.env.DEV`, so none of it ships. Defaults are whatever the stylesheet says,
+ * `import.meta.env.DEV` and `?dials`, so none of it ships. Defaults are whatever the stylesheet says,
  * so an untouched dial changes nothing.
  */
 export default function DevDials() {
