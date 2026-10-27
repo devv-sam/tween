@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/types";
 import type { EasingDef } from "../core/easing";
@@ -20,6 +20,7 @@ import { DistributorSection, ModuleStackSection } from "./ModuleStack";
 import { EasingSection } from "./EasingControls";
 import { Dropdown } from "./Dropdown";
 import { ScrollArea } from "./ScrollArea";
+import { stepFocus } from "./stepFocus";
 import { ensureFontPreview, faceOf } from "./fontPreview";
 import { getFont } from "../render/fontCache";
 import { weightName } from "./text";
@@ -1075,6 +1076,8 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
   const fonts = useStudio((s) => s.fonts);
   const [fontSearch, setFontSearch] = useState("");
   const [fontOpen, setFontOpen] = useState(false);
+  const fontBtnRef = useRef<HTMLButtonElement>(null);
+  const fontListRef = useRef<HTMLDivElement>(null);
 
   const set = (patch: Partial<TextSource>) =>
     useStudio.getState().setTextProp(layerId, patch);
@@ -1105,9 +1108,16 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
         <p className={`${SUBLABEL} mb-1`}>Font</p>
         <div className="relative mb-1">
           <button
+            ref={fontBtnRef}
             type="button"
             className={`${BOX} w-full justify-between`}
             onClick={() => setFontOpen(!fontOpen)}
+            onKeyDown={(e) => {
+              if (!fontOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault();
+                setFontOpen(true);
+              }
+            }}
           >
             <span
               className="min-w-0 truncate text-[12px] text-text-primary"
@@ -1122,7 +1132,17 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
             />
           </button>
           {fontOpen ? (
-            <div className="absolute left-0 top-full z-20 mt-0.5 flex max-h-[200px] w-full flex-col overflow-hidden rounded-md border border-border bg-bg shadow-lg">
+            <div
+              ref={fontListRef}
+              className="absolute left-0 top-full z-20 mt-0.5 flex max-h-[200px] w-full flex-col overflow-hidden rounded-md border border-border bg-bg shadow-lg"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setFontOpen(false);
+                  fontBtnRef.current?.focus();
+                } else stepFocus(e, fontListRef.current, "input, button");
+              }}
+            >
               <input
                 autoFocus
                 className={`${INPUT} border-b border-border px-2 py-1`}
@@ -1135,7 +1155,7 @@ function TextSection({ layerId, source }: { layerId: string; source: TextSource 
                   <button
                     key={f.family}
                     type="button"
-                    className={`block w-full px-2 py-1 text-left text-[13px] hover:bg-text-primary/5 ${
+                    className={`block w-full px-2 py-1 text-left text-[13px] outline-none hover:bg-text-primary/5 focus-visible:bg-text-primary/10 ${
                       f.family === source.fontFamily ? "bg-accent/10 text-accent" : "text-text-primary"
                     }`}
                     onPointerEnter={() => void getFont(f.family, source.fontWeight).catch(() => {})}
