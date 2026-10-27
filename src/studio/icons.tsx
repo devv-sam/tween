@@ -37,6 +37,24 @@ export function ClonersIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
+export function DotsPatternIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      {[5, 12, 19].flatMap((x) =>
+        [5, 12, 19].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1" />),
+      )}
+    </Icon>
+  );
+}
+
+export function GridPatternIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M9 4v16M15 4v16M4 9h16M4 15h16" />
+    </Icon>
+  );
+}
+
 export function SplitIcon({ size }: { size?: number }): ReactElement {
   return (
     <Icon size={size}>

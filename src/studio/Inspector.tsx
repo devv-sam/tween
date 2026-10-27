@@ -33,7 +33,14 @@ import {
   type SegmentView,
 } from "./segments";
 import { BenchPanel } from "./ModuleShelf";
-import { AlignCenterIcon, AlignMiddleIcon, SplitIcon, TextAlignIcon } from "./icons";
+import {
+  AlignCenterIcon,
+  AlignMiddleIcon,
+  DotsPatternIcon,
+  GridPatternIcon,
+  SplitIcon,
+  TextAlignIcon,
+} from "./icons";
 import {
   BOX,
   ColorField,
@@ -211,18 +218,20 @@ function SegmentTimes({ segment }: { segment: SegmentView }) {
  */
 function CompositionPanel() {
   const { fps, background } = useStudio((s) => s.composition);
-  const patternOn = useStudio((s) => s.patternOn);
   const pattern = useStudio((s) => s.pattern);
 
   return (
     <section className={SECTION}>
-      <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
-        <ColorInput
-          label="background"
-          value={background ?? "#ffffff"}
-          onChange={(hex) => useStudio.getState().setBackground(hex)}
-        />
+      <p className={`${PANEL_LABEL} mb-3`}>Composition</p>
+      <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-1.5">
+        <div className="col-span-2 flex">
+          <ColorInput
+            outlined
+            label="background"
+            value={background ?? "#ffffff"}
+            onChange={(hex) => useStudio.getState().setBackground(hex)}
+          />
+        </div>
         <ResolutionPicker />
         <SelectField
           pill
@@ -232,61 +241,39 @@ function CompositionPanel() {
           onChange={(v) => useStudio.getState().setFps(Number(v))}
           options={FPS_CHOICES.map((f) => ({ value: String(f), label: String(f) }))}
         />
-        <div className="grid grid-cols-2 gap-1.5">
-          <ToggleField
-            label="Pattern"
-            title="Canvas pattern"
-            on={patternOn}
-            onChange={(on) => useStudio.getState().setPatternOn(on)}
-          />
-          <div className={patternOn ? "" : "pointer-events-none opacity-50"} aria-disabled={!patternOn}>
-            <SelectField
-              pill
-              label="Type"
-              title="Pattern type"
-              value={pattern}
-              onChange={(v) => useStudio.getState().setPattern(v === "grid" ? "grid" : "dots")}
-              options={[
-                { value: "dots", label: "Dots" },
-                { value: "grid", label: "Grid" },
-              ]}
-            />
-          </div>
-        </div>
+      </div>
+      <div className="mt-3 border-t border-border pt-3">
+        <p className={`${LABEL} mb-2`}>Pattern</p>
+        <Segmented
+          outlined
+          value={pattern}
+          options={[
+            { value: "off", label: "No pattern", content: <span>–</span> },
+            {
+              value: "dots",
+              label: "Dots",
+              content: (
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <DotsPatternIcon size={12} />
+                  Dots
+                </span>
+              ),
+            },
+            {
+              value: "grid",
+              label: "Grid",
+              content: (
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <GridPatternIcon size={12} />
+                  Grid
+                </span>
+              ),
+            },
+          ]}
+          onChange={(v) => useStudio.getState().setPattern(v)}
+        />
       </div>
     </section>
-  );
-}
-
-function ToggleField({
-  label,
-  title,
-  on,
-  onChange,
-}: {
-  label: string;
-  title: string;
-  on: boolean;
-  onChange: (on: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      title={title}
-      className={`${PILL} w-full justify-between`}
-      onClick={() => onChange(!on)}
-    >
-      <span className={`${LABEL} shrink-0`}>{label}</span>
-      <span
-        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-border"}`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${on ? "translate-x-3" : ""}`}
-        />
-      </span>
-    </button>
   );
 }
 

@@ -180,7 +180,6 @@ export function StudioCanvas() {
   const pendingAttach = useStudio((s) => s.pendingAttach);
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
-  const patternOn = useStudio((s) => s.patternOn);
   const playing = useStudio((s) => s.playing);
   const pattern = useStudio((s) => s.pattern);
   const t = useStudio((s) => s.t);
@@ -1407,7 +1406,7 @@ export function StudioCanvas() {
               transform: `scale(${scale})`,
             }}
           >
-            {patternOn ? (
+            {pattern !== "off" ? (
               <div
                 className={`absolute inset-0 bg-[length:20px_20px] ${PATTERN_CLASS[pattern]}`}
               />

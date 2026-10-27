@@ -432,11 +432,14 @@ export function ColorInput({
   label,
   value,
   onChange,
+  outlined,
 }: {
   /** Names the two inputs, which have no text of their own. */
   label: string;
   value: string;
   onChange: (hex: string) => void;
+  /** A roomier, bordered look: a full-height swatch and the format as a cell of the field. */
+  outlined?: boolean;
 }) {
   const [mode, setMode] = useState<ColorMode>("HEX");
   const [draft, setDraft] = useState<string | null>(null);
@@ -444,7 +447,9 @@ export function ColorInput({
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1.5">
       <label
-        className="relative h-6 w-6 shrink-0 cursor-pointer overflow-hidden rounded-md border border-border focus-within:border-accent"
+        className={`relative shrink-0 cursor-pointer overflow-hidden border border-border focus-within:border-accent ${
+          outlined ? "h-8 w-8 rounded-lg" : "h-6 w-6 rounded-md"
+        }`}
         style={{ background: value }}
       >
         <input
@@ -458,9 +463,15 @@ export function ColorInput({
           }}
         />
       </label>
-      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-text-primary/5 px-2 focus-within:border-accent">
+      <div
+        className={`flex h-8 min-w-0 flex-1 items-center rounded-lg border focus-within:border-accent ${
+          outlined ? "gap-0 border-border" : "gap-2 border-transparent bg-text-primary/5 px-2"
+        }`}
+      >
         <input
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary tabular-nums outline-none"
+          className={`min-w-0 flex-1 bg-transparent text-[12px] text-text-primary tabular-nums outline-none ${
+            outlined ? "px-2.5" : ""
+          }`}
           aria-label={`${label} ${mode}`}
           spellCheck={false}
           value={draft ?? formatColor(value, mode)}
@@ -479,7 +490,9 @@ export function ColorInput({
         />
         <button
           type="button"
-          className="shrink-0 text-[10px] tracking-[0.08em] text-text-muted uppercase hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+          className={`shrink-0 text-[10px] tracking-[0.08em] text-text-muted uppercase hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary ${
+            outlined ? "h-full border-l border-border px-2.5" : ""
+          }`}
           title="Change colour format"
           onClick={() => {
             setDraft(null);
@@ -547,11 +560,14 @@ export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  outlined,
 }: {
   value: T;
   /** `label` names a choice that shows only an icon. */
   options: { value: T; label: string; content: ReactNode }[];
   onChange: (value: T) => void;
+  /** A bordered row with dividers, the picked choice shaded, in place of the pill track. */
+  outlined?: boolean;
 }) {
   const index = Math.max(
     0,
@@ -559,16 +575,27 @@ export function Segmented<T extends string>({
   );
 
   return (
-    <div role="radiogroup" className="relative grid auto-cols-fr grid-flow-col rounded-lg bg-text-primary/5 p-0.5">
+    <div
+      role="radiogroup"
+      className={`relative grid auto-cols-fr grid-flow-col rounded-lg ${
+        outlined ? "overflow-hidden border border-border" : "bg-text-primary/5 p-0.5"
+      }`}
+    >
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0.5 left-0.5 rounded-md border border-border bg-bg shadow-sm transition-transform duration-150 ease-out"
+        className={`pointer-events-none absolute transition-transform duration-150 ease-out ${
+          outlined
+            ? "inset-y-0 left-0 bg-text-primary/5"
+            : "inset-y-0.5 left-0.5 rounded-md border border-border bg-bg shadow-sm"
+        }`}
         style={{
-          width: `calc((100% - 4px) / ${options.length})`,
+          width: outlined
+            ? `${100 / options.length}%`
+            : `calc((100% - 4px) / ${options.length})`,
           transform: `translateX(${index * 100}%)`,
         }}
       />
-      {options.map((o) => (
+      {options.map((o, i) => (
         <button
           key={o.value}
           type="button"
@@ -576,9 +603,9 @@ export function Segmented<T extends string>({
           aria-checked={o.value === value}
           aria-label={o.label}
           title={o.label}
-          className={`relative grid h-7 place-items-center rounded-md transition-colors ${
-            o.value === value ? "text-text-primary" : "text-text-muted hover:text-text-primary"
-          }`}
+          className={`relative grid place-items-center transition-colors ${
+            outlined ? `h-8 ${i > 0 ? "border-l border-border" : ""}` : "h-7 rounded-md"
+          } ${o.value === value ? "text-text-primary" : "text-text-muted hover:text-text-primary"}`}
           onClick={() => onChange(o.value)}
         >
           {o.content}

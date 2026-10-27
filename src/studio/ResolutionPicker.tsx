@@ -37,9 +37,8 @@ export function ResolutionPicker() {
       footer={(close) => <CustomSize onDone={close} />}
     >
       <span className={`${LABEL} shrink-0`}>Res</span>
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-[11px] text-text-primary">{name}</span>
-        <span className="text-[10px] whitespace-nowrap text-text-muted tabular-nums">
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="text-[11px] whitespace-nowrap text-text-primary tabular-nums">
           {formatSize(frame)}
         </span>
         <ChevronDown

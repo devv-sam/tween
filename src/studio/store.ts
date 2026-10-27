@@ -591,11 +591,10 @@ function defaultEllipseProps(w: number, h: number): EllipseProps {
 }
 
 /** The editor's backdrop inside the frame. A view aid: it is never drawn into an export. */
-export type CanvasPattern = "dots" | "grid";
+export type CanvasPattern = "off" | "dots" | "grid";
 
 type StudioState = {
   activeTool: ActiveTool;
-  patternOn: boolean;
   pattern: CanvasPattern;
   shapeCounters: { rect: number; ellipse: number; text: number };
   composition: Composition;
@@ -670,7 +669,6 @@ type StudioState = {
   setFps: (fps: number) => void;
   setResolution: (size: Size) => void;
   setBackground: (hex: string) => void;
-  setPatternOn: (on: boolean) => void;
   setPattern: (pattern: CanvasPattern) => void;
   setViewport: (viewport: Size) => void;
   zoomAroundPoint: (screen: Point, nextZoom: number) => void;
@@ -975,7 +973,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
 
   return {
     activeTool: "select",
-    patternOn: true,
     pattern: "dots",
     shapeCounters: { rect: 0, ellipse: 0, text: 0 },
     composition: emptyComposition(),
@@ -1054,7 +1051,6 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
     },
 
     // View state, not an edit: it stays out of the undo history.
-    setPatternOn: (on) => set({ patternOn: on }),
     setPattern: (pattern) => set({ pattern }),
 
     setViewport: (viewport) => {
