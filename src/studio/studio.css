@@ -44,7 +44,7 @@ body {
 }
 
 :root {
-  --studio-header: 60px;
+  --studio-header: 40px;
 }
 
 .studio {
@@ -58,13 +58,6 @@ body {
   height: var(--studio-header);
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
-}
-
-.studio-body {
-  position: relative;
-  flex: 1;
-  display: flex;
-  min-height: 0;
 }
 
 /* The bench's name field, asked to save with nothing in it. */
@@ -112,25 +105,16 @@ body {
   pointer-events: none;
 }
 
-.studio-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-/* Docked under the frame. It runs the width of the main column, so the left rail
-   and drawer stay clear of it. */
+/* Docked along the bottom, the full width of the studio. */
 .timeline {
   /* Head and rows must agree exactly, or ticks stop lining up with keyframes. */
-  --gutter-w: 320px;
+  --gutter-w: 180px;
   height: 264px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--color-timeline-bg);
-  border-top: 1px solid var(--color-border);
   user-select: none;
 }
 
@@ -195,8 +179,7 @@ body {
   min-height: 0;
 }
 
-/* Track names, and the property rows opened under them. Its rows are the same
-   heights as the lanes, so the two columns stay in step. */
+/* Names only, with rows the same heights as the lanes so the two columns stay in step. */
 .timeline-gutter {
   width: var(--gutter-w);
   flex-shrink: 0;

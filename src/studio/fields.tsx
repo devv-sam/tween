@@ -1,6 +1,7 @@
 import { useRef, useState, type PointerEvent } from "react";
 import { clamp } from "../core/math";
 import { useStudio } from "./store";
+import { normalizeHex } from "./composition";
 import { THUMB_INSET, sliderFraction, sliderValueAt } from "./slider";
 
 /**
@@ -400,5 +401,80 @@ export function LockOpenIcon({ size = 12 }: { size?: number }) {
       <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 9.9-1" />
     </svg>
+  );
+}
+
+/**
+ * A colour and how much of it, as one field: swatch and hex, then the opacity as a
+ * percentage. The two are one thing to the eye — "this red, at this strength" — so
+ * they share a box. Like the background's hex, a half-typed value is held as a draft
+ * and only commits once it is a whole one.
+ */
+export function ColorField({
+  label,
+  color,
+  opacity,
+  onColor,
+  onOpacity,
+}: {
+  label: string;
+  color: string;
+  opacity: number;
+  onColor: (hex: string) => void;
+  onOpacity: (value: number) => void;
+}) {
+  const [hexDraft, setHexDraft] = useState<string | null>(null);
+  const [pctDraft, setPctDraft] = useState<string | null>(null);
+
+  return (
+    <div className={`${BOX} min-w-0 flex-1`}>
+      <input
+        type="color"
+        aria-label={`${label} colour`}
+        className="h-[16px] w-[20px] shrink-0 cursor-pointer rounded-[3px] border border-border bg-transparent p-0"
+        value={color}
+        onChange={(e) => {
+          setHexDraft(null);
+          onColor(e.target.value);
+        }}
+      />
+      <input
+        className={`${INPUT} min-w-0 flex-1 uppercase`}
+        aria-label={`${label} hex`}
+        spellCheck={false}
+        value={hexDraft ?? color.replace("#", "")}
+        onChange={(e) => {
+          setHexDraft(e.target.value);
+          const hex = normalizeHex(e.target.value);
+          if (hex) onColor(hex);
+        }}
+        onBlur={() => {
+          setHexDraft(null);
+          useStudio.getState().sealHistory();
+        }}
+      />
+      <span className="h-full w-px shrink-0 bg-border" aria-hidden="true" />
+      <input
+        className={`${INPUT} w-7 shrink-0 text-right`}
+        aria-label={`${label} opacity`}
+        inputMode="numeric"
+        value={pctDraft ?? String(Math.round(opacity * 100))}
+        onChange={(e) => {
+          setPctDraft(e.target.value);
+          const n = Number(e.target.value);
+          if (e.target.value.trim() !== "" && Number.isFinite(n)) {
+            onOpacity(clamp(n, 0, 100) / 100);
+          }
+        }}
+        onBlur={() => {
+          setPctDraft(null);
+          useStudio.getState().sealHistory();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+        }}
+      />
+      <span className="shrink-0 text-[11px] text-text-muted">%</span>
+    </div>
   );
 }

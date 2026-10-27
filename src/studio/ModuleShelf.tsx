@@ -7,28 +7,12 @@ import { BOX, CloseIcon, GHOST_BTN, INPUT, LABEL, SECTION, SUBLABEL } from "./fi
 
 export const MODULE_DRAG = "application/x-tween-module";
 
-/** The drawer's second panel: every behaviour that has been kept. */
+/** The bottom panel's second tab: every behaviour that has been kept. */
 export function ModuleShelf() {
   const library = useStudio((s) => s.moduleLibrary);
 
   return (
     <>
-      {/* The same header the Assets shelf has, so the way you add a module is the
-          way you add a picture. */}
-      <div className="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-bg px-3 pt-3 pb-2">
-        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-muted">
-          Modules
-        </span>
-        <button
-          type="button"
-          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
-          aria-label="New module"
-          title="New module"
-          onClick={() => useStudio.getState().openBench()}
-        >
-          <PlusIcon />
-        </button>
-      </div>
       {library.length === 0 ? (
         <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-text-muted/60">
           No modules yet
@@ -41,26 +25,6 @@ export function ModuleShelf() {
         </ul>
       )}
     </>
-  );
-}
-
-/** Lucide `plus`, matched to the Assets header's own. */
-function PlusIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 12h14" />
-      <path d="M12 5v14" />
-    </svg>
   );
 }
 

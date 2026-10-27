@@ -12,26 +12,27 @@ export function Toolbar() {
   const setActiveTool = useStudio((s) => s.setActiveTool);
 
   return (
-    <div className="flex items-end gap-1 border-b border-border px-3 py-1.5">
+    <div
+      className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-border bg-bg p-1 shadow-sm"
+      role="toolbar"
+      aria-label="tools"
+    >
       {tools.map((t) => (
-        <div key={t.id} className="flex flex-col items-center gap-px">
-          <button
-            type="button"
-            title={`${t.label} (${t.shortcut})`}
-            aria-label={t.label}
-            className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${
-              activeTool === t.id
-                ? "bg-accent text-white"
-                : "text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
-            }`}
-            onClick={() => setActiveTool(t.id)}
-          >
-            {t.id === "select" ? <CursorIcon /> : t.id === "rect" ? <RectIcon /> : t.id === "ellipse" ? <EllipseIcon /> : <TypeIcon />}
-          </button>
-          <span className="text-[9px] leading-none text-text-muted/50">
-            {t.shortcut}
-          </span>
-        </div>
+        <button
+          key={t.id}
+          type="button"
+          title={`${t.label} (${t.shortcut})`}
+          aria-label={t.label}
+          aria-pressed={activeTool === t.id}
+          className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${
+            activeTool === t.id
+              ? "bg-accent text-white"
+              : "text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary"
+          }`}
+          onClick={() => setActiveTool(t.id)}
+        >
+          {t.id === "select" ? <CursorIcon /> : t.id === "rect" ? <RectIcon /> : t.id === "ellipse" ? <EllipseIcon /> : <TypeIcon />}
+        </button>
       ))}
     </div>
   );
