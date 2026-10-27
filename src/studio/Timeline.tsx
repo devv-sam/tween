@@ -18,7 +18,7 @@ import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
-import { ChevronIcon, GHOST_BTN, NumberField } from "./fields";
+import { ChevronIcon, NumberField } from "./fields";
 import { ClonersIcon, ModulesIcon } from "./icons";
 import { ModuleIcon, PropIcon } from "./propIcons";
 import { collectKeyframeTimes, nextKeyframe, previousKeyframe } from "./transport";
@@ -2139,15 +2139,15 @@ function Readout({
     : { step: 0.1, precision: 2 };
 
   return (
-    <div className="flex min-w-0 items-center gap-1 text-[11px]">
+    <div className="flex min-w-0 items-center gap-1 text-[10px]">
       <div className="flex min-w-0">
-        <div className="w-[52px]">
+        <div>
           <NumberField
             label=""
             ariaLabel={`current time in ${name}`}
             title="Current time"
             join="left"
-            tight
+            fit
             value={time * scale}
             min={0}
             max={duration * scale}
@@ -2155,13 +2155,13 @@ function Readout({
             onChange={(v) => onSeek(v / scale)}
           />
         </div>
-        <div className="w-[52px]">
+        <div>
           <NumberField
             label=""
             ariaLabel={`duration in ${name}`}
             title="Duration"
             join="right"
-            tight
+            fit
             value={duration * scale}
             min={MIN_DURATION * scale}
             max={MAX_DURATION * scale}
@@ -2172,7 +2172,7 @@ function Readout({
       </div>
       <button
         type="button"
-        className={`${GHOST_BTN} shrink-0 tabular-nums`}
+        className="h-[22px] shrink-0 rounded-md border border-border px-1.5 text-[10px] text-text-primary/70 tabular-nums hover:bg-text-primary/5 hover:text-text-primary"
         title={name}
         aria-label={`readout unit: ${name}`}
         onClick={onToggleUnit}

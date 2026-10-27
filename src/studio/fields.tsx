@@ -23,6 +23,11 @@ export const PILL =
   "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 focus-within:border-accent";
 export const INPUT =
   "min-w-0 bg-transparent text-[11px] text-text-primary tabular-nums outline-none placeholder:text-text-muted/60";
+/** `INPUT` and its box at the size of a readout, for numbers that sit in a toolbar. */
+const INPUT_SMALL =
+  "min-w-0 bg-transparent text-[10px] text-text-primary tabular-nums outline-none placeholder:text-text-muted/60";
+const BOX_SMALL =
+  "flex items-center rounded-md border border-border px-1.5 h-[22px] focus-within:border-accent";
 export const BOX =
   "flex items-center gap-1.5 rounded-md border border-border px-2 h-[26px] focus-within:border-accent";
 /** `BOX` with the padding pulled in, for a field holding a number and nothing else. */
@@ -54,6 +59,7 @@ export function NumberField({
   autoFocus,
   compact,
   tight,
+  fit,
   onDone,
   mixed,
   onStep,
@@ -77,6 +83,8 @@ export function NumberField({
   compact?: boolean;
   /** No label beside the number, so it does not need the room for one. */
   tight?: boolean;
+  /** Small, and only as wide as what is in it, growing as more is typed. */
+  fit?: boolean;
   /** The edit is over: enter, or focus leaving. Lets a field that only exists while
    *  it is being edited put itself away. */
   onDone?: () => void;
@@ -116,9 +124,11 @@ export function NumberField({
 
   const box = compact
     ? "flex items-center gap-1 rounded-[3px] border border-transparent px-1 h-[18px] hover:border-border focus-within:border-accent"
-    : tight
-      ? BOX_TIGHT
-      : BOX;
+    : fit
+      ? BOX_SMALL
+      : tight
+        ? BOX_TIGHT
+        : BOX;
 
   return (
     <label
@@ -129,7 +139,8 @@ export function NumberField({
     >
       {label ? <span className={`${LABEL} shrink-0`}>{label}</span> : null}
       <input
-        className={`${INPUT} w-full text-right disabled:text-text-muted/60`}
+        className={`${fit ? INPUT_SMALL : INPUT} ${fit ? "" : "w-full"} text-right disabled:text-text-muted/60`}
+        style={fit ? { width: `${Math.max(2, shown.length)}ch` } : undefined}
         inputMode="decimal"
         aria-label={ariaLabel}
         placeholder={mixed ? "Mixed" : undefined}
