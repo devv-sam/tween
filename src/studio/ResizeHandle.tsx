@@ -1,4 +1,6 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { SlotText } from "slot-text/react";
+import "slot-text/style.css";
 import { clamp } from "../core/math";
 
 /**
@@ -12,6 +14,7 @@ export function ResizeHandle({
   limits,
   grows,
   onResize,
+  ratio,
 }: {
   label: string;
   axis: "x" | "y";
@@ -21,8 +24,14 @@ export function ResizeHandle({
   /** Which way a drag has to go to make the panel larger. */
   grows: "left" | "right" | "up";
   onResize: (size: number) => void;
+  /**
+   * For a handle that splits a column in two: while it is dragged, a pill says how the
+   * column divides. `room` is what the two panels share; `side` is where the pill sits.
+   */
+  ratio?: { room: () => number; side: "after" | "before" | "inside" };
 }) {
   const start = useRef<{ at: number; value: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const sign = grows === "right" ? 1 : -1;
   const horizontal = axis === "x";
   const to = (v: number) => onResize(clamp(v, limits.min, limits.max));
@@ -51,6 +60,7 @@ export function ResizeHandle({
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         start.current = { at: horizontal ? e.clientX : e.clientY, value };
+        setDragging(true);
       }}
       onPointerMove={(e) => {
         if (start.current) {
@@ -59,8 +69,14 @@ export function ResizeHandle({
           );
         }
       }}
-      onPointerUp={() => (start.current = null)}
-      onPointerCancel={() => (start.current = null)}
+      onPointerUp={() => {
+        start.current = null;
+        setDragging(false);
+      }}
+      onPointerCancel={() => {
+        start.current = null;
+        setDragging(false);
+      }}
       onKeyDown={onKeyDown}
     >
       <div
@@ -75,7 +91,32 @@ export function ResizeHandle({
             : "inset-x-(--gap) top-1/2 h-[2px] -translate-y-1/2"
         }`}
       />
+      {ratio && dragging ? <Ratio value={value} {...ratio} /> : null}
     </div>
   );
 }
 
+const SIDE = { after: "left-full ml-2", before: "right-full mr-2", inside: "right-2" } as const;
+
+/** The split as two whole-ish percentages, to the nearest 5, so it reads at a glance. */
+function Ratio({
+  value,
+  room,
+  side,
+}: {
+  value: number;
+  room: () => number;
+  side: keyof typeof SIDE;
+}) {
+  const total = room();
+  if (total <= 0) return null;
+  const lower = clamp(Math.round((value / total) * 20) * 5, 5, 95);
+
+  return (
+    <span
+      className={`pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 rounded-full bg-accent px-2.5 py-1 text-[11px] font-medium whitespace-nowrap text-white tabular-nums ${SIDE[side]}`}
+    >
+      <SlotText text={`${100 - lower} / ${lower}`} options={{ direction: "up", duration: 220 }} />
+    </span>
+  );
+}

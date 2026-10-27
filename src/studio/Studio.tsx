@@ -28,16 +28,13 @@ const DevDials =
     ? lazy(() => import("./DevDials"))
     : null;
 
-/** Keeps `size` inside the room a column has left once `above` and a gap are spared. */
+/** What the two panels in a column share: its height less the gap between them. */
+const roomOf = (column: HTMLElement | null) =>
+  column ? column.clientHeight - parseFloat(getComputedStyle(column).getPropertyValue("--gap")) : 0;
+
+/** Keeps `size` inside the room a column has left once `above` is spared. */
 const fitBelow = (column: HTMLElement | null, above: number, size: number) =>
-  column
-    ? Math.min(
-        size,
-        column.clientHeight -
-          above -
-          parseFloat(getComputedStyle(column).getPropertyValue("--gap")),
-      )
-    : size;
+  column ? Math.min(size, roomOf(column) - above) : size;
 
 export function Studio() {
   // The scene's rows are drawn by the timeline, which owns the selection, the
@@ -89,6 +86,7 @@ export function Studio() {
                 value={assetsHeight}
                 limits={ASSETS_HEIGHT}
                 grows="up"
+                ratio={{ room: () => roomOf(leftRef.current), side: "after" }}
                 onResize={(h) => setAssetsHeight(fitBelow(leftRef.current, SCENE_MIN_HEIGHT, h))}
               />
               <AssetsPanel height={assetsHeight} />
@@ -113,6 +111,7 @@ export function Studio() {
             value={timelineHeight}
             limits={TIMELINE_HEIGHT}
             grows="up"
+            ratio={{ room: () => roomOf(mainRef.current), side: "inside" }}
             onResize={(h) => setTimelineHeight(fitBelow(mainRef.current, CANVAS_MIN_HEIGHT, h))}
           />
           <div
@@ -142,6 +141,7 @@ export function Studio() {
             value={effectsHeight}
             limits={EFFECTS_HEIGHT}
             grows="up"
+            ratio={{ room: () => roomOf(rightRef.current), side: "before" }}
             onResize={(h) => setEffectsHeight(fitBelow(rightRef.current, SCENE_MIN_HEIGHT, h))}
           />
           <EffectsPanel height={effectsHeight} />
