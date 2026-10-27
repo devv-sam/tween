@@ -41,6 +41,7 @@ import {
   HANDLE_CURSOR,
   HANDLE_SIZE,
   angleTo,
+  badgePlacement,
   boundsHalf,
   boxSize,
   clampToFrame,
@@ -1354,8 +1355,7 @@ export function StudioCanvas() {
       outline,
       handles,
       badge: {
-        x: (outline[0].x + outline[1].x + outline[2].x + outline[3].x) / 4,
-        y: Math.max(...outline.map((p) => p.y)) + BADGE_GAP,
+        ...badgePlacement(outline, BADGE_GAP),
         size: boxSize(selected.item.state, selected.size),
       },
     };
@@ -1639,9 +1639,9 @@ export function StudioCanvas() {
           </svg>
           {rotating || playing ? null : (
             <div
-              className="studio-badge"
+              className="studio-badge origin-top-left"
               style={{
-                transform: `translate(${chrome.badge.x}px, ${chrome.badge.y}px) translate(-50%, 0)`,
+                transform: `translate(${chrome.badge.x}px, ${chrome.badge.y}px) rotate(${chrome.badge.angle}deg) translate(-50%, 0)`,
               }}
             >
               {`${Math.round(chrome.badge.size.width)} × ${Math.round(chrome.badge.size.height)}`}

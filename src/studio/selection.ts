@@ -146,6 +146,43 @@ export function cornerPoints(state: Transform, size: Size): Point[] {
   return CORNERS.map((k) => at[k]);
 }
 
+/**
+ * Where a label hangs from an element: the middle of whichever of its edges faces
+ * furthest down on screen, pushed out by `gap` and turned to run along that edge. Rotate the
+ * element further and a different edge becomes the lowest, so the label moves to it rather than
+ * following the element's own bottom around. The text never turns past a quarter, so it
+ * always reads the right way up.
+ */
+export function badgePlacement(
+  outline: Point[],
+  gap: number,
+): { x: number; y: number; angle: number } {
+  const centre = {
+    x: outline.reduce((sum, p) => sum + p.x, 0) / outline.length,
+    y: outline.reduce((sum, p) => sum + p.y, 0) / outline.length,
+  };
+  const edges = outline.map((from, i) => {
+    const to = outline[(i + 1) % outline.length];
+    const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    // How far the edge faces down, as a share of how far out it is: a long edge and a
+    // short one are compared by direction, not by where their middles happen to land.
+    const out = Math.hypot(mid.x - centre.x, mid.y - centre.y) || 1;
+    return { from, to, mid, drop: (mid.y - centre.y) / out };
+  });
+  const lowest = edges.reduce((best, e) => (e.drop > best.drop ? e : best));
+  const away = { x: lowest.mid.x - centre.x, y: lowest.mid.y - centre.y };
+  const length = Math.hypot(away.x, away.y) || 1;
+  let angle =
+    (Math.atan2(lowest.to.y - lowest.from.y, lowest.to.x - lowest.from.x) * 180) / Math.PI;
+  if (angle > 90) angle -= 180;
+  else if (angle <= -90) angle += 180;
+  return {
+    x: lowest.mid.x + (away.x / length) * gap,
+    y: lowest.mid.y + (away.y / length) * gap,
+    angle,
+  };
+}
+
 /** Is a composition-space point inside the element's rotated box? */
 export function containsPoint(state: Transform, size: Size, p: Point): boolean {
   const h = halfExtents(state, size);
