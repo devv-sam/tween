@@ -53,7 +53,7 @@ export function Inspector({ width }: { width: number }) {
 
   return (
     <aside
-      className="my-[3px] flex shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-bg"
+      className="my-[3px] flex max-w-[40%] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-bg"
       style={{ width }}
       aria-label={bench ? "module bench" : "inspector"}
     >

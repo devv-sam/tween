@@ -75,7 +75,7 @@ export function Studio() {
         <div className="flex min-h-0 flex-1 px-[3px]">
           <div
             ref={columnRef}
-            className="my-[3px] flex shrink-0 flex-col"
+            className="my-[3px] flex max-w-[40%] shrink-0 flex-col"
             style={{ width: sceneWidth }}
           >
             <section
