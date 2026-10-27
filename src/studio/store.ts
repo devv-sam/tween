@@ -590,6 +590,8 @@ function defaultEllipseProps(w: number, h: number): EllipseProps {
   return { width: w, height: h, sweepAngle: 360, startAngle: 0, fill: { ...DEFAULT_FILL }, stroke: { ...DEFAULT_STROKE } };
 }
 
+export type AlignEdge = "left" | "center" | "right" | "top" | "middle" | "bottom";
+
 /** The editor's backdrop inside the frame. A view aid: it is never drawn into an export. */
 export type CanvasPattern = "off" | "dots" | "grid";
 
@@ -831,6 +833,8 @@ type StudioState = {
   nudgeSelected: (dx: number, dy: number) => void;
   /** Put the element on the composition's centre line, on one axis. */
   centreLayer: (layerId: string, axis: "x" | "y") => void;
+  /** Line the element's bounds up with an edge or a centre line of the frame. */
+  alignLayer: (layerId: string, edge: AlignEdge) => void;
   /**
    * Take one part off a drawing, at a point on the frame.
    *
@@ -2282,6 +2286,36 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       const by = middle - at;
       if (by === 0) return;
       moveLayer(layerId, anchor, axis === "x" ? by : 0, axis === "y" ? by : 0);
+      sealHistory();
+    },
+
+    /**
+     * Line the element up with the frame by its bounds, turned or scaled as it is. An
+     * element standing in several places is lined up as the one shape they make
+     * together. The centre lines are `centreLayer`'s: they act on where it stands, not
+     * on how far it reaches.
+     */
+    alignLayer: (layerId, edge) => {
+      if (edge === "center") return get().centreLayer(layerId, "x");
+      if (edge === "middle") return get().centreLayer(layerId, "y");
+      const { composition, moduleLibrary, assets, frame, moveAnchor, moveLayer, t, sealHistory } =
+        get();
+      const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+      const size = track && designSizeOf(assets, track.layer);
+      const anchor = moveAnchor(layerId);
+      if (!track || !size || !anchor) return;
+      const instances = renderState(composition, t, moduleLibrary).filter((it) => it.id === layerId);
+      const states = instances.length > 0 ? instances.map((it) => it.state) : [track.layer.base];
+      const reach = states.map((s) => ({ s, half: boundsHalf(s, size) }));
+      const horizontal = edge === "left" || edge === "right";
+      const lo = Math.min(...reach.map(({ s, half }) => (horizontal ? s.x - half.x : s.y - half.y)));
+      const hi = Math.max(...reach.map(({ s, half }) => (horizontal ? s.x + half.x : s.y + half.y)));
+      const by =
+        edge === "left" || edge === "top"
+          ? -lo
+          : (horizontal ? frame.width : frame.height) - hi;
+      if (by === 0) return;
+      moveLayer(layerId, anchor, horizontal ? by : 0, horizontal ? 0 : by);
       sealHistory();
     },
 

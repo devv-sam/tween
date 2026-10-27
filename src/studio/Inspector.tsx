@@ -3,7 +3,7 @@ import { ChevronDown, Lock } from "lucide-react";
 import type { FillDef, StrokeDef, TextSource, Track, Transform } from "../core/types";
 import type { EasingDef } from "../core/easing";
 import { renderState } from "../core/renderState";
-import { designSizeOf, isSvg, useStudio } from "./store";
+import { designSizeOf, isSvg, useStudio, type AlignEdge } from "./store";
 import { FPS_CHOICES } from "./composition";
 import { ResolutionPicker } from "./ResolutionPicker";
 import {
@@ -34,8 +34,12 @@ import {
 } from "./segments";
 import { BenchPanel } from "./ModuleShelf";
 import {
+  AlignBottomIcon,
   AlignCenterIcon,
+  AlignLeftIcon,
   AlignMiddleIcon,
+  AlignRightIcon,
+  AlignTopIcon,
   DotsPatternIcon,
   GridPatternIcon,
   SplitIcon,
@@ -608,9 +612,7 @@ function ElementSection({
   return (
     <section className={SECTION}>
       {/* The element's own name, so there is no doubt which one these fields belong
-          to once the composition's settings are sitting right above them. The two
-          centring buttons ride the same line: they act on the whole element rather
-          than on any one field under it, which is what the heading names. */}
+          to once the composition's settings are sitting right above them. */}
       <div className={`flex items-center gap-1 mb-2`}>
         <input
           className={`${LABEL} min-w-0 flex-1 truncate bg-transparent outline-none focus:text-text-primary`}
@@ -618,9 +620,9 @@ function ElementSection({
           title={name}
           onChange={(e) => useStudio.getState().renameLayer(layer.id, e.target.value)}
         />
-        <CentreButton layerId={layer.id} axis="x" />
-        <CentreButton layerId={layer.id} axis="y" />
       </div>
+
+      <AlignToFrame layerId={layer.id} />
 
       {/* Which part of which drawing this is. Read-only: it says where this came
           from, and nothing about the drawing is edited from here. */}
@@ -794,28 +796,46 @@ function ShapeFillStrokeSection({ track }: { track: Track }) {
   );
 }
 
-/**
- * Put the element on one of the frame's centre lines.
- *
- * The icon is the line it aligns to, so the vertical one centres across the width and
- * the horizontal one centres down the height — the same two lines a drag already draws
- * when it passes through the middle, reachable without the drag.
- */
-function CentreButton({ layerId, axis }: { layerId: string; axis: "x" | "y" }) {
-  const label =
-    axis === "x"
-      ? "Centre horizontally"
-      : "Centre vertically";
+const ALIGN_GROUPS: { edge: AlignEdge; label: string; icon: ReactNode }[][] = [
+  [
+    { edge: "left", label: "Align left", icon: <AlignLeftIcon /> },
+    { edge: "center", label: "Align centre", icon: <AlignCenterIcon /> },
+    { edge: "right", label: "Align right", icon: <AlignRightIcon /> },
+  ],
+  [
+    { edge: "top", label: "Align top", icon: <AlignTopIcon /> },
+    { edge: "middle", label: "Align middle", icon: <AlignMiddleIcon /> },
+    { edge: "bottom", label: "Align bottom", icon: <AlignBottomIcon /> },
+  ],
+];
+
+/** Lines the element up with the frame: across its width, then down its height. */
+function AlignToFrame({ layerId }: { layerId: string }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md text-text-muted/60 hover:bg-text-primary/5 hover:text-text-primary/70"
-      onClick={() => useStudio.getState().centreLayer(layerId, axis)}
-    >
-      {axis === "x" ? <AlignCenterIcon /> : <AlignMiddleIcon />}
-    </button>
+    <>
+      <p className={`${SUBLABEL} mb-1`}>Align to frame</p>
+      <div className="mb-2 grid grid-cols-2 gap-1.5">
+        {ALIGN_GROUPS.map((group) => (
+          <div
+            key={group[0].edge}
+            className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg bg-text-primary/5"
+          >
+            {group.map(({ edge, label, icon }) => (
+              <button
+                key={edge}
+                type="button"
+                aria-label={label}
+                title={label}
+                className="grid h-8 place-items-center text-text-muted hover:bg-text-primary/5 hover:text-text-primary"
+                onClick={() => useStudio.getState().alignLayer(layerId, edge)}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 

@@ -603,6 +603,50 @@ describe("removing the picked segments", () => {
   });
 });
 
+describe("aligning an element to the frame", () => {
+  beforeEach(seed);
+
+  const state = () => useStudio.getState();
+  const half = () => (100 * layer().base.scaleX) / 2;
+
+  it("puts each side of the element's bounds on the matching frame edge", () => {
+    const id = layer().id;
+    state().alignLayer(id, "left");
+    expect(layer().base.x).toBeCloseTo(half());
+    state().alignLayer(id, "right");
+    expect(layer().base.x).toBeCloseTo(state().frame.width - half());
+    state().alignLayer(id, "top");
+    expect(layer().base.y).toBeCloseTo(half());
+    state().alignLayer(id, "bottom");
+    expect(layer().base.y).toBeCloseTo(state().frame.height - half());
+  });
+
+  it("measures a turned element by its reach, not its own edges", () => {
+    const id = layer().id;
+    state().setLayerBase(id, { rotation: 45 });
+    state().alignLayer(id, "left");
+    expect(layer().base.x).toBeCloseTo(half() * Math.SQRT2);
+  });
+
+  it("leaves the other axis alone, and is one undo step", () => {
+    const id = layer().id;
+    state().alignLayer(id, "left");
+    expect(layer().base.y).toBe(200);
+    state().undo();
+    expect(layer().base.x).toBe(200);
+  });
+
+  it("sends the centre lines to centring", () => {
+    const id = layer().id;
+    state().alignLayer(id, "center");
+    state().alignLayer(id, "middle");
+    expect({ x: layer().base.x, y: layer().base.y }).toEqual({
+      x: state().frame.width / 2,
+      y: state().frame.height / 2,
+    });
+  });
+});
+
 describe("centring an element on the frame", () => {
   beforeEach(seed);
 

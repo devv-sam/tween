@@ -88,6 +88,46 @@ export function ModulesIcon({ size }: { size?: number }): ReactElement {
   );
 }
 
+export function AlignLeftIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M5 4V20" />
+      <path d="M9 8H19" />
+      <path d="M9 16H14" />
+    </Icon>
+  );
+}
+
+export function AlignRightIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M19 4V20" />
+      <path d="M15 8H5" />
+      <path d="M15 16H10" />
+    </Icon>
+  );
+}
+
+export function AlignTopIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M4 5H20" />
+      <path d="M8 9V20" />
+      <path d="M16 9V15" />
+    </Icon>
+  );
+}
+
+export function AlignBottomIcon({ size }: { size?: number }): ReactElement {
+  return (
+    <Icon size={size}>
+      <path d="M4 19H20" />
+      <path d="M8 4V15" />
+      <path d="M16 9V15" />
+    </Icon>
+  );
+}
+
 export function AlignCenterIcon({ size }: { size?: number }): ReactElement {
   return (
     <Icon size={size}>
