@@ -180,6 +180,7 @@ export function StudioCanvas() {
   const assets = useStudio((s) => s.assets);
   const frame = useStudio((s) => s.frame);
   const patternOn = useStudio((s) => s.patternOn);
+  const playing = useStudio((s) => s.playing);
   const pattern = useStudio((s) => s.pattern);
   const t = useStudio((s) => s.t);
   const viewport = useStudio((s) => s.viewport);
@@ -1636,7 +1637,7 @@ export function StudioCanvas() {
               );
             })}
           </svg>
-          {rotating ? null : (
+          {rotating || playing ? null : (
             <div
               className="studio-badge"
               style={{
