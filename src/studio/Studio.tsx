@@ -1,177 +1,83 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type DragEvent,
-  type KeyboardEvent,
-  type PointerEvent,
-  type RefObject,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { clamp } from "../core/math";
+import { AssetsPanel } from "./AssetsPanel";
 import { CanvasControls } from "./CanvasControls";
+import { EffectsPanel } from "./EffectsPanel";
 import { Inspector } from "./Inspector";
+import { ResizeHandle } from "./ResizeHandle";
+import { ScenePanel } from "./ScenePanel";
 import { StudioCanvas } from "./StudioCanvas";
 import { Timeline } from "./Timeline";
-import { shelfAssets, useStudio, type StudioAsset } from "./store";
-import { IMAGE_ACCEPT, baseName, extensionOf } from "./files";
-import { contentScale } from "./view";
-import { readAssetsCollapsed, readNumber, writeAssetsCollapsed, writeNumber } from "./prefs";
-import { ModuleShelf } from "./ModuleShelf";
 import { Toolbar } from "./Toolbar";
-import { ChevronIcon, LABEL } from "./fields";
+import { TopBar } from "./TopBar";
+import { useStudio } from "./store";
+import { readNumber, writeNumber } from "./prefs";
 
-const PANEL = "rounded-lg border border-border bg-bg";
-const SCENE_WIDTH = { key: "tween:width:scene", fallback: 320, min: 220, max: 520 };
-const INSPECTOR_WIDTH = { key: "tween:width:inspector", fallback: 260, min: 220, max: 480 };
-const TIMELINE_HEIGHT = { key: "tween:height:timeline", fallback: 264, min: 120, max: 640 };
-const ASSETS_HEIGHT = { key: "tween:height:assets", fallback: 220, min: 120, max: 640 };
-/** What the scene panel keeps when the assets panel is dragged up as far as it goes. */
+/** Panel sizes. `share` is the fraction of the window a panel opens at the first time. */
+const SCENE_WIDTH = { key: "tween:width:scene", share: 0.21, min: 220, max: 520 };
+const INSPECTOR_WIDTH = { key: "tween:width:inspector", share: 0.18, min: 220, max: 480 };
+const ASSETS_HEIGHT = { key: "tween:height:assets", share: 0.3, min: 120, max: 640 };
+const EFFECTS_HEIGHT = { key: "tween:height:effects", share: 0.33, min: 120, max: 640 };
+const TIMELINE_HEIGHT = { key: "tween:height:timeline", share: 0.33, min: 120, max: 640 };
+/** What the panel above keeps when the one below it is dragged up as far as it goes. */
 const SCENE_MIN_HEIGHT = 96;
-/** What the canvas keeps when the timeline is dragged up as far as it goes. */
 const CANVAS_MIN_HEIGHT = 160;
-const HANDLE = 3;
+/** The space between panels, which is also where they are dragged from. */
+const GAP = 8;
+
+const initial = (l: { key: string; share: number; min: number; max: number }, span: number) =>
+  readNumber(l.key, clamp(Math.round(span * l.share), l.min, l.max));
+
+/** Keeps `size` inside the room a column has left once `above` is spared. */
+const fitBelow = (column: HTMLElement | null, above: number, size: number) =>
+  Math.min(size, (column?.clientHeight ?? Infinity) - above - GAP);
 
 export function Studio() {
-  const assets = useStudio((s) => s.assets);
-  const layerCount = useStudio((s) => s.composition.tracks.length);
-  // Read once on mount so the panel opens in the state it was left in, without a
-  // frame of the wrong height first.
-  const [collapsed, setCollapsed] = useState(readAssetsCollapsed);
-  /** Pictures and behaviours are two different things to go looking for, so they
-   *  are two tabs rather than two stacked shelves in one scroller. */
-  const [tab, setTab] = useState<"assets" | "modules">("assets");
   // The scene's rows are drawn by the timeline, which owns the selection, the
   // reorder and the clock; this is the box it draws them into.
   const [sceneHost, setSceneHost] = useState<HTMLDivElement | null>(null);
-  const [sceneWidth, setSceneWidth] = useState(() =>
-    readNumber(SCENE_WIDTH.key, SCENE_WIDTH.fallback),
-  );
+  const [sceneWidth, setSceneWidth] = useState(() => initial(SCENE_WIDTH, innerWidth));
   const [inspectorWidth, setInspectorWidth] = useState(() =>
-    readNumber(INSPECTOR_WIDTH.key, INSPECTOR_WIDTH.fallback),
+    initial(INSPECTOR_WIDTH, innerWidth),
   );
+  const [assetsHeight, setAssetsHeight] = useState(() => initial(ASSETS_HEIGHT, innerHeight));
+  const [effectsHeight, setEffectsHeight] = useState(() => initial(EFFECTS_HEIGHT, innerHeight));
   const [timelineHeight, setTimelineHeight] = useState(() =>
-    readNumber(TIMELINE_HEIGHT.key, TIMELINE_HEIGHT.fallback),
+    initial(TIMELINE_HEIGHT, innerHeight),
   );
-  const [assetsHeight, setAssetsHeight] = useState(() =>
-    readNumber(ASSETS_HEIGHT.key, ASSETS_HEIGHT.fallback),
-  );
-  const inputRef = useRef<HTMLInputElement>(null);
-  const columnRef = useRef<HTMLDivElement>(null);
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => writeAssetsCollapsed(collapsed), [collapsed]);
-  useEffect(() => writeNumber(ASSETS_HEIGHT.key, assetsHeight), [assetsHeight]);
   useEffect(() => writeNumber(SCENE_WIDTH.key, sceneWidth), [sceneWidth]);
-  useEffect(() => writeNumber(TIMELINE_HEIGHT.key, timelineHeight), [timelineHeight]);
   useEffect(() => writeNumber(INSPECTOR_WIDTH.key, inspectorWidth), [inspectorWidth]);
+  useEffect(() => writeNumber(ASSETS_HEIGHT.key, assetsHeight), [assetsHeight]);
+  useEffect(() => writeNumber(EFFECTS_HEIGHT.key, effectsHeight), [effectsHeight]);
+  useEffect(() => writeNumber(TIMELINE_HEIGHT.key, timelineHeight), [timelineHeight]);
   useEffect(() => {
     void useStudio.getState().fetchFonts();
   }, []);
 
   return (
     <div className="studio">
-      <header className="studio-header" />
+      <TopBar />
       <div ref={stageRef} className="relative flex min-h-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 px-[3px]">
+        <div className="flex min-h-0 flex-1 px-2 pt-2">
           <div
-            ref={columnRef}
-            className="my-[3px] flex max-w-[40%] shrink-0 flex-col"
+            ref={leftRef}
+            className="flex max-w-[40%] shrink-0 flex-col"
             style={{ width: sceneWidth }}
           >
-            <section
-              className={`flex min-h-0 flex-1 flex-col overflow-hidden ${PANEL}`}
-              aria-label="scene"
-            >
-              <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-                <span className={LABEL}>Scene</span>
-                <span className="text-[10px] text-text-muted/70 tabular-nums">{layerCount}</span>
-              </div>
-              <div
-                ref={setSceneHost}
-                className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none]"
-              />
-            </section>
-            <div className="h-[3px] shrink-0">
-              {collapsed ? null : (
-                <ResizeHandle
-                  label="Resize assets height"
-                  axis="y"
-                  value={assetsHeight}
-                  limits={ASSETS_HEIGHT}
-                  grows="up"
-                  onResize={(h) =>
-                    setAssetsHeight(
-                      Math.min(
-                        h,
-                        (columnRef.current?.clientHeight ?? Infinity) - SCENE_MIN_HEIGHT - HANDLE,
-                      ),
-                    )
-                  }
-                />
-              )}
-            </div>
-            <section
-              className={`flex max-h-[calc(100%-99px)] shrink-0 flex-col overflow-hidden ${PANEL}`}
-              style={collapsed ? undefined : { height: assetsHeight }}
-              id="assets-drawer"
-              aria-label="assets"
-            >
-              <div className="flex h-9 shrink-0 items-center gap-3 px-3">
-                <PanelTab
-                  label="Assets"
-                  active={tab === "assets"}
-                  onClick={() => {
-                    setCollapsed(false);
-                    setTab("assets");
-                  }}
-                />
-                <PanelTab
-                  label="Modules"
-                  active={tab === "modules"}
-                  onClick={() => {
-                    setCollapsed(false);
-                    setTab("modules");
-                  }}
-                />
-                <div className="ml-auto flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    className={PANEL_BTN}
-                    aria-label={tab === "assets" ? "Import images" : "New module"}
-                    title={tab === "assets" ? "Import images" : "New module"}
-                    onClick={() =>
-                      tab === "assets"
-                        ? inputRef.current?.click()
-                        : useStudio.getState().openBench()
-                    }
-                  >
-                    <PlusIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className={`${PANEL_BTN} transition-transform duration-[120ms] ${
-                      collapsed ? "" : "rotate-90"
-                    }`}
-                    aria-label={collapsed ? "Expand" : "Collapse"}
-                    aria-expanded={!collapsed}
-                    aria-controls="assets-drawer"
-                    title={collapsed ? "Expand" : "Collapse"}
-                    onClick={() => setCollapsed(!collapsed)}
-                  >
-                    <ChevronIcon />
-                  </button>
-                </div>
-              </div>
-              {collapsed ? null : (
-                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-border [scrollbar-width:none]">
-                  {tab === "assets" ? (
-                    <AssetShelf assets={assets} inputRef={inputRef} />
-                  ) : (
-                    <ModuleShelf />
-                  )}
-                </div>
-              )}
-            </section>
+            <ScenePanel onHost={setSceneHost} />
+            <ResizeHandle
+              label="Resize assets height"
+              axis="y"
+              value={assetsHeight}
+              limits={ASSETS_HEIGHT}
+              grows="up"
+              onResize={(h) => setAssetsHeight(fitBelow(leftRef.current, SCENE_MIN_HEIGHT, h))}
+            />
+            <AssetsPanel height={assetsHeight} />
           </div>
           <ResizeHandle
             label="Resize scene width"
@@ -194,7 +100,22 @@ export function Studio() {
             grows="left"
             onResize={setInspectorWidth}
           />
-          <Inspector width={inspectorWidth} />
+          <div
+            ref={rightRef}
+            className="flex max-w-[40%] shrink-0 flex-col"
+            style={{ width: inspectorWidth }}
+          >
+            <Inspector />
+            <ResizeHandle
+              label="Resize effects height"
+              axis="y"
+              value={effectsHeight}
+              limits={EFFECTS_HEIGHT}
+              grows="up"
+              onResize={(h) => setEffectsHeight(fitBelow(rightRef.current, SCENE_MIN_HEIGHT, h))}
+            />
+            <EffectsPanel height={effectsHeight} />
+          </div>
         </div>
         <ResizeHandle
           label="Resize timeline"
@@ -202,292 +123,15 @@ export function Studio() {
           value={timelineHeight}
           limits={TIMELINE_HEIGHT}
           grows="up"
-          onResize={(h) =>
-            setTimelineHeight(
-              Math.min(
-                h,
-                (stageRef.current?.clientHeight ?? Infinity) - CANVAS_MIN_HEIGHT - HANDLE,
-              ),
-            )
-          }
+          onResize={(h) => setTimelineHeight(fitBelow(stageRef.current, CANVAS_MIN_HEIGHT, h))}
         />
         <div
-          className="flex max-h-[calc(100%-163px)] shrink-0 flex-col"
+          className="flex max-h-[calc(100%-168px)] shrink-0 flex-col"
           style={{ height: timelineHeight }}
         >
           <Timeline sceneHost={sceneHost} />
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * The gap between two panels, which is also where either can be dragged larger. The
- * hit area spills past the gap onto the panels' edges so the grip is not three pixels.
- */
-function ResizeHandle({
-  label,
-  axis,
-  value,
-  limits,
-  grows,
-  onResize,
-}: {
-  label: string;
-  axis: "x" | "y";
-  /** The panel's current width (x) or height (y). */
-  value: number;
-  limits: { min: number; max: number };
-  /** Which way a drag has to go to make the panel larger. */
-  grows: "left" | "right" | "up";
-  onResize: (size: number) => void;
-}) {
-  const start = useRef<{ at: number; value: number } | null>(null);
-  const sign = grows === "right" ? 1 : -1;
-  const horizontal = axis === "x";
-  const to = (v: number) => onResize(clamp(v, limits.min, limits.max));
-
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const forward = horizontal ? "ArrowRight" : "ArrowDown";
-    const back = horizontal ? "ArrowLeft" : "ArrowUp";
-    if (e.key !== forward && e.key !== back) return;
-    e.preventDefault();
-    to(value + (e.key === forward ? 1 : -1) * sign * (e.shiftKey ? 48 : 16));
-  };
-
-  return (
-    <div
-      role="separator"
-      aria-orientation={horizontal ? "vertical" : "horizontal"}
-      aria-label={label}
-      aria-valuemin={limits.min}
-      aria-valuemax={limits.max}
-      aria-valuenow={value}
-      tabIndex={0}
-      className={`group relative z-10 shrink-0 touch-none outline-none ${
-        horizontal ? "w-[3px] cursor-col-resize" : "h-[3px] cursor-row-resize"
-      }`}
-      onPointerDown={(e: PointerEvent<HTMLDivElement>) => {
-        if (e.button !== 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        start.current = { at: horizontal ? e.clientX : e.clientY, value };
-      }}
-      onPointerMove={(e) => {
-        if (start.current) {
-          to(
-            start.current.value + ((horizontal ? e.clientX : e.clientY) - start.current.at) * sign,
-          );
-        }
-      }}
-      onPointerUp={() => (start.current = null)}
-      onPointerCancel={() => (start.current = null)}
-      onKeyDown={onKeyDown}
-    >
-      <div
-        className={`absolute ${
-          horizontal ? "inset-y-[3px] -inset-x-[3px]" : "inset-x-[3px] -inset-y-[3px]"
-        }`}
-      />
-      <div
-        className={`absolute rounded-full group-hover:bg-accent/50 group-focus-visible:bg-accent/50 group-active:bg-accent ${
-          horizontal
-            ? "inset-y-[3px] left-1/2 w-[2px] -translate-x-1/2"
-            : "inset-x-[3px] top-1/2 h-[2px] -translate-y-1/2"
-        }`}
-      />
-    </div>
-  );
-}
-
-const PANEL_BTN =
-  "grid h-[22px] w-[22px] place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary";
-
-/** The drawer's first panel: every picture the studio holds. */
-function AssetShelf({
-  assets,
-  inputRef,
-}: {
-  assets: StudioAsset[];
-  inputRef: RefObject<HTMLInputElement | null>;
-}) {
-  return (
-    <>
-      <input
-        ref={inputRef}
-        className="elements-file"
-        type="file"
-        accept={IMAGE_ACCEPT}
-        multiple
-        onChange={(e) => {
-          if (e.currentTarget.files?.length) {
-            void useStudio.getState().importImages([...e.currentTarget.files]);
-          }
-          e.currentTarget.value = "";
-        }}
-      />
-      {assets.length === 0 ? (
-        <p className="m-0 px-3 py-3 text-xs leading-normal text-text-muted/60">
-          Nothing here yet. Import PNG, JPG, WebP, or SVG.
-        </p>
-      ) : (
-        <div className="grid grid-cols-4 gap-x-2.5 gap-y-3 px-3 py-3">
-          {shelfAssets(assets).map((asset) => (
-            <AssetCard key={asset.id} asset={asset} />
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
-
-function PanelTab({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`text-[11px] font-medium uppercase tracking-[0.04em] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-text-primary ${
-        active ? "text-text-primary" : "text-text-muted hover:text-text-primary"
-      }`}
-      aria-pressed={active}
-      aria-controls="assets-drawer"
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
-}
-
-/** Per-extension chip colours. */
-const CHIP: Record<string, string> = {
-  png: "bg-badge-png text-badge-png-text",
-  jpg: "bg-badge-jpg text-badge-jpg-text",
-  webp: "bg-badge-webp text-badge-webp-text",
-  svg: "bg-badge-svg text-badge-svg-text",
-};
-
-function AssetCard({ asset }: { asset: StudioAsset }) {
-  const ghostRef = useRef<HTMLImageElement | null>(null);
-  const ext = extensionOf(asset.name);
-  const label = baseName(asset.name);
-
-  const onDragStart = (e: DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.setData("application/x-tween-asset", asset.id);
-    e.dataTransfer.effectAllowed = "copy";
-    // Drag at the size it will land at: the drop point becomes the element's
-    // centre, so the ghost is the asset at the canvas's current content scale.
-    const scale = contentScale(useStudio.getState().view);
-    const width = asset.naturalW * scale;
-    const height = asset.naturalH * scale;
-    const ghost = new Image();
-    ghost.src = asset.src;
-    ghost.className = "asset-ghost";
-    ghost.style.width = `${width}px`;
-    ghost.style.height = `${height}px`;
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, width / 2, height / 2);
-    ghostRef.current = ghost;
-  };
-
-  const onDragEnd = () => {
-    ghostRef.current?.remove();
-    ghostRef.current = null;
-  };
-
-  return (
-    <div
-      // Dragging is the interaction, but the pointer stays a plain arrow over the card.
-      className="group/asset flex min-w-0 cursor-default flex-col gap-1.5"
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-    >
-      <div className="relative grid aspect-square place-items-center overflow-hidden rounded-[7px] border border-border bg-text-primary/5 p-1.5 group-hover/asset:border-text-muted/50">
-        {/* `contain` inside a box of the thumb's own size, so an asset reads whole in
-            the drawer the way it does on canvas. Sizing by `max-h-full` instead lets a
-            portrait asset out of the bottom of the square: a percentage max-height has
-            nothing definite to resolve against in an auto-height grid row. */}
-        <img
-          className="block h-full w-full object-contain"
-          src={asset.src}
-          alt={asset.name}
-          draggable={false}
-        />
-        {/* Takes any elements placed from this asset with it — see `removeAsset`. */}
-        <button
-          type="button"
-          className="pointer-events-none absolute right-1 top-1 grid h-[17px] w-[17px] place-items-center rounded border border-border bg-bg p-0 text-text-primary/70 opacity-0 hover:border-text-primary hover:bg-text-primary hover:text-bg focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary group-hover/asset:pointer-events-auto group-hover/asset:opacity-100"
-          draggable={false}
-          aria-label={`Remove ${label}`}
-          title="Remove"
-          onClick={() => useStudio.getState().removeAsset(asset.id)}
-        >
-          <XIcon />
-        </button>
-      </div>
-      <div className="flex min-w-0 items-center justify-between gap-1.5">
-        <span className="truncate text-[10px] leading-[1.3] text-text-primary" title={asset.name}>
-          {label}
-        </span>
-        {ext ? (
-          <span
-            className={`shrink-0 rounded-[3px] px-1 py-px text-[8px] font-semibold uppercase leading-[1.3] tracking-[0.04em] ${CHIP[ext]}`}
-          >
-            {ext}
-          </span>
-        ) : null}
-      </div>
-      {/* Quiet, and on the card rather than in the import error: the file did come
-          in, it just came in whole. */}
-      {asset.kind === "svg" && asset.notice ? (
-        <p className="m-0 text-[9px] leading-[1.35] text-text-muted/60">{asset.notice}</p>
-      ) : null}
-    </div>
-  );
-}
-
-/** Lucide `plus` / `x`, inlined so a few glyphs don't pull in an icon package. */
-function PlusIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 12h14" />
-      <path d="M12 5v14" />
-    </svg>
-  );
-}
-
-function XIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="11"
-      height="11"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
   );
 }

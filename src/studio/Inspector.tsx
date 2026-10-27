@@ -36,12 +36,15 @@ import {
   LockIcon,
   LockOpenIcon,
   NumberField,
+  PANEL,
+  PANEL_LABEL,
+  PILL,
   SECTION,
   SUBLABEL,
   type Join,
 } from "./fields";
 
-export function Inspector({ width }: { width: number }) {
+export function Inspector() {
   const composition = useStudio((s) => s.composition);
   const selectedId = useStudio((s) => s.selectedId);
   const selectedIds = useStudio((s) => s.selectedIds);
@@ -53,8 +56,7 @@ export function Inspector({ width }: { width: number }) {
 
   return (
     <aside
-      className="my-[3px] flex max-w-[40%] shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-bg"
-      style={{ width }}
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden ${PANEL}`}
       aria-label={bench ? "module bench" : "inspector"}
     >
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -108,7 +110,7 @@ function ElementPanels({
       ) : track ? (
         <ElementPanel track={track} index={index} />
       ) : selectedIds.length === 0 ? (
-        <p className="m-0 px-3 py-3 text-xs leading-normal text-text-muted/60">
+        <p className="m-0 px-3 py-3 text-sm leading-normal text-text-muted/60">
           Select an element to edit it.
         </p>
       ) : null}
@@ -208,13 +210,14 @@ function CompositionPanel() {
 
   return (
     <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>Composition</p>
+      <p className={`${PANEL_LABEL} mb-2`}>Composition</p>
       {/* The right column carries the widest values — a resolution, a hex — so it
           takes the room the left one does not need. */}
       <div className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
         <BackgroundField value={background ?? "#ffffff"} />
 
         <SelectField
+          pill
           label="Res"
           title="Resolution"
           value={resolutionKey(frame)}
@@ -242,7 +245,7 @@ function BackgroundField({ value }: { value: string }) {
   const set = (hex: string) => useStudio.getState().setBackground(hex);
 
   return (
-    <div className={BOX} title="Background">
+    <div className={PILL} title="Background">
       <input
         type="color"
         aria-label="background colour"
@@ -275,18 +278,21 @@ function BackgroundField({ value }: { value: string }) {
 function SelectField({
   label,
   title,
+  pill,
   value,
   options,
   onChange,
 }: {
   label: string;
   title?: string;
+  /** The taller free-standing control, rather than the dense field. */
+  pill?: boolean;
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
 }) {
   return (
-    <label className={`${BOX} justify-between`} title={title}>
+    <label className={`${pill ? PILL : BOX} justify-between`} title={title}>
       <span className={`${LABEL} shrink-0`}>{label}</span>
       {/* The select is free to shrink: a native control sizes itself to its widest
           option, which walks the chevron straight out of the box. */}

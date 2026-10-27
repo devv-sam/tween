@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 import { useStudio } from "./store";
 import { FPS_CHOICES } from "./composition";
 import { ZOOM_PRESETS, zoomPercent } from "./view";
-import { BOX } from "./fields";
+import { PILL } from "./fields";
 import { FpsIcon } from "./icons";
 
-const CHIP = `${BOX} bg-bg`;
+const CHIP = `${PILL} bg-bg`;
 
 /**
  * The composition's frame rate and zoom, in the gap above the frame they describe. No duration

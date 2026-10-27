@@ -1,12 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  readAssetsCollapsed,
-  readFlag,
-  readNumber,
-  writeAssetsCollapsed,
-  writeFlag,
-  writeNumber,
-} from "./prefs";
+import { readNumber, writeNumber } from "./prefs";
 
 /** The suite runs in node, where there is no `localStorage` — the same shape a
  *  browser with site data blocked presents, minus the throwing. */
@@ -21,20 +14,6 @@ function stubStorage() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("prefs", () => {
-  it("round-trips a flag", () => {
-    stubStorage();
-    writeAssetsCollapsed(true);
-    expect(readAssetsCollapsed()).toBe(true);
-    writeAssetsCollapsed(false);
-    expect(readAssetsCollapsed()).toBe(false);
-  });
-
-  it("falls back when nothing was stored", () => {
-    stubStorage();
-    expect(readFlag("tween:missing", true)).toBe(true);
-    expect(readFlag("tween:missing", false)).toBe(false);
-  });
-
   it("round-trips a number and ignores one that is not", () => {
     stubStorage();
     expect(readNumber("tween:w", 320)).toBe(320);
@@ -45,7 +24,7 @@ describe("prefs", () => {
   });
 
   it("survives storage that is missing or throws", () => {
-    expect(readAssetsCollapsed()).toBe(false);
+    expect(readNumber("tween:x", 5)).toBe(5);
     vi.stubGlobal("localStorage", {
       getItem() {
         throw new Error("blocked");
@@ -54,7 +33,7 @@ describe("prefs", () => {
         throw new Error("blocked");
       },
     });
-    expect(() => writeFlag("tween:x", true)).not.toThrow();
-    expect(readFlag("tween:x", true)).toBe(true);
+    expect(() => writeNumber("tween:x", 7)).not.toThrow();
+    expect(readNumber("tween:x", 5)).toBe(5);
   });
 });
