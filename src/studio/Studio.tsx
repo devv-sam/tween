@@ -111,7 +111,7 @@ export function Studio() {
             onResize={(h) => setTimelineHeight(fitBelow(mainRef.current, CANVAS_MIN_HEIGHT, h))}
           />
           <div
-            className="mr-2 flex max-h-[calc(100%_-_240px_-_var(--gap))] shrink-0 flex-col"
+            className="mr-2 mb-(--edge) ml-(--edge) flex max-h-[calc(100%_-_240px_-_var(--gap))] shrink-0 flex-col"
             style={{ height: timelineHeight }}
           >
             <Timeline sceneHost={sceneHost} />

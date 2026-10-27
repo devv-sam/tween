@@ -18,7 +18,7 @@ import { renderState } from "../core/renderState";
 import { Preview } from "../render/preview";
 import { MODULE_DRAG } from "./ModuleShelf";
 import { designSizeOf, useStudio } from "./store";
-import { ChevronIcon, NumberField } from "./fields";
+import { ChevronIcon, NumberField, PANEL } from "./fields";
 import { ClonersIcon, ModulesIcon } from "./icons";
 import { ModuleIcon, PropIcon } from "./propIcons";
 import { collectKeyframeTimes, nextKeyframe, previousKeyframe } from "./transport";
@@ -605,7 +605,7 @@ export function Timeline({ sceneHost }: { sceneHost: HTMLElement | null }) {
 
   return (
     <div
-      className="timeline overflow-hidden border-t border-border outline-none"
+      className={`timeline overflow-hidden ${PANEL} outline-none`}
       aria-label="timeline"
       tabIndex={-1}
       onPointerDownCapture={claimKeys}
