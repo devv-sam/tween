@@ -18,7 +18,9 @@ export function exportCode(
   samples = 60,
   /** Markup per layer id. A layer with no entry is drawn as the standing box. */
   content: Record<string, LayerContent> = {},
+  options: { loop?: boolean; controls?: boolean; minify?: boolean } = {},
 ): string {
+  const { loop = true, controls = false, minify = false } = options;
   comp = visibleElements(comp);
   const layers = comp.tracks.map((tr) => tr.layer);
   const perLayer: Record<string, { offset: number; state: Transform }[]> = {};
@@ -35,7 +37,7 @@ export function exportCode(
     const kfs = perLayer[l.id]
       .map((k) => `{ offset:${r(k.offset)}, transform:"translate(${r(k.state.x)}px,${r(k.state.y)}px) rotate(${r(k.state.rotation)}deg) scale(${r(k.state.scaleX)},${r(k.state.scaleY)})", opacity:${r(k.state.opacity)} }`)
       .join(",\n    ");
-    return `document.getElementById(${JSON.stringify(l.id)}).animate([\n    ${kfs}\n  ], { duration:${comp.duration * 1000}, iterations:Infinity, easing:"linear" });`;
+    return `document.getElementById(${JSON.stringify(l.id)}).animate([\n    ${kfs}\n  ], { duration:${comp.duration * 1000}, iterations:${loop ? "Infinity" : 1}, easing:"linear" });`;
   }).join("\n\n");
 
   // The wrapper is what the animation drives, the same for every layer. A node's
@@ -55,7 +57,7 @@ export function exportCode(
     })
     .join("\n  ");
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   body{margin:0;background:#f4f4f6}
   .stage{position:relative;width:800px;height:600px;margin:24px auto;overflow:hidden}
@@ -66,11 +68,22 @@ export function exportCode(
 <body>
   <div class="stage">
   ${boxes}
-  </div>
+  </div>${controls ? '\n  <button id="toggle" type="button" style="display:block;margin:0 auto">Pause</button>' : ""}
   <script>
-  ${anims}
+  ${anims}${
+    controls
+      ? `\n  const toggle = document.getElementById("toggle");\n  toggle.onclick = () => {\n    const running = toggle.textContent === "Pause";\n    document.getAnimations().forEach((a) => (running ? a.pause() : a.play()));\n    toggle.textContent = running ? "Play" : "Pause";\n  };`
+      : ""
+  }
   </script>
 </body></html>`;
+  return minify
+    ? html
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join("\n")
+    : html;
 }
 
 const r = (n: number) => Math.round(n * 1000) / 1000;

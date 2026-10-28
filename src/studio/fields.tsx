@@ -564,7 +564,7 @@ export function Segmented<T extends string>({
 }: {
   value: T;
   /** `label` names a choice that shows only an icon. */
-  options: { value: T; label: string; content: ReactNode }[];
+  options: { value: T; label: string; content: ReactNode; disabled?: boolean }[];
   onChange: (value: T) => void;
   /** A bordered row with dividers, the picked choice shaded, in place of the pill track. */
   outlined?: boolean;
@@ -603,7 +603,8 @@ export function Segmented<T extends string>({
           aria-checked={o.value === value}
           aria-label={o.label}
           title={o.label}
-          className={`relative grid place-items-center transition-colors ${
+          disabled={o.disabled}
+          className={`relative grid place-items-center transition-colors disabled:opacity-40 ${
             outlined ? `h-8 ${i > 0 ? "border-l border-border" : ""}` : "h-7 rounded-md"
           } ${o.value === value ? "text-text-primary" : "text-text-muted hover:text-text-primary"}`}
           onClick={() => onChange(o.value)}

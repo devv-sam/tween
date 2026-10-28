@@ -18,7 +18,7 @@ export function avcCodec(w: number, h: number): string {
   return "avc1.420034"; // 5.2
 }
 
-export async function exportMp4(comp: Composition, library: ModuleAsset[], w = 800, h = 600, imageOf?: ImageLookup, source?: Size): Promise<Blob> {
+export async function exportMp4(comp: Composition, library: ModuleAsset[], w = 800, h = 600, imageOf?: ImageLookup, source?: Size, options: { bitrate?: number } = {}): Promise<Blob> {
   if (typeof VideoEncoder === "undefined") throw new Error("webcodecs not supported in this browser (use chrome or edge)");
 
   await preloadFonts(comp);
@@ -35,7 +35,7 @@ export async function exportMp4(comp: Composition, library: ModuleAsset[], w = 8
     output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
     error: (e) => { throw e; },
   });
-  encoder.configure({ codec: avcCodec(w, h), width: w, height: h, bitrate: 6_000_000, framerate: comp.fps });
+  encoder.configure({ codec: avcCodec(w, h), width: w, height: h, bitrate: options.bitrate ?? 6_000_000, framerate: comp.fps });
 
   const total = Math.max(1, Math.round(comp.duration * comp.fps));
   for (let f = 0; f < total; f++) {
@@ -44,6 +44,8 @@ export async function exportMp4(comp: Composition, library: ModuleAsset[], w = 8
     const frame = new VideoFrame(canvas, { timestamp: Math.round((f * 1e6) / comp.fps) });
     encoder.encode(frame, { keyFrame: f % comp.fps === 0 });
     frame.close();
+    // Frames waiting to be encoded are whole pictures in memory: let the encoder catch up.
+    while (encoder.encodeQueueSize > 4) await new Promise((r) => setTimeout(r));
   }
 
   await encoder.flush();
