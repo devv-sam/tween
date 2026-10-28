@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isLinked } from "../core/library";
 import { useStudio, proxyBase, type Bench } from "./store";
 import { cloneCount, stackSummary } from "./modules";
 import { DistributorSection, ModuleParams } from "./ModuleStack";
@@ -30,6 +31,13 @@ export function ModuleShelf() {
 
 function ModuleCard({ id }: { id: string }) {
   const asset = useStudio((s) => s.moduleLibrary.find((a) => a.id === id));
+  const target = useStudio((s) => s.selectedId);
+  const applied = useStudio((s) =>
+    s.composition.tracks.some(
+      (tr) =>
+        tr.layer.id === s.selectedId && tr.modules.some((em) => isLinked(em) && em.ref === id),
+    ),
+  );
   const [menu, setMenu] = useState(false);
   const [confirming, setConfirming] = useState(false);
   if (!asset) return null;
@@ -53,6 +61,20 @@ function ModuleCard({ id }: { id: string }) {
             {stackSummary(asset.stack) || "empty"}
           </span>
         </span>
+        {applied ? (
+          <span className="shrink-0 px-1.5 text-[10px] text-accent">Applied</span>
+        ) : (
+          <button
+            type="button"
+            disabled={!target}
+            title={target ? "Apply to the selected element" : "Select an element first"}
+            className="h-[20px] shrink-0 rounded px-1.5 text-[10px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+            draggable={false}
+            onClick={() => target && useStudio.getState().dropModule(target, asset.id)}
+          >
+            Apply
+          </button>
+        )}
         <button
           type="button"
           aria-label={`more for ${asset.name}`}

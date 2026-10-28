@@ -140,6 +140,25 @@ describe("a linked instance", () => {
   });
 });
 
+describe("applying a saved module", () => {
+  beforeEach(seed);
+
+  it("links it to the element and leaves the library as it was", () => {
+    const id = seed();
+    useStudio.getState().addModule(id, "keyframes");
+    useStudio.getState().saveStackAsModule(id, "scale in");
+    const assetId = library()[0].id;
+
+    useStudio.getState().detachModule(id, 0);
+    useStudio.getState().dropModule(id, assetId);
+
+    expect(modulesOf().filter((em) => isLinked(em))).toHaveLength(1);
+    expect(link(1).ref).toBe(assetId);
+    expect(library()).toHaveLength(1);
+    expect(useStudio.getState().selectedId).toBe(id);
+  });
+});
+
 describe("deleting a module asset", () => {
   beforeEach(seed);
 

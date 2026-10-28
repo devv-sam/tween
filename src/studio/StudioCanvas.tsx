@@ -1439,7 +1439,7 @@ export function StudioCanvas() {
             }px) translateX(-50%)`,
           }}
         >
-          Proxy
+          Preview only
         </div>
       ) : null}
       {pendingAttach ? (

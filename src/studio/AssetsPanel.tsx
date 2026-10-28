@@ -14,7 +14,7 @@ export function AssetsPanel({ height }: { height: number }) {
   /** Pictures and behaviours are two different things to go looking for, so they
    *  are two tabs rather than two stacked shelves in one scroller. */
   const [tab, setTab] = useState<"assets" | "modules">("assets");
-  const adding = tab === "assets" ? "Import images" : "New module";
+  const adding = tab === "assets" ? "Import images" : "New module…";
 
   return (
     <section

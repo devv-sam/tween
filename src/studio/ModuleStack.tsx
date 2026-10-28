@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type {
   Distributor,
   DistributorType,
+  ModuleAsset,
   ModuleData,
   Track,
   Transform,
@@ -32,6 +33,7 @@ import {
   BOX,
   CloseIcon,
   GHOST_BTN,
+  INPUT,
   LABEL,
   NumberField,
   SECTION,
@@ -242,6 +244,9 @@ function ClonerSettings({
   );
 }
 
+const MENU_ITEM =
+  "flex w-full items-center gap-2 rounded-[5px] px-1.5 py-1.5 text-left text-[11px] text-text-primary hover:bg-accent hover:text-bg focus-visible:bg-accent focus-visible:text-bg focus-visible:outline-none";
+
 /** The layouts, as a menu — picking one is adding a thing, and a select would read
  *  as changing a setting on nothing. */
 function ClonerMenu({
@@ -259,7 +264,7 @@ function ClonerMenu({
           <button
             type="button"
             autoFocus={i === 0}
-            className="flex w-full items-center gap-2 rounded-[5px] px-1.5 py-1.5 text-left text-[11px] text-text-primary hover:bg-accent hover:text-bg focus-visible:bg-accent focus-visible:text-bg focus-visible:outline-none"
+            className={MENU_ITEM}
             onClick={() => onPick(type)}
           >
             <span className="shrink-0 opacity-70">
@@ -609,23 +614,50 @@ function Ghost({ children }: { children: React.ReactNode }) {
 
 export function ModuleStackSection({ track }: { track: Track }) {
   const library = useStudio((s) => s.moduleLibrary);
+  const [adding, setAdding] = useState(false);
+  const addRef = useRef<HTMLButtonElement>(null);
   const layerId = track.layer.id;
   const rows = stackRows(track.modules, library);
+  const hasRaw = rows.some((row) => row.kind === "raw");
 
   return (
     <section className={SECTION}>
       <div className={`flex items-center justify-between${rows.length > 0 ? " mb-2" : ""}`}>
         <p className={LABEL}>Modules</p>
         <button
+          ref={addRef}
           type="button"
-          aria-label="add pulse"
-          title="Add pulse"
+          aria-label="add module"
+          aria-expanded={adding}
+          title="Add module"
           className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary"
-          onClick={() => useStudio.getState().addModule(layerId, "pulse")}
+          onClick={() => setAdding((v) => !v)}
         >
           <PlusIcon />
         </button>
       </div>
+
+      {adding ? (
+        <Popover
+          anchorRef={addRef}
+          placement="below"
+          label="add module"
+          onClose={() => setAdding(false)}
+        >
+          <ModuleMenu
+            library={library}
+            onApply={(assetId) => {
+              setAdding(false);
+              useStudio.getState().dropModule(layerId, assetId);
+            }}
+            onNewPulse={() => {
+              setAdding(false);
+              useStudio.getState().addModule(layerId, "pulse");
+            }}
+          />
+        </Popover>
+      ) : null}
+
       {rows.length > 0 ? (
         <ul className="flex flex-col gap-1">
           {rows.map((row) => (
@@ -633,7 +665,103 @@ export function ModuleStackSection({ track }: { track: Track }) {
           ))}
         </ul>
       ) : null}
+      {hasRaw ? <SaveAsModule layerId={layerId} /> : null}
     </section>
+  );
+}
+
+/** Saved modules first, since that is what the library tab is for; a fresh pulse is
+ *  what is left when none of them is the one. */
+function ModuleMenu({
+  library,
+  onApply,
+  onNewPulse,
+}: {
+  library: ModuleAsset[];
+  onApply: (assetId: string) => void;
+  onNewPulse: () => void;
+}) {
+  return (
+    <ul className="w-[186px] p-1">
+      {library.map((asset, i) => (
+        <li key={asset.id}>
+          <button
+            type="button"
+            autoFocus={i === 0}
+            className={MENU_ITEM}
+            onClick={() => onApply(asset.id)}
+          >
+            <span className="shrink-0 opacity-70">
+              <ChainIcon />
+            </span>
+            <span className="truncate">{asset.name}</span>
+          </button>
+        </li>
+      ))}
+      {library.length > 0 ? <li role="separator" className="my-1 border-t border-border/60" /> : null}
+      <li>
+        <button
+          type="button"
+          autoFocus={library.length === 0}
+          className={MENU_ITEM}
+          onClick={onNewPulse}
+        >
+          <span className="shrink-0 opacity-70">
+            <PulseIcon />
+          </span>
+          <span>New pulse</span>
+        </button>
+      </li>
+      {library.length === 0 ? (
+        <li className="px-1.5 pt-1 pb-0.5 text-[9px] leading-[1.35] text-text-muted/60">
+          Modules you save show up here.
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
+/** Turns what this element is running into a library module, linked back in place. */
+function SaveAsModule({ layerId }: { layerId: string }) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+
+  if (!naming) {
+    return (
+      <button type="button" className={`${GHOST_BTN} mt-2 w-full text-left`} onClick={() => setNaming(true)}>
+        Save as module…
+      </button>
+    );
+  }
+
+  const save = () => {
+    if (!name.trim()) return;
+    useStudio.getState().saveStackAsModule(layerId, name);
+  };
+
+  return (
+    <div className="mt-2 flex gap-1.5">
+      <label className={`${BOX} min-w-0 flex-1`}>
+        <input
+          autoFocus
+          className={`${INPUT} w-full`}
+          placeholder="Module name"
+          aria-label="module name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setNaming(false);
+            }
+          }}
+        />
+      </label>
+      <button type="button" className={GHOST_BTN} disabled={!name.trim()} onClick={save}>
+        Save
+      </button>
+    </div>
   );
 }
 
@@ -656,14 +784,14 @@ function ModuleRow({ row, layerId }: { row: StackRow; layerId: string }) {
       <div ref={rowRef} className="flex items-center gap-1">
         <button
           type="button"
-          aria-expanded={isPulse ? open : undefined}
+          aria-expanded={isPulse || row.kind === "linked" ? open : undefined}
           className={`flex h-[26px] min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-left text-[11px] ${
             open
               ? "border-accent bg-accent/10 text-text-primary"
               : "border-border text-text-primary/70 hover:bg-text-primary/5"
           }`}
           onClick={() => {
-            if (isPulse) setOpen((v) => !v);
+            if (isPulse || row.kind === "linked") setOpen((v) => !v);
           }}
         >
           {row.kind === "linked" ? (
@@ -687,6 +815,43 @@ function ModuleRow({ row, layerId }: { row: StackRow; layerId: string }) {
           <CloseIcon />
         </button>
       </div>
+      {open && row.kind === "linked" ? (
+        <Popover
+          anchorRef={rowRef}
+          placement="below"
+          label={`${label} module`}
+          onClose={() => setOpen(false)}
+        >
+          <ul className="w-[186px] p-1">
+            <li>
+              <button
+                type="button"
+                autoFocus
+                className={MENU_ITEM}
+                onClick={() => {
+                  setOpen(false);
+                  useStudio.getState().openBench(row.asset.id);
+                }}
+              >
+                Edit module
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className={`${MENU_ITEM} justify-between`}
+                onClick={() => {
+                  setOpen(false);
+                  useStudio.getState().detachModule(layerId, row.index);
+                }}
+              >
+                <span>Detach</span>
+                <span className="text-[9px] opacity-60">keeps a copy</span>
+              </button>
+            </li>
+          </ul>
+        </Popover>
+      ) : null}
       {open && isPulse && row.kind === "raw" ? (
         <Popover
           anchorRef={rowRef}
