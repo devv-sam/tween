@@ -16,7 +16,7 @@ export function ModuleShelf() {
     <>
       {library.length === 0 ? (
         <p className="m-0 px-3 pt-1 pb-3 text-xs leading-normal text-text-muted/60">
-          No modules yet
+          No modules yet. Use + to write one, or save an element's modules from the inspector.
         </p>
       ) : (
         <ul className="flex flex-col gap-1 px-3 pt-1 pb-3.5">

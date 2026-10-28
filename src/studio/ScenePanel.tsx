@@ -12,6 +12,11 @@ export function ScenePanel({ onHost }: { onHost: (host: HTMLDivElement | null) =
         <span className={PANEL_LABEL}>Scene</span>
         <span className="text-[10px] text-text-muted/70 tabular-nums">{layerCount}</span>
       </div>
+      {layerCount === 0 ? (
+        <p className="m-0 px-3 py-3 text-xs leading-normal text-text-muted/60">
+          Nothing in the scene yet. Draw a shape, add text, or drop an image on the canvas.
+        </p>
+      ) : null}
       <div ref={onHost} className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none]" />
     </section>
   );
