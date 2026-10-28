@@ -1574,6 +1574,7 @@ const createStudio: StateCreator<StudioState, [["zustand/persist", unknown]]> = 
       const asset = moduleLibrary.find((a) => a.id === assetId);
       if (!asset) return;
       const track = composition.tracks.find((tr) => tr.layer.id === layerId);
+      if (track?.layer.locked) return;
       if (asset.distributor && track?.layer.distributor) {
         set({ pendingAttach: { assetId, layerId } });
         return;

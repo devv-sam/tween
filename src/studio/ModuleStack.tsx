@@ -752,7 +752,6 @@ function SaveAsModule({ layerId }: { layerId: string }) {
           autoFocus
           className={`${INPUT} w-full`}
           placeholder="Module name"
-          aria-label="module name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {

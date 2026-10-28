@@ -157,6 +157,18 @@ describe("applying a saved module", () => {
     expect(library()).toHaveLength(1);
     expect(useStudio.getState().selectedId).toBe(id);
   });
+
+  it("leaves a locked element alone", () => {
+    const id = seed();
+    useStudio.getState().addModule(id, "keyframes");
+    useStudio.getState().saveStackAsModule(id, "scale in");
+    useStudio.getState().detachModule(id, 0);
+    useStudio.getState().toggleLocked(id);
+
+    useStudio.getState().dropModule(id, library()[0].id);
+
+    expect(modulesOf().some((em) => isLinked(em))).toBe(false);
+  });
 });
 
 describe("deleting a module asset", () => {

@@ -1,9 +1,8 @@
 import { clamp } from "../core/math";
+import type { Span } from "./reorder";
 import type { Point, Size } from "./view";
 
 export const POPOVER_GAP = 8;
-
-export type Span = { top: number; bottom: number };
 
 export function fitInViewport(at: Point, box: Size, viewport: Size, within?: Span): Point {
   const top = Math.max(POPOVER_GAP, within?.top ?? 0);
