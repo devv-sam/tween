@@ -1,5 +1,7 @@
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import { clamp } from "../core/math";
+import { readFlag, writeFlag } from "./prefs";
 import { useStudio } from "./store";
 import { COLOR_MODES, formatColor, parseColor, type ColorMode } from "./color";
 import { THUMB_INSET, sliderFraction, sliderValueAt } from "./slider";
@@ -35,6 +37,59 @@ export const BOX_TIGHT =
   "flex items-center rounded-md border border-border px-1.5 h-[26px] focus-within:border-accent";
 export const GHOST_BTN =
   "rounded-md border border-border px-2 h-[26px] text-[11px] text-text-primary/70 hover:bg-text-primary/5 hover:text-text-primary";
+
+export function CollapsibleSection({
+  id,
+  label,
+  summary,
+  action,
+  filled = true,
+  children,
+}: {
+  id: string;
+  label: string;
+  /** What is inside, said in the header while the body is out of sight. */
+  summary?: string;
+  /** Only shown open: adding to a section you cannot see would be adding blind. */
+  action?: ReactNode;
+  /** False when the body is nothing but a header's worth, so no gap is left under it. */
+  filled?: boolean;
+  children: ReactNode;
+}) {
+  const key = `tween:section:${id}`;
+  const [open, setOpen] = useState(() => readFlag(key, true));
+  const toggle = () => {
+    writeFlag(key, !open);
+    setOpen(!open);
+  };
+
+  return (
+    <section className={SECTION}>
+      <div className={`flex items-center justify-between gap-2${open && filled ? " mb-2" : ""}`}>
+        <button
+          type="button"
+          aria-expanded={open}
+          className={`${LABEL} -ml-1 flex min-w-0 items-center gap-1 rounded px-1 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary`}
+          onClick={toggle}
+        >
+          <ChevronRight
+            size={11}
+            className={`shrink-0 ${open ? "rotate-90" : ""}`}
+            aria-hidden="true"
+          />
+          <span>{label}</span>
+          {!open && summary ? (
+            <span className="truncate normal-case tracking-normal text-text-muted/60">
+              {summary}
+            </span>
+          ) : null}
+        </button>
+        {open ? action : null}
+      </div>
+      {open ? children : null}
+    </section>
+  );
+}
 
 /** Which side of a joined pair a field is, when two of them make one control. */
 export type Join = "left" | "right";

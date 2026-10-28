@@ -47,6 +47,7 @@ import {
 } from "./icons";
 import {
   BOX,
+  CollapsibleSection,
   ColorField,
   ColorInput,
   DiamondIcon,
@@ -78,6 +79,7 @@ export function Inspector() {
     <aside
       className={`flex min-h-0 flex-1 flex-col overflow-hidden ${PANEL}`}
       aria-label={bench ? "module bench" : "inspector"}
+      data-popover-bounds
     >
       <ScrollArea className="min-h-0 flex-1">
         {/* The bench takes the panel rather than floating over it: a module is being
@@ -748,8 +750,7 @@ function ShapeFillStrokeSection({ track }: { track: Track }) {
 
   return (
     <>
-      <section className={SECTION}>
-        <p className={`${SUBLABEL} mb-1`}>Fill</p>
+      <CollapsibleSection id="fill" label="Fill" summary={props.fill.color}>
         <div className="mb-2 flex">
           <ColorField
             label="fill"
@@ -759,10 +760,13 @@ function ShapeFillStrokeSection({ track }: { track: Track }) {
             onOpacity={(opacity) => setFill({ opacity })}
           />
         </div>
-      </section>
+      </CollapsibleSection>
 
-      <section className={SECTION}>
-        <p className={`${SUBLABEL} mb-1`}>Stroke</p>
+      <CollapsibleSection
+        id="stroke"
+        label="Stroke"
+        summary={props.stroke.enabled ? props.stroke.color : "Off"}
+      >
         <div className="mb-1 flex items-center gap-1.5">
           <label className="flex items-center gap-1 text-[11px] text-text-muted">
             <input
@@ -791,7 +795,7 @@ function ShapeFillStrokeSection({ track }: { track: Track }) {
             </div>
           </div>
         ) : null}
-      </section>
+      </CollapsibleSection>
     </>
   );
 }
@@ -967,8 +971,7 @@ function BaseTransform({
   );
 
   return (
-    <section className={SECTION}>
-      <p className={`${LABEL} mb-2`}>Transform</p>
+    <CollapsibleSection id="transform" label="Transform">
       {/* Position is one property with two fields: one diamond keyframes the pair,
           and the toggle beside it is how you ask for the axes apart. Two fields on
           one row want saying what they are together. */}
@@ -1009,7 +1012,7 @@ function BaseTransform({
           />,
         )}
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }
 

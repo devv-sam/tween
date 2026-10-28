@@ -1,12 +1,20 @@
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { EFFECT_GROUPS } from "./effects";
 import { PANEL, PANEL_LABEL } from "./fields";
 
 const ALL = "All";
 const NAV = [ALL, ...EFFECT_GROUPS.map((g) => g.category)];
 
-export function EffectsPanel({ height }: { height: number }) {
+export function EffectsPanel({
+  height,
+  open,
+  onToggle,
+}: {
+  height: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const [category, setCategory] = useState(ALL);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -17,28 +25,40 @@ export function EffectsPanel({ height }: { height: number }) {
 
   return (
     <section
-      className={`flex max-h-[calc(100%_-_200px_-_var(--gap))] shrink-0 flex-col overflow-hidden ${PANEL}`}
-      style={{ height }}
+      className={`flex shrink-0 flex-col overflow-hidden ${
+        open ? "max-h-[calc(100%_-_200px_-_var(--gap))]" : "h-9"
+      } ${PANEL}`}
+      style={open ? { height } : undefined}
     >
       <div className="flex h-9 shrink-0 items-center px-3">
-        <span className={PANEL_LABEL}>Effects</span>
         <button
           type="button"
-          className={`ml-auto grid h-[22px] w-[22px] place-items-center rounded-[5px] hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary ${
-            searching ? "text-text-primary" : "text-text-primary/70"
-          }`}
-          aria-label="Search effects"
-          aria-pressed={searching}
-          title="Search effects"
-          onClick={() => {
-            setSearching(!searching);
-            setQuery("");
-          }}
+          aria-expanded={open}
+          className={`${PANEL_LABEL} -ml-1 flex items-center gap-1 rounded px-1 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary`}
+          onClick={onToggle}
         >
-          <Search size={14} aria-hidden="true" />
+          <ChevronRight size={12} className={open ? "rotate-90" : ""} aria-hidden="true" />
+          Effects
         </button>
+        {open ? (
+          <button
+            type="button"
+            className={`ml-auto grid h-[22px] w-[22px] place-items-center rounded-[5px] hover:bg-text-primary/5 hover:text-text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-text-primary ${
+              searching ? "text-text-primary" : "text-text-primary/70"
+            }`}
+            aria-label="Search effects"
+            aria-pressed={searching}
+            title="Search effects"
+            onClick={() => {
+              setSearching(!searching);
+              setQuery("");
+            }}
+          >
+            <Search size={14} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
-      {searching ? (
+      {open && searching ? (
         <div className="shrink-0 px-3 pb-2">
           <input
             autoFocus
@@ -56,6 +76,7 @@ export function EffectsPanel({ height }: { height: number }) {
           />
         </div>
       ) : null}
+      {open ? (
       <div className="flex min-h-0 flex-1 border-t border-border">
         <nav className="flex w-[36%] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-2 [scrollbar-width:none]">
           {NAV.map((name) => (
@@ -96,6 +117,7 @@ export function EffectsPanel({ height }: { height: number }) {
           )}
         </div>
       </div>
+      ) : null}
     </section>
   );
 }

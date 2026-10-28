@@ -20,6 +20,17 @@ describe("fitInViewport", () => {
     });
   });
 
+  it("keeps a card inside the vertical span it was asked to stay in", () => {
+    const within = { top: 100, bottom: 500 };
+    expect(fitInViewport({ x: 400, y: 450 }, box, viewport, within).y).toBe(200);
+    expect(fitInViewport({ x: 400, y: 20 }, box, viewport, within).y).toBe(100);
+    expect(fitInViewport({ x: 400, y: 150 }, box, viewport, within).y).toBe(150);
+  });
+
+  it("pins a card taller than its span to the span's top", () => {
+    expect(fitInViewport({ x: 400, y: 300 }, box, viewport, { top: 100, bottom: 250 }).y).toBe(100);
+  });
+
   it("pins a card bigger than the window to the top-left rather than past it", () => {
     expect(fitInViewport({ x: 300, y: 300 }, { width: 2000, height: 2000 }, viewport)).toEqual({
       x: POPOVER_GAP,

@@ -32,11 +32,11 @@ import { StopList } from "./StopList";
 import {
   BOX,
   CloseIcon,
+  CollapsibleSection,
   GHOST_BTN,
   INPUT,
   LABEL,
   NumberField,
-  SECTION,
   SliderField,
 } from "./fields";
 
@@ -67,9 +67,12 @@ export function DistributorSection({
   const addRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <section className={SECTION}>
-      <div className={`flex items-center justify-between${d ? " mb-2" : ""}`}>
-        <p className={LABEL}>Cloners</p>
+    <CollapsibleSection
+      id="cloners"
+      label="Cloners"
+      summary={d ? capitalize(d.type) : undefined}
+      filled={Boolean(d)}
+      action={
         <button
           ref={addRef}
           type="button"
@@ -82,8 +85,8 @@ export function DistributorSection({
         >
           <PlusIcon />
         </button>
-      </div>
-
+      }
+    >
       {adding ? (
         <Popover
           anchorRef={addRef}
@@ -109,7 +112,7 @@ export function DistributorSection({
           onOpened={() => setFresh(false)}
         />
       ) : null}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -621,9 +624,12 @@ export function ModuleStackSection({ track }: { track: Track }) {
   const hasRaw = rows.some((row) => row.kind === "raw");
 
   return (
-    <section className={SECTION}>
-      <div className={`flex items-center justify-between${rows.length > 0 ? " mb-2" : ""}`}>
-        <p className={LABEL}>Modules</p>
+    <CollapsibleSection
+      id="modules"
+      label="Modules"
+      summary={rows.length > 0 ? String(rows.length) : undefined}
+      filled={rows.length > 0}
+      action={
         <button
           ref={addRef}
           type="button"
@@ -635,8 +641,8 @@ export function ModuleStackSection({ track }: { track: Track }) {
         >
           <PlusIcon />
         </button>
-      </div>
-
+      }
+    >
       {adding ? (
         <Popover
           anchorRef={addRef}
@@ -666,7 +672,7 @@ export function ModuleStackSection({ track }: { track: Track }) {
         </ul>
       ) : null}
       {hasRaw ? <SaveAsModule layerId={layerId} /> : null}
-    </section>
+    </CollapsibleSection>
   );
 }
 

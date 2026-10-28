@@ -11,7 +11,7 @@ import { Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
 import { clamp } from "../core/math";
 import { useStudio } from "./store";
-import { readNumber, writeNumber } from "./prefs";
+import { readFlag, readNumber, writeFlag, writeNumber } from "./prefs";
 
 /** Panel sizes in px; `fallback` is what a panel opens at until it has been dragged. */
 const SCENE_WIDTH = { key: "tween:width:scene", fallback: 333, min: 280, max: 520 };
@@ -19,6 +19,7 @@ const INSPECTOR_WIDTH = { key: "tween:width:inspector", fallback: 347, min: 300,
 const ASSETS_HEIGHT = { key: "tween:height:assets", fallback: 318, min: 160, max: 640 };
 const EFFECTS_HEIGHT = { key: "tween:height:effects", fallback: 296, min: 200, max: 640 };
 const TIMELINE_HEIGHT = { key: "tween:height:timeline", fallback: 200, min: 150, max: 640 };
+const EFFECTS_OPEN = "tween:open:effects";
 /** What the panel above keeps when the one below it is dragged up as far as it goes.
  *  The `max-h` calcs on the panels below are these numbers again, as classes. */
 const SCENE_MIN_HEIGHT = 200;
@@ -51,6 +52,7 @@ export function Studio() {
   const [assetsHeight, setAssetsHeight] = useState(() => saved(ASSETS_HEIGHT));
   const [effectsHeight, setEffectsHeight] = useState(() => saved(EFFECTS_HEIGHT));
   const [timelineHeight, setTimelineHeight] = useState(() => saved(TIMELINE_HEIGHT));
+  const [effectsOpen, setEffectsOpen] = useState(() => readFlag(EFFECTS_OPEN, true));
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -60,6 +62,7 @@ export function Studio() {
   useEffect(() => writeNumber(ASSETS_HEIGHT.key, assetsHeight), [assetsHeight]);
   useEffect(() => writeNumber(EFFECTS_HEIGHT.key, effectsHeight), [effectsHeight]);
   useEffect(() => writeNumber(TIMELINE_HEIGHT.key, timelineHeight), [timelineHeight]);
+  useEffect(() => writeFlag(EFFECTS_OPEN, effectsOpen), [effectsOpen]);
   useEffect(() => {
     void useStudio.getState().fetchFonts();
   }, []);
@@ -131,16 +134,24 @@ export function Studio() {
           style={{ width: inspectorWidth }}
         >
           <Inspector />
-          <ResizeHandle
-            label="Resize effects height"
-            axis="y"
-            value={effectsHeight}
-            limits={EFFECTS_HEIGHT}
-            grows="up"
-            ratio={{ room: () => roomOf(rightRef.current), side: "before" }}
-            onResize={(h) => setEffectsHeight(fitBelow(rightRef.current, SCENE_MIN_HEIGHT, h))}
+          {effectsOpen ? (
+            <ResizeHandle
+              label="Resize effects height"
+              axis="y"
+              value={effectsHeight}
+              limits={EFFECTS_HEIGHT}
+              grows="up"
+              ratio={{ room: () => roomOf(rightRef.current), side: "before" }}
+              onResize={(h) => setEffectsHeight(fitBelow(rightRef.current, SCENE_MIN_HEIGHT, h))}
+            />
+          ) : (
+            <div className="h-(--gap) shrink-0" />
+          )}
+          <EffectsPanel
+            height={effectsHeight}
+            open={effectsOpen}
+            onToggle={() => setEffectsOpen((v) => !v)}
           />
-          <EffectsPanel height={effectsHeight} />
         </div>
       </div>
       {DevDials ? (

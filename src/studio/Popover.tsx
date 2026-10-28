@@ -78,7 +78,13 @@ export function Popover({
       const left =
         placement === "left" ? anchor.left - box.width - GAP : anchor.right - box.width;
       const top = placement === "left" ? anchor.top : anchor.bottom + 4;
-      const fit = fitInViewport({ x: left, y: top }, box, viewport);
+      // A settings card is about one panel, so it stays beside that panel instead of
+      // running down over whatever is stacked under it.
+      const panel =
+        placement === "left"
+          ? anchorRef.current?.closest("[data-popover-bounds]")?.getBoundingClientRect()
+          : undefined;
+      const fit = fitInViewport({ x: left, y: top }, box, viewport, panel);
       setAt({ left: fit.x, top: fit.y });
     };
     place();
